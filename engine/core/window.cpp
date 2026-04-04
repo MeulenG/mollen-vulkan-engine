@@ -41,4 +41,10 @@ void Window::framebufferResizeCallback(GLFWwindow* window, int width, int height
     app_window->height_ = static_cast<uint32_t>(height);
 }
 
+void Window::createWindowSurface(VkInstance instance, VkSurfaceKHR* surface) {
+    if (glfwCreateWindowSurface(instance, window_, nullptr, surface) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create window surface");
+    }
+}
+
 } // namespace mve

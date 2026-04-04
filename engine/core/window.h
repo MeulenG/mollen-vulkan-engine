@@ -24,6 +24,8 @@ public:
     VkExtent2D getExtent() const { return {width_, height_}; }
     GLFWwindow* getGLFWWindow() const { return window_; }
 
+    void createWindowSurface(VkInstance instance, VkSurfaceKHR* surface);
+
 private:
     void initWindow();
 
