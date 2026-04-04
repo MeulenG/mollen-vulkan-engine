@@ -6,8 +6,8 @@
 #include <cstdlib>
 #include <iostream>
 #include <memory>
-#include <stdexcept>
 #include <string>
+#include <stdexcept>
 
 int main() {
     try {
@@ -16,16 +16,11 @@ int main() {
         mve::Renderer renderer{window, device};
 
         // Pipeline layout (empty for now — no push constants or descriptors)
-        VkPipelineLayout pipeline_layout;
-        VkPipelineLayoutCreateInfo layout_info{};
-        layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        if (vkCreatePipelineLayout(device.device(), &layout_info, nullptr, &pipeline_layout) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create pipeline layout");
-        }
+        auto pipeline_layout = device.device().createPipelineLayout({});
 
         // Create graphics pipeline
         auto pipeline_config = mve::PipelineConfig::defaultConfig();
-        pipeline_config.pipeline_layout = pipeline_layout;
+        pipeline_config.pipeline_layout = *pipeline_layout;
         pipeline_config.color_attachment_format = renderer.getSwapchainImageFormat();
 
         std::string shader_dir = MVE_SHADER_DIR;
@@ -38,22 +33,19 @@ int main() {
         while (!window.shouldClose()) {
             glfwPollEvents();
 
-            VkCommandBuffer command_buffer;
+            vk::raii::CommandBuffer* command_buffer;
             if (!renderer.beginFrame(&command_buffer)) continue;
 
-            renderer.beginRendering(command_buffer);
+            renderer.beginRendering(*command_buffer);
 
-            pipeline->bind(command_buffer);
-            vkCmdDraw(command_buffer, 3, 1, 0, 0);
+            pipeline->bind(*command_buffer);
+            command_buffer->draw(3, 1, 0, 0);
 
-            renderer.endRendering(command_buffer);
-            renderer.endFrame(command_buffer);
+            renderer.endRendering(*command_buffer);
+            renderer.endFrame(*command_buffer);
         }
 
-        vkDeviceWaitIdle(device.device());
-
-        pipeline.reset();
-        vkDestroyPipelineLayout(device.device(), pipeline_layout, nullptr);
+        device.device().waitIdle();
 
     } catch (const std::exception& e) {
         std::cerr << e.what() << '\n';

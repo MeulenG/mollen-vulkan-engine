@@ -6,202 +6,156 @@
 
 namespace mve {
 
-Swapchain::Swapchain(Device& device, VkExtent2D window_extent)
+Swapchain::Swapchain(Device& device, vk::Extent2D window_extent)
     : device_{device}, window_extent_{window_extent} {
     createSwapchain();
     createImageViews();
     createSyncObjects();
 }
 
-Swapchain::~Swapchain() {
-    for (auto view : image_views_) {
-        vkDestroyImageView(device_.device(), view, nullptr);
-    }
-
-    vkDestroySwapchainKHR(device_.device(), swapchain_, nullptr);
-
-    for (size_t i = 0; i < image_available_semaphores_.size(); i++) {
-        vkDestroySemaphore(device_.device(), image_available_semaphores_[i], nullptr);
-        vkDestroySemaphore(device_.device(), render_finished_semaphores_[i], nullptr);
-        vkDestroyFence(device_.device(), in_flight_fences_[i], nullptr);
-    }
-}
-
 void Swapchain::createSwapchain() {
-    SwapchainSupportDetails support = device_.querySwapchainSupport();
+    auto support = device_.querySwapchainSupport();
 
-    VkSurfaceFormatKHR surface_format = chooseSwapSurfaceFormat(support.formats);
-    VkPresentModeKHR present_mode = chooseSwapPresentMode(support.present_modes);
-    VkExtent2D extent = chooseSwapExtent(support.capabilities);
+    auto surface_format = chooseSwapSurfaceFormat(support.formats);
+    auto present_mode = chooseSwapPresentMode(support.present_modes);
+    extent_ = chooseSwapExtent(support.capabilities);
+    image_format_ = surface_format.format;
 
     uint32_t image_count = support.capabilities.minImageCount + 1;
     if (support.capabilities.maxImageCount > 0 && image_count > support.capabilities.maxImageCount) {
         image_count = support.capabilities.maxImageCount;
     }
 
-    VkSwapchainCreateInfoKHR create_info{};
-    create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-    create_info.surface = device_.surface();
-    create_info.minImageCount = image_count;
-    create_info.imageFormat = surface_format.format;
-    create_info.imageColorSpace = surface_format.colorSpace;
-    create_info.imageExtent = extent;
-    create_info.imageArrayLayers = 1;
-    create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    vk::SwapchainCreateInfoKHR create_info{
+        {},
+        *device_.surface(),
+        image_count,
+        image_format_,
+        surface_format.colorSpace,
+        extent_,
+        1,
+        vk::ImageUsageFlagBits::eColorAttachment
+    };
 
-    QueueFamilyIndices indices = device_.findQueueFamilies();
+    auto indices = device_.findQueueFamilies();
     uint32_t family_indices[] = {indices.graphics_family.value(), indices.present_family.value()};
 
     if (indices.graphics_family != indices.present_family) {
-        create_info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+        create_info.imageSharingMode = vk::SharingMode::eConcurrent;
         create_info.queueFamilyIndexCount = 2;
         create_info.pQueueFamilyIndices = family_indices;
     } else {
-        create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        create_info.imageSharingMode = vk::SharingMode::eExclusive;
     }
 
     create_info.preTransform = support.capabilities.currentTransform;
-    create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    create_info.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque;
     create_info.presentMode = present_mode;
-    create_info.clipped = VK_TRUE;
-    create_info.oldSwapchain = VK_NULL_HANDLE;
+    create_info.clipped = vk::True;
 
-    if (vkCreateSwapchainKHR(device_.device(), &create_info, nullptr, &swapchain_) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create swap chain");
-    }
-
-    vkGetSwapchainImagesKHR(device_.device(), swapchain_, &image_count, nullptr);
-    images_.resize(image_count);
-    vkGetSwapchainImagesKHR(device_.device(), swapchain_, &image_count, images_.data());
-
-    image_format_ = surface_format.format;
-    extent_ = extent;
+    swapchain_ = device_.device().createSwapchainKHR(create_info);
+    images_ = swapchain_.getImages();
 }
 
 void Swapchain::createImageViews() {
-    image_views_.resize(images_.size());
+    image_views_.reserve(images_.size());
 
-    for (size_t i = 0; i < images_.size(); i++) {
-        VkImageViewCreateInfo view_info{};
-        view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        view_info.image = images_[i];
-        view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        view_info.format = image_format_;
-        view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        view_info.subresourceRange.baseMipLevel = 0;
-        view_info.subresourceRange.levelCount = 1;
-        view_info.subresourceRange.baseArrayLayer = 0;
-        view_info.subresourceRange.layerCount = 1;
+    for (auto image : images_) {
+        vk::ImageViewCreateInfo view_info{
+            {},
+            image,
+            vk::ImageViewType::e2D,
+            image_format_,
+            {},
+            {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
+        };
 
-        if (vkCreateImageView(device_.device(), &view_info, nullptr, &image_views_[i]) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create image view");
-        }
+        image_views_.push_back(device_.device().createImageView(view_info));
     }
 }
 
 void Swapchain::createSyncObjects() {
-    // All sync objects sized to swapchain image count to avoid semaphore reuse conflicts
     uint32_t count = static_cast<uint32_t>(images_.size());
-    image_available_semaphores_.resize(count);
-    render_finished_semaphores_.resize(count);
-    in_flight_fences_.resize(count);
-
-    VkSemaphoreCreateInfo semaphore_info{};
-    semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-
-    VkFenceCreateInfo fence_info{};
-    fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
     for (uint32_t i = 0; i < count; i++) {
-        if (vkCreateSemaphore(device_.device(), &semaphore_info, nullptr, &image_available_semaphores_[i]) != VK_SUCCESS ||
-            vkCreateSemaphore(device_.device(), &semaphore_info, nullptr, &render_finished_semaphores_[i]) != VK_SUCCESS ||
-            vkCreateFence(device_.device(), &fence_info, nullptr, &in_flight_fences_[i]) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create synchronization objects");
-        }
+        image_available_semaphores_.push_back(device_.device().createSemaphore({}));
+        render_finished_semaphores_.push_back(device_.device().createSemaphore({}));
+        in_flight_fences_.push_back(
+            device_.device().createFence({vk::FenceCreateFlagBits::eSignaled}));
     }
 }
 
-VkResult Swapchain::acquireNextImage(uint32_t* image_index) {
-    vkWaitForFences(device_.device(), 1, &in_flight_fences_[current_frame_], VK_TRUE, UINT64_MAX);
+vk::Result Swapchain::acquireNextImage(uint32_t* image_index) {
+    auto wait_result = device_.device().waitForFences(
+        *in_flight_fences_[current_frame_], vk::True, UINT64_MAX);
+    (void)wait_result;
 
-    // Use per-image semaphore indexed by current_frame_ for the acquire.
-    // After acquire succeeds, we store the image index so submit knows which semaphore to wait on.
-    VkResult result = vkAcquireNextImageKHR(
-        device_.device(),
-        swapchain_,
-        UINT64_MAX,
-        image_available_semaphores_[current_frame_],
-        VK_NULL_HANDLE,
-        image_index);
+    auto [result, index] = swapchain_.acquireNextImage(
+        UINT64_MAX, *image_available_semaphores_[current_frame_]);
 
-    current_image_index_ = *image_index;
+    *image_index = index;
     return result;
 }
 
-VkResult Swapchain::submitCommandBuffer(VkCommandBuffer buffer, uint32_t image_index) {
-    vkResetFences(device_.device(), 1, &in_flight_fences_[current_frame_]);
+vk::Result Swapchain::submitCommandBuffer(const vk::raii::CommandBuffer& buffer, uint32_t image_index) {
+    device_.device().resetFences(*in_flight_fences_[current_frame_]);
 
-    VkSemaphore wait_semaphores[] = {image_available_semaphores_[current_frame_]};
-    VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-    VkSemaphore signal_semaphores[] = {render_finished_semaphores_[current_frame_]};
+    vk::Semaphore wait_semaphores[] = {*image_available_semaphores_[current_frame_]};
+    vk::PipelineStageFlags wait_stages[] = {vk::PipelineStageFlagBits::eColorAttachmentOutput};
+    vk::Semaphore signal_semaphores[] = {*render_finished_semaphores_[current_frame_]};
+    vk::CommandBuffer cmd = *buffer;
 
-    VkSubmitInfo submit_info{};
-    submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submit_info.waitSemaphoreCount = 1;
-    submit_info.pWaitSemaphores = wait_semaphores;
-    submit_info.pWaitDstStageMask = wait_stages;
-    submit_info.commandBufferCount = 1;
-    submit_info.pCommandBuffers = &buffer;
-    submit_info.signalSemaphoreCount = 1;
-    submit_info.pSignalSemaphores = signal_semaphores;
+    vk::SubmitInfo submit_info{};
+    submit_info.setWaitSemaphores(wait_semaphores);
+    submit_info.setWaitDstStageMask(wait_stages);
+    submit_info.setCommandBuffers(cmd);
+    submit_info.setSignalSemaphores(signal_semaphores);
 
-    if (vkQueueSubmit(device_.graphicsQueue(), 1, &submit_info, in_flight_fences_[current_frame_]) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to submit draw command buffer");
+    device_.graphicsQueue().submit(submit_info, *in_flight_fences_[current_frame_]);
+
+    vk::PresentInfoKHR present_info{};
+    present_info.setWaitSemaphores(signal_semaphores);
+    vk::SwapchainKHR swapchains[] = {*swapchain_};
+    present_info.setSwapchains(swapchains);
+    present_info.setImageIndices(image_index);
+
+    vk::Result result;
+    try {
+        result = device_.presentQueue().presentKHR(present_info);
+    } catch (const vk::OutOfDateKHRError&) {
+        result = vk::Result::eErrorOutOfDateKHR;
     }
-
-    VkSwapchainKHR swapchains[] = {swapchain_};
-
-    VkPresentInfoKHR present_info{};
-    present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    present_info.waitSemaphoreCount = 1;
-    present_info.pWaitSemaphores = signal_semaphores;
-    present_info.swapchainCount = 1;
-    present_info.pSwapchains = swapchains;
-    present_info.pImageIndices = &image_index;
-
-    VkResult result = vkQueuePresentKHR(device_.presentQueue(), &present_info);
 
     current_frame_ = (current_frame_ + 1) % static_cast<uint32_t>(images_.size());
 
     return result;
 }
 
-VkSurfaceFormatKHR Swapchain::chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& formats) {
+vk::SurfaceFormatKHR Swapchain::chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& formats) {
     for (const auto& format : formats) {
-        if (format.format == VK_FORMAT_B8G8R8A8_SRGB &&
-            format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+        if (format.format == vk::Format::eB8G8R8A8Srgb &&
+            format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
             return format;
         }
     }
     return formats[0];
 }
 
-VkPresentModeKHR Swapchain::chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& modes) {
+vk::PresentModeKHR Swapchain::chooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& modes) {
     for (const auto& mode : modes) {
-        if (mode == VK_PRESENT_MODE_MAILBOX_KHR) {
+        if (mode == vk::PresentModeKHR::eMailbox) {
             return mode;
         }
     }
-    return VK_PRESENT_MODE_FIFO_KHR;
+    return vk::PresentModeKHR::eFifo;
 }
 
-VkExtent2D Swapchain::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) {
+vk::Extent2D Swapchain::chooseSwapExtent(const vk::SurfaceCapabilitiesKHR& capabilities) {
     if (capabilities.currentExtent.width != (std::numeric_limits<uint32_t>::max)()) {
         return capabilities.currentExtent;
     }
 
-    VkExtent2D actual = window_extent_;
+    vk::Extent2D actual = window_extent_;
     actual.width = std::clamp(actual.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
     actual.height = std::clamp(actual.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
     return actual;

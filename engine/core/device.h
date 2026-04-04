@@ -3,9 +3,11 @@
 
 #include "window.h"
 
+#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_raii.hpp>
+
 #include <optional>
 #include <vector>
-#include <string>
 
 namespace mve {
 
@@ -19,37 +21,36 @@ struct QueueFamilyIndices {
 };
 
 struct SwapchainSupportDetails {
-    VkSurfaceCapabilitiesKHR capabilities{};
-    std::vector<VkSurfaceFormatKHR> formats;
-    std::vector<VkPresentModeKHR> present_modes;
+    vk::SurfaceCapabilitiesKHR capabilities;
+    std::vector<vk::SurfaceFormatKHR> formats;
+    std::vector<vk::PresentModeKHR> present_modes;
 };
 
 class Device {
 public:
     Device(Window& window);
-    ~Device();
 
     Device(const Device&) = delete;
     Device& operator=(const Device&) = delete;
 
-    VkDevice device() const { return device_; }
-    VkPhysicalDevice physicalDevice() const { return physical_device_; }
-    VkInstance instance() const { return instance_; }
-    VkSurfaceKHR surface() const { return surface_; }
-    VkQueue graphicsQueue() const { return graphics_queue_; }
-    VkQueue presentQueue() const { return present_queue_; }
-    VkCommandPool commandPool() const { return command_pool_; }
+    const vk::raii::Device& device() const { return device_; }
+    const vk::raii::PhysicalDevice& physicalDevice() const { return physical_device_; }
+    const vk::raii::Instance& instance() const { return instance_; }
+    const vk::raii::SurfaceKHR& surface() const { return surface_; }
+    const vk::raii::Queue& graphicsQueue() const { return graphics_queue_; }
+    const vk::raii::Queue& presentQueue() const { return present_queue_; }
+    const vk::raii::CommandPool& commandPool() const { return command_pool_; }
 
-    QueueFamilyIndices findQueueFamilies() const { return findQueueFamilies(physical_device_); }
-    SwapchainSupportDetails querySwapchainSupport() const { return querySwapchainSupport(physical_device_); }
+    QueueFamilyIndices findQueueFamilies() const { return findQueueFamilies(*physical_device_); }
+    SwapchainSupportDetails querySwapchainSupport() const { return querySwapchainSupport(*physical_device_); }
 
-    VkFormat findSupportedFormat(
-        const std::vector<VkFormat>& candidates,
-        VkImageTiling tiling,
-        VkFormatFeatureFlags features) const;
+    vk::Format findSupportedFormat(
+        const std::vector<vk::Format>& candidates,
+        vk::ImageTiling tiling,
+        vk::FormatFeatureFlags features) const;
 
-    VkCommandBuffer beginSingleTimeCommands();
-    void endSingleTimeCommands(VkCommandBuffer command_buffer);
+    vk::raii::CommandBuffer beginSingleTimeCommands();
+    void endSingleTimeCommands(vk::raii::CommandBuffer command_buffer);
 
 private:
     void createInstance();
@@ -59,30 +60,23 @@ private:
     void createLogicalDevice();
     void createCommandPool();
 
-    bool isDeviceSuitable(VkPhysicalDevice device) const;
-    QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) const;
-    SwapchainSupportDetails querySwapchainSupport(VkPhysicalDevice device) const;
-    bool checkDeviceExtensionSupport(VkPhysicalDevice device) const;
-
-    std::vector<const char*> getRequiredExtensions() const;
+    bool isDeviceSuitable(const vk::raii::PhysicalDevice& device) const;
+    QueueFamilyIndices findQueueFamilies(vk::PhysicalDevice device) const;
+    SwapchainSupportDetails querySwapchainSupport(vk::PhysicalDevice device) const;
+    bool checkDeviceExtensionSupport(const vk::raii::PhysicalDevice& device) const;
     bool checkValidationLayerSupport() const;
-
-    static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
-        VkDebugUtilsMessageSeverityFlagBitsEXT severity,
-        VkDebugUtilsMessageTypeFlagsEXT type,
-        const VkDebugUtilsMessengerCallbackDataEXT* callback_data,
-        void* user_data);
 
     Window& window_;
 
-    VkInstance instance_ = VK_NULL_HANDLE;
-    VkDebugUtilsMessengerEXT debug_messenger_ = VK_NULL_HANDLE;
-    VkSurfaceKHR surface_ = VK_NULL_HANDLE;
-    VkPhysicalDevice physical_device_ = VK_NULL_HANDLE;
-    VkDevice device_ = VK_NULL_HANDLE;
-    VkQueue graphics_queue_ = VK_NULL_HANDLE;
-    VkQueue present_queue_ = VK_NULL_HANDLE;
-    VkCommandPool command_pool_ = VK_NULL_HANDLE;
+    vk::raii::Context context_;
+    vk::raii::Instance instance_{nullptr};
+    vk::raii::DebugUtilsMessengerEXT debug_messenger_{nullptr};
+    vk::raii::SurfaceKHR surface_{nullptr};
+    vk::raii::PhysicalDevice physical_device_{nullptr};
+    vk::raii::Device device_{nullptr};
+    vk::raii::Queue graphics_queue_{nullptr};
+    vk::raii::Queue present_queue_{nullptr};
+    vk::raii::CommandPool command_pool_{nullptr};
 
     const std::vector<const char*> validation_layers_ = {"VK_LAYER_KHRONOS_validation"};
     const std::vector<const char*> device_extensions_ = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};

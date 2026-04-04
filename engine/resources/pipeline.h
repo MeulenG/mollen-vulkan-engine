@@ -9,16 +9,16 @@
 namespace mve {
 
 struct PipelineConfig {
-    VkPipelineInputAssemblyStateCreateInfo input_assembly_info{};
-    VkPipelineRasterizationStateCreateInfo rasterization_info{};
-    VkPipelineMultisampleStateCreateInfo multisample_info{};
-    VkPipelineColorBlendAttachmentState color_blend_attachment{};
-    VkPipelineDepthStencilStateCreateInfo depth_stencil_info{};
-    VkPipelineViewportStateCreateInfo viewport_info{};
-    std::vector<VkDynamicState> dynamic_states;
-    VkPipelineDynamicStateCreateInfo dynamic_state_info{};
-    VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
-    VkFormat color_attachment_format = VK_FORMAT_UNDEFINED;
+    vk::PipelineInputAssemblyStateCreateInfo input_assembly_info;
+    vk::PipelineRasterizationStateCreateInfo rasterization_info;
+    vk::PipelineMultisampleStateCreateInfo multisample_info;
+    vk::PipelineColorBlendAttachmentState color_blend_attachment;
+    vk::PipelineDepthStencilStateCreateInfo depth_stencil_info;
+    vk::PipelineViewportStateCreateInfo viewport_info;
+    std::vector<vk::DynamicState> dynamic_states;
+    vk::PipelineDynamicStateCreateInfo dynamic_state_info;
+    vk::PipelineLayout pipeline_layout;
+    vk::Format color_attachment_format = vk::Format::eUndefined;
 
     static PipelineConfig defaultConfig();
 };
@@ -30,12 +30,11 @@ public:
         const std::string& vert_path,
         const std::string& frag_path,
         const PipelineConfig& config);
-    ~Pipeline();
 
     Pipeline(const Pipeline&) = delete;
     Pipeline& operator=(const Pipeline&) = delete;
 
-    void bind(VkCommandBuffer command_buffer);
+    void bind(const vk::raii::CommandBuffer& command_buffer);
 
     static std::vector<char> readFile(const std::string& filepath);
 
@@ -45,10 +44,10 @@ private:
         const std::string& frag_path,
         const PipelineConfig& config);
 
-    VkShaderModule createShaderModule(const std::vector<char>& code);
+    vk::raii::ShaderModule createShaderModule(const std::vector<char>& code);
 
     Device& device_;
-    VkPipeline graphics_pipeline_ = VK_NULL_HANDLE;
+    vk::raii::Pipeline graphics_pipeline_{nullptr};
 };
 
 } // namespace mve
