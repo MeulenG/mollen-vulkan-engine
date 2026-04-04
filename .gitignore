@@ -361,3 +361,14 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# CMake
+build/
+cmake-build-*/
+CMakeUserPresets.json
+
+# Compiled shaders
+*.spv
+
+# Database config
+db_config.toml

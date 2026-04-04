@@ -1,0 +1,19 @@
+#ifndef SCHEMA_NAME_GEN_H
+#define SCHEMA_NAME_GEN_H
+
+#include "dbc_schema.h"
+
+static const DbcFieldDef name_gen_fields[] = {
+    { "Id",       DbcFieldType::UInt32 },
+    { "Name",     DbcFieldType::String },
+    { "RaceID",   DbcFieldType::UInt32 },
+    { "Sex",      DbcFieldType::UInt32 },
+};
+
+static const DbcSchema schema_name_gen = {
+    "NameGen",
+    name_gen_fields,
+    sizeof(name_gen_fields) / sizeof(name_gen_fields[0])
+};
+
+#endif

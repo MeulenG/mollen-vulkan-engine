@@ -1,0 +1,18 @@
+#ifndef SCHEMA_UI_SOUND_LOOKUPS_H
+#define SCHEMA_UI_SOUND_LOOKUPS_H
+
+#include "dbc_schema.h"
+
+static const DbcFieldDef ui_sound_lookups_fields[] = {
+    { "Id",             DbcFieldType::UInt32 },
+    { "SoundEntriesID", DbcFieldType::UInt32 },
+    { "Name",           DbcFieldType::String },
+};
+
+static const DbcSchema schema_ui_sound_lookups = {
+    "UISoundLookups",
+    ui_sound_lookups_fields,
+    sizeof(ui_sound_lookups_fields) / sizeof(ui_sound_lookups_fields[0])
+};
+
+#endif

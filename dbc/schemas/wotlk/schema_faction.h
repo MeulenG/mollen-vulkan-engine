@@ -1,0 +1,72 @@
+#ifndef SCHEMA_FACTION_H
+#define SCHEMA_FACTION_H
+
+#include "dbc_schema.h"
+
+static const DbcFieldDef faction_fields[] = {
+    { "Id",                  DbcFieldType::UInt32 },
+    { "ReputationIndex",     DbcFieldType::Int32  },
+    { "ReputationRaceMask1", DbcFieldType::UInt32 },
+    { "ReputationRaceMask2", DbcFieldType::UInt32 },
+    { "ReputationRaceMask3", DbcFieldType::UInt32 },
+    { "ReputationRaceMask4", DbcFieldType::UInt32 },
+    { "ReputationClassMask1", DbcFieldType::UInt32 },
+    { "ReputationClassMask2", DbcFieldType::UInt32 },
+    { "ReputationClassMask3", DbcFieldType::UInt32 },
+    { "ReputationClassMask4", DbcFieldType::UInt32 },
+    { "ReputationBase1",     DbcFieldType::Int32  },
+    { "ReputationBase2",     DbcFieldType::Int32  },
+    { "ReputationBase3",     DbcFieldType::Int32  },
+    { "ReputationBase4",     DbcFieldType::Int32  },
+    { "ReputationFlags1",    DbcFieldType::UInt32 },
+    { "ReputationFlags2",    DbcFieldType::UInt32 },
+    { "ReputationFlags3",    DbcFieldType::UInt32 },
+    { "ReputationFlags4",    DbcFieldType::UInt32 },
+    { "ParentFactionID",     DbcFieldType::UInt32 },
+    { "ParentFactionMod1",   DbcFieldType::Float  },
+    { "ParentFactionMod2",   DbcFieldType::Float  },
+    { "ParentFactionCap1",   DbcFieldType::UInt32 },
+    { "ParentFactionCap2",   DbcFieldType::UInt32 },
+    { "Name_enUS",           DbcFieldType::String },
+    { "Name_koKR",           DbcFieldType::String },
+    { "Name_frFR",           DbcFieldType::String },
+    { "Name_deDE",           DbcFieldType::String },
+    { "Name_enCN",           DbcFieldType::String },
+    { "Name_zhTW",           DbcFieldType::String },
+    { "Name_esES",           DbcFieldType::String },
+    { "Name_esMX",           DbcFieldType::String },
+    { "Name_ruRU",           DbcFieldType::String },
+    { "Name_jaJP",           DbcFieldType::String },
+    { "Name_ptPT",           DbcFieldType::String },
+    { "Name_itIT",           DbcFieldType::String },
+    { "Name_Unk1",           DbcFieldType::String },
+    { "Name_Unk2",           DbcFieldType::String },
+    { "Name_Unk3",           DbcFieldType::String },
+    { "Name_Unk4",           DbcFieldType::String },
+    { "NameFlags",           DbcFieldType::UInt32 },
+    { "Description_enUS",    DbcFieldType::String },
+    { "Description_koKR",    DbcFieldType::String },
+    { "Description_frFR",    DbcFieldType::String },
+    { "Description_deDE",    DbcFieldType::String },
+    { "Description_enCN",    DbcFieldType::String },
+    { "Description_zhTW",    DbcFieldType::String },
+    { "Description_esES",    DbcFieldType::String },
+    { "Description_esMX",    DbcFieldType::String },
+    { "Description_ruRU",    DbcFieldType::String },
+    { "Description_jaJP",    DbcFieldType::String },
+    { "Description_ptPT",    DbcFieldType::String },
+    { "Description_itIT",    DbcFieldType::String },
+    { "Description_Unk1",    DbcFieldType::String },
+    { "Description_Unk2",    DbcFieldType::String },
+    { "Description_Unk3",    DbcFieldType::String },
+    { "Description_Unk4",    DbcFieldType::String },
+    { "DescriptionFlags",    DbcFieldType::UInt32 },
+};
+
+static const DbcSchema schema_faction = {
+    "Faction",
+    faction_fields,
+    sizeof(faction_fields) / sizeof(faction_fields[0])
+};
+
+#endif
