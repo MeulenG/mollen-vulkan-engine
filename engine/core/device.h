@@ -49,6 +49,9 @@ public:
         vk::ImageTiling tiling,
         vk::FormatFeatureFlags features) const;
 
+    uint32_t findMemoryType(uint32_t type_filter, vk::MemoryPropertyFlags properties) const;
+    vk::Format findDepthFormat() const;
+
     vk::raii::CommandBuffer beginSingleTimeCommands();
     void endSingleTimeCommands(vk::raii::CommandBuffer command_buffer);
 

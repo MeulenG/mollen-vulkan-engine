@@ -250,6 +250,25 @@ vk::Format Device::findSupportedFormat(
     throw std::runtime_error("Failed to find supported format");
 }
 
+vk::Format Device::findDepthFormat() const {
+    return findSupportedFormat(
+        {vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint},
+        vk::ImageTiling::eOptimal,
+        vk::FormatFeatureFlagBits::eDepthStencilAttachment);
+}
+
+uint32_t Device::findMemoryType(uint32_t type_filter, vk::MemoryPropertyFlags properties) const {
+    auto mem_props = physical_device_.getMemoryProperties();
+
+    for (uint32_t i = 0; i < mem_props.memoryTypeCount; i++) {
+        if ((type_filter & (1 << i)) &&
+            (mem_props.memoryTypes[i].propertyFlags & properties) == properties) {
+            return i;
+        }
+    }
+    throw std::runtime_error("Failed to find suitable memory type");
+}
+
 vk::raii::CommandBuffer Device::beginSingleTimeCommands() {
     vk::CommandBufferAllocateInfo alloc_info{*command_pool_, vk::CommandBufferLevel::ePrimary, 1};
 
