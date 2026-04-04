@@ -34,6 +34,20 @@ void Window::initWindow() {
     glfwSetFramebufferSizeCallback(window_, framebufferResizeCallback);
 }
 
+vk::SurfaceKHR Window::createSurface(vk::Instance instance) {
+    VkSurfaceKHR raw_surface;
+    if (glfwCreateWindowSurface(instance, window_, nullptr, &raw_surface) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create window surface");
+    }
+    return vk::SurfaceKHR{raw_surface};
+}
+
+std::vector<const char*> Window::getRequiredInstanceExtensions() {
+    uint32_t count = 0;
+    const char** extensions = glfwGetRequiredInstanceExtensions(&count);
+    return {extensions, extensions + count};
+}
+
 void Window::framebufferResizeCallback(GLFWwindow* window, int width, int height) {
     auto* app_window = reinterpret_cast<Window*>(glfwGetWindowUserPointer(window));
     app_window->framebuffer_resized_ = true;

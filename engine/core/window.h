@@ -3,6 +3,7 @@
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
+#include <vulkan/vulkan.hpp>
 
 #include <cstdint>
 #include <string>
@@ -21,8 +22,12 @@ public:
     bool wasResized() const { return framebuffer_resized_; }
     void resetResizedFlag() { framebuffer_resized_ = false; }
 
-    VkExtent2D getExtent() const { return {width_, height_}; }
+    vk::Extent2D getExtent() const { return {width_, height_}; }
     GLFWwindow* getGLFWWindow() const { return window_; }
+
+    vk::SurfaceKHR createSurface(vk::Instance instance);
+
+    static std::vector<const char*> getRequiredInstanceExtensions();
 
 private:
     void initWindow();

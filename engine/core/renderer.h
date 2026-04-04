@@ -5,19 +5,43 @@
 #include "swapchain.h"
 #include "window.h"
 
+#include <memory>
+#include <vector>
+
 namespace mve {
 
 class Renderer {
 public:
     Renderer(Window& window, Device& device);
-    ~Renderer();
 
     Renderer(const Renderer&) = delete;
     Renderer& operator=(const Renderer&) = delete;
 
+    bool beginFrame(vk::raii::CommandBuffer** out_command_buffer);
+    void beginRendering(const vk::raii::CommandBuffer& command_buffer);
+    void endRendering(const vk::raii::CommandBuffer& command_buffer);
+    void endFrame(const vk::raii::CommandBuffer& command_buffer);
+
+    vk::Extent2D getSwapchainExtent() const { return swapchain_->extent(); }
+    vk::Format getSwapchainImageFormat() const { return swapchain_->imageFormat(); }
+
 private:
+    void createCommandBuffers();
+    void recreateSwapchain();
+
+    void transitionImage(
+        const vk::raii::CommandBuffer& cmd,
+        vk::Image image,
+        vk::ImageLayout old_layout,
+        vk::ImageLayout new_layout);
+
     Window& window_;
     Device& device_;
+    std::unique_ptr<Swapchain> swapchain_;
+
+    std::vector<vk::raii::CommandBuffer> command_buffers_;
+    uint32_t current_image_index_ = 0;
+    bool is_frame_started_ = false;
 };
 
 } // namespace mve
