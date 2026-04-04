@@ -88,7 +88,7 @@ void Pipeline::createGraphicsPipeline(
     vk::PipelineColorBlendStateCreateInfo color_blend_info{};
     color_blend_info.setAttachments(config.color_blend_attachment);
 
-    // Dynamic rendering — no render pass needed (Vulkan 1.3+ core)
+    // Dynamic rendering (Vulkan 1.3+ core)
     vk::PipelineRenderingCreateInfo rendering_info{};
     rendering_info.setColorAttachmentFormats(config.color_attachment_format);
 
