@@ -30,9 +30,14 @@ PipelineConfig PipelineConfig::defaultConfig() {
         vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
     config.color_blend_attachment.blendEnable = vk::False;
 
-    config.depth_stencil_info.depthTestEnable = vk::False;
-    config.depth_stencil_info.depthWriteEnable = vk::False;
+    config.depth_stencil_info.depthTestEnable = vk::True;
+    config.depth_stencil_info.depthWriteEnable = vk::True;
+    config.depth_stencil_info.depthCompareOp = vk::CompareOp::eLess;
+    config.depth_stencil_info.depthBoundsTestEnable = vk::False;
     config.depth_stencil_info.stencilTestEnable = vk::False;
+
+    config.rasterization_info.cullMode = vk::CullModeFlagBits::eBack;
+    config.rasterization_info.frontFace = vk::FrontFace::eCounterClockwise;
 
     config.dynamic_states = {vk::DynamicState::eViewport, vk::DynamicState::eScissor};
     config.dynamic_state_info.setDynamicStates(config.dynamic_states);
@@ -82,8 +87,9 @@ void Pipeline::createGraphicsPipeline(
         vk::PipelineShaderStageCreateInfo{{}, vk::ShaderStageFlagBits::eFragment, *frag_module, "main"}
     };
 
-    // No vertex input for hardcoded triangle
     vk::PipelineVertexInputStateCreateInfo vertex_input_info{};
+    vertex_input_info.setVertexBindingDescriptions(config.binding_descriptions);
+    vertex_input_info.setVertexAttributeDescriptions(config.attribute_descriptions);
 
     vk::PipelineColorBlendStateCreateInfo color_blend_info{};
     color_blend_info.setAttachments(config.color_blend_attachment);
@@ -91,6 +97,9 @@ void Pipeline::createGraphicsPipeline(
     // Dynamic rendering (Vulkan 1.3+ core)
     vk::PipelineRenderingCreateInfo rendering_info{};
     rendering_info.setColorAttachmentFormats(config.color_attachment_format);
+    if (config.depth_attachment_format != vk::Format::eUndefined) {
+        rendering_info.depthAttachmentFormat = config.depth_attachment_format;
+    }
 
     vk::GraphicsPipelineCreateInfo pipeline_info{};
     pipeline_info.pNext = &rendering_info;

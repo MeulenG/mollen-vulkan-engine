@@ -4,6 +4,9 @@ add_library(mollen-engine STATIC
     core/swapchain.cpp
     core/renderer.cpp
     resources/pipeline.cpp
+    resources/buffer.cpp
+    scene/mesh.cpp
+    scene/camera.cpp
 )
 
 target_include_directories(mollen-engine PUBLIC

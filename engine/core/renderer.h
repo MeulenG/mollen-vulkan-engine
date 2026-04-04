@@ -24,16 +24,19 @@ public:
 
     vk::Extent2D getSwapchainExtent() const { return swapchain_->extent(); }
     vk::Format getSwapchainImageFormat() const { return swapchain_->imageFormat(); }
+    vk::Format getDepthFormat() const { return depth_format_; }
 
 private:
     void createCommandBuffers();
+    void createDepthResources();
     void recreateSwapchain();
 
     void transitionImage(
         const vk::raii::CommandBuffer& cmd,
         vk::Image image,
         vk::ImageLayout old_layout,
-        vk::ImageLayout new_layout);
+        vk::ImageLayout new_layout,
+        vk::ImageAspectFlags aspect = vk::ImageAspectFlagBits::eColor);
 
     Window& window_;
     Device& device_;
@@ -42,6 +45,11 @@ private:
     std::vector<vk::raii::CommandBuffer> command_buffers_;
     uint32_t current_image_index_ = 0;
     bool is_frame_started_ = false;
+
+    vk::Format depth_format_;
+    vk::raii::Image depth_image_{nullptr};
+    vk::raii::DeviceMemory depth_memory_{nullptr};
+    vk::raii::ImageView depth_image_view_{nullptr};
 };
 
 } // namespace mve

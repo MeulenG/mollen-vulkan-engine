@@ -29,10 +29,16 @@ public:
 
     static std::vector<const char*> getRequiredInstanceExtensions();
 
+    // Input state
+    bool isMouseButtonDown(int button) const;
+    void getCursorPos(double& x, double& y) const;
+    float getScrollDelta();
+
 private:
     void initWindow();
 
     static void framebufferResizeCallback(GLFWwindow* window, int width, int height);
+    static void scrollCallback(GLFWwindow* window, double x_offset, double y_offset);
 
     uint32_t width_;
     uint32_t height_;
@@ -40,6 +46,7 @@ private:
 
     std::string window_name_;
     GLFWwindow* window_ = nullptr;
+    float scroll_delta_ = 0.0f;
 };
 
 } // namespace mve

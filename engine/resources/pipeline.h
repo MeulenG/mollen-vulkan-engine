@@ -19,6 +19,10 @@ struct PipelineConfig {
     vk::PipelineDynamicStateCreateInfo dynamic_state_info;
     vk::PipelineLayout pipeline_layout;
     vk::Format color_attachment_format = vk::Format::eUndefined;
+    vk::Format depth_attachment_format = vk::Format::eUndefined;
+
+    std::vector<vk::VertexInputBindingDescription> binding_descriptions;
+    std::vector<vk::VertexInputAttributeDescription> attribute_descriptions;
 
     static PipelineConfig defaultConfig();
 };

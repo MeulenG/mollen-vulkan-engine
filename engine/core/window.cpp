@@ -32,6 +32,7 @@ void Window::initWindow() {
 
     glfwSetWindowUserPointer(window_, this);
     glfwSetFramebufferSizeCallback(window_, framebufferResizeCallback);
+    glfwSetScrollCallback(window_, scrollCallback);
 }
 
 vk::SurfaceKHR Window::createSurface(vk::Instance instance) {
@@ -53,6 +54,25 @@ void Window::framebufferResizeCallback(GLFWwindow* window, int width, int height
     app_window->framebuffer_resized_ = true;
     app_window->width_ = static_cast<uint32_t>(width);
     app_window->height_ = static_cast<uint32_t>(height);
+}
+
+bool Window::isMouseButtonDown(int button) const {
+    return glfwGetMouseButton(window_, button) == GLFW_PRESS;
+}
+
+void Window::getCursorPos(double& x, double& y) const {
+    glfwGetCursorPos(window_, &x, &y);
+}
+
+float Window::getScrollDelta() {
+    float d = scroll_delta_;
+    scroll_delta_ = 0.0f;
+    return d;
+}
+
+void Window::scrollCallback(GLFWwindow* window, double /*x_offset*/, double y_offset) {
+    auto* app_window = reinterpret_cast<Window*>(glfwGetWindowUserPointer(window));
+    app_window->scroll_delta_ += static_cast<float>(y_offset);
 }
 
 } // namespace mve
