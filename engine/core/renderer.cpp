@@ -94,18 +94,26 @@ bool Renderer::beginFrame(vk::raii::CommandBuffer** out_command_buffer) {
     return true;
 }
 
-void Renderer::beginRendering(const vk::raii::CommandBuffer& command_buffer) {
+void Renderer::beginRendering(const vk::raii::CommandBuffer& command_buffer, bool with_depth) {
     vk::Image image = swapchain_->getImage(current_image_index_);
 
     transitionImage(command_buffer, image,
         vk::ImageLayout::eUndefined,
         vk::ImageLayout::eColorAttachmentOptimal);
 
-    // Transition depth image
-    transitionImage(command_buffer, *depth_image_,
-        vk::ImageLayout::eUndefined,
-        vk::ImageLayout::eDepthAttachmentOptimal,
-        vk::ImageAspectFlagBits::eDepth);
+    vk::RenderingAttachmentInfo depth_attachment{};
+    if (with_depth) {
+        transitionImage(command_buffer, *depth_image_,
+            vk::ImageLayout::eUndefined,
+            vk::ImageLayout::eDepthAttachmentOptimal,
+            vk::ImageAspectFlagBits::eDepth);
+
+        depth_attachment.imageView = *depth_image_view_;
+        depth_attachment.imageLayout = vk::ImageLayout::eDepthAttachmentOptimal;
+        depth_attachment.loadOp = vk::AttachmentLoadOp::eClear;
+        depth_attachment.storeOp = vk::AttachmentStoreOp::eDontCare;
+        depth_attachment.clearValue.depthStencil = vk::ClearDepthStencilValue{1.0f, 0};
+    }
 
     vk::RenderingAttachmentInfo color_attachment{};
     color_attachment.imageView = *swapchain_->getImageView(current_image_index_);
@@ -114,18 +122,13 @@ void Renderer::beginRendering(const vk::raii::CommandBuffer& command_buffer) {
     color_attachment.storeOp = vk::AttachmentStoreOp::eStore;
     color_attachment.clearValue.color = vk::ClearColorValue{std::array{0.01f, 0.01f, 0.01f, 1.0f}};
 
-    vk::RenderingAttachmentInfo depth_attachment{};
-    depth_attachment.imageView = *depth_image_view_;
-    depth_attachment.imageLayout = vk::ImageLayout::eDepthAttachmentOptimal;
-    depth_attachment.loadOp = vk::AttachmentLoadOp::eClear;
-    depth_attachment.storeOp = vk::AttachmentStoreOp::eDontCare;
-    depth_attachment.clearValue.depthStencil = vk::ClearDepthStencilValue{1.0f, 0};
-
     vk::RenderingInfo rendering_info{};
     rendering_info.renderArea = vk::Rect2D{vk::Offset2D{0, 0}, swapchain_->extent()};
     rendering_info.layerCount = 1;
     rendering_info.setColorAttachments(color_attachment);
-    rendering_info.pDepthAttachment = &depth_attachment;
+    if (with_depth) {
+        rendering_info.pDepthAttachment = &depth_attachment;
+    }
 
     command_buffer.beginRendering(rendering_info);
 

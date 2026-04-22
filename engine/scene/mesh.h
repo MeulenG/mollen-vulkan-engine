@@ -16,6 +16,14 @@ struct Vertex {
     glm::vec3 position;
     glm::vec3 normal;
     glm::vec3 color;
+    glm::vec2 uv;
+
+    // Skinning: which bones affect this vertex, and by how much.
+    // Up to 4 bones per vertex (standard for real-time skeletal animation).
+    // bone_indices: indices into the bone matrix array
+    // bone_weights: how much each bone influences this vertex (sum should = 1.0)
+    glm::uvec4 bone_indices{0, 0, 0, 0};
+    glm::vec4 bone_weights{1.0f, 0.0f, 0.0f, 0.0f}; // default: 100% bone 0
 
     static std::vector<vk::VertexInputBindingDescription> getBindingDescriptions();
     static std::vector<vk::VertexInputAttributeDescription> getAttributeDescriptions();
@@ -33,7 +41,9 @@ public:
     void bind(const vk::raii::CommandBuffer& command_buffer) const;
     void draw(const vk::raii::CommandBuffer& command_buffer) const;
 
+    static Mesh CreatePyramid(Device& device, glm::vec3 color = {0.8f, 0.8f, 0.8f});
     static Mesh createCube(Device& device, glm::vec3 color = {0.8f, 0.8f, 0.8f});
+    static Mesh createGroundPlane(Device& device, float size = 20.0f);
 
 private:
     uint32_t index_count_;

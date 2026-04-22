@@ -3,18 +3,70 @@
 
 #include "../core/device.h"
 
+#include <unordered_map>
+#include <vector>
+
 namespace mve {
 
-class DescriptorSetLayout {
+// Builds a descriptor set layout — defines the "interface" of what a shader expects.
+// Example: binding 0 = uniform buffer, binding 1 = texture sampler
+class DescriptorSetLayoutBuilder {
 public:
-    DescriptorSetLayout(const DescriptorSetLayout&) = delete;
-    DescriptorSetLayout& operator=(const DescriptorSetLayout&) = delete;
+    DescriptorSetLayoutBuilder(Device& device) : device_{device} {}
+
+    DescriptorSetLayoutBuilder& addBinding(
+        uint32_t binding,
+        vk::DescriptorType type,
+        vk::ShaderStageFlags stage_flags,
+        uint32_t count = 1);
+
+    vk::raii::DescriptorSetLayout build();
+
+private:
+    Device& device_;
+    std::vector<vk::DescriptorSetLayoutBinding> bindings_;
 };
 
+// Manages a pool of descriptors that sets are allocated from.
 class DescriptorPool {
 public:
+    DescriptorPool(
+        Device& device,
+        uint32_t max_sets,
+        const std::vector<vk::DescriptorPoolSize>& pool_sizes);
+
     DescriptorPool(const DescriptorPool&) = delete;
     DescriptorPool& operator=(const DescriptorPool&) = delete;
+
+    vk::raii::DescriptorSet allocateSet(const vk::raii::DescriptorSetLayout& layout);
+
+private:
+    Device& device_;
+    vk::raii::DescriptorPool pool_{nullptr};
+};
+
+// Helper to write data into a descriptor set.
+class DescriptorWriter {
+public:
+    DescriptorWriter() = default;
+
+    DescriptorWriter& writeBuffer(
+        uint32_t binding,
+        const vk::DescriptorBufferInfo& buffer_info,
+        vk::DescriptorType type = vk::DescriptorType::eUniformBuffer);
+
+    DescriptorWriter& writeImage(
+        uint32_t binding,
+        const vk::DescriptorImageInfo& image_info,
+        vk::DescriptorType type = vk::DescriptorType::eCombinedImageSampler);
+
+    void apply(const vk::raii::Device& device, const vk::raii::DescriptorSet& set);
+
+private:
+    std::vector<vk::WriteDescriptorSet> writes_;
+    // Keep infos alive until apply() is called
+    std::vector<vk::DescriptorBufferInfo> buffer_infos_;
+    std::vector<vk::DescriptorImageInfo> image_infos_;
 };
 
 } // namespace mve
