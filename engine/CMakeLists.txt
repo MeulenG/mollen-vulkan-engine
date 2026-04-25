@@ -7,8 +7,14 @@ add_library(mollen-engine STATIC
     resources/buffer.cpp
     resources/descriptor.cpp
     resources/image.cpp
+    resources/asset_manager.cpp
+    systems/render_system.cpp
+    systems/animation_system.cpp
+    systems/editor_ui_system.cpp
     scene/mesh.cpp
     scene/camera.cpp
+    scene/entity.cpp
+    scene/scene.cpp
     animation/skeleton.cpp
     animation/animation_clip.cpp
     animation/animator.cpp
