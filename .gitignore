@@ -370,5 +370,9 @@ CMakeUserPresets.json
 # Compiled shaders
 *.spv
 
-# Database config
+# Database config (contains credentials)
 db_config.toml
+
+# Assets and docs
+assets/
+docs/
