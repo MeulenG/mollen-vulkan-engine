@@ -41,9 +41,7 @@ void AnimationClip::sample(
     }
 }
 
-// Linear interpolation for vec3 (positions and scales)
-// lerp(a, b, t) = a * (1 - t) + b * t
-// Geometrically: a straight line from a to b.
+// See docs/wiki/Math-Interpolation.md
 glm::vec3 AnimationClip::interpolateVec3(
     const std::vector<Keyframe<glm::vec3>>& keys,
     float time,
@@ -64,12 +62,6 @@ glm::vec3 AnimationClip::interpolateVec3(
     return keys.back().value;
 }
 
-// Spherical linear interpolation for quaternions (rotations)
-//
-// slerp(q0, q1, t) = q0 * sin((1-t)*theta)/sin(theta) + q1 * sin(t*theta)/sin(theta)
-// where theta = acos(|dot(q0, q1)|)
-//
-// If dot(q0, q1) < 0, negate one quaternion to take the SHORT rotation path.
 glm::quat AnimationClip::interpolateQuat(
     const std::vector<Keyframe<glm::quat>>& keys,
     float time,

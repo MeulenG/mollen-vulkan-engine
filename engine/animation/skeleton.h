@@ -34,22 +34,14 @@ public:
     uint32_t boneCount() const { return static_cast<uint32_t>(bones_.size()); }
     const Bone& getBone(uint32_t index) const { return bones_[index]; }
 
-    // Compute the inverse bind matrices from the bind pose.
-    // Call this ONCE after all bones are added.
-    // These transform vertices from model space → bone-local space.
+    // See docs/wiki/Math-Skeletal-Animation.md
     void computeInverseBindMatrices();
 
-    // Given current local transforms for each bone (from animation),
-    // compute the final bone matrices: current_world * inverse_bind.
-    // This is what gets uploaded to the GPU.
     std::vector<glm::mat4> computeBoneMatrices(
         const std::vector<glm::vec3>& positions,
         const std::vector<glm::quat>& rotations,
         const std::vector<glm::vec3>& scales) const;
 
-    // M2-specific: compute bone matrices using pivot points.
-    // M2 bones animate around their pivot: T(pivot) * R * T(anim_translate) * T(-pivot)
-    // Then chain through parent hierarchy.
     std::vector<glm::mat4> computeM2BoneMatrices(
         const std::vector<glm::vec3>& positions,
         const std::vector<glm::quat>& rotations,

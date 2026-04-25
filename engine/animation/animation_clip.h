@@ -49,18 +49,7 @@ public:
         std::vector<glm::vec3>& out_scales) const;
 
 private:
-    // Interpolate between keyframes at the given time.
-    //
-    // For positions/scales: linear interpolation (lerp)
-    //   result = a * (1 - t) + b * t
-    //   Simply moves in a straight line between two values.
-    //
-    // For rotations: spherical linear interpolation (slerp)
-    //   result = q0 * sin((1-t)*θ)/sin(θ) + q1 * sin(t*θ)/sin(θ)
-    //   where θ = acos(dot(q0, q1))
-    //   This interpolates along the surface of a 4D unit sphere,
-    //   giving the shortest, constant-speed rotation between orientations.
-    //   GLM's glm::slerp handles this for us.
+    // See docs/wiki/Math-Interpolation.md
     static glm::vec3 interpolateVec3(
         const std::vector<Keyframe<glm::vec3>>& keys,
         float time,
