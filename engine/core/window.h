@@ -18,21 +18,21 @@ public:
     Window(const Window&) = delete;
     Window& operator=(const Window&) = delete;
 
-    bool shouldClose() const { return glfwWindowShouldClose(window_); }
-    bool wasResized() const { return framebuffer_resized_; }
-    void resetResizedFlag() { framebuffer_resized_ = false; }
+    bool ShouldClose() const { return glfwWindowShouldClose(window_); }
+    bool WasResized() const { return framebuffer_resized_; }
+    void ResetResizedFlag() { framebuffer_resized_ = false; }
 
-    vk::Extent2D getExtent() const { return {width_, height_}; }
-    GLFWwindow* getGLFWWindow() const { return window_; }
+    vk::Extent2D GetExtent() const { return {width_, height_}; }
+    GLFWwindow* GetGLFWWindow() const { return window_; }
 
     vk::SurfaceKHR createSurface(vk::Instance instance);
 
-    static std::vector<const char*> getRequiredInstanceExtensions();
+    static std::vector<const char*> GetRequiredInstanceExtensions();
 
     // Input state
-    bool isMouseButtonDown(int button) const;
-    void getCursorPos(double& x, double& y) const;
-    float getScrollDelta();
+    bool IsMouseButtonDown(int button) const;
+    void GetCursorPos(double& x, double& y) const;
+    float GetScrollDelta();
 
 private:
     void initWindow();

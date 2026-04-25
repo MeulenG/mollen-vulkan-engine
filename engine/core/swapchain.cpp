@@ -14,7 +14,7 @@ Swapchain::Swapchain(Device& device, vk::Extent2D window_extent)
 }
 
 void Swapchain::createSwapchain() {
-    auto support = device_.querySwapchainSupport();
+    auto support = device_.QuerySwapchainSupport();
 
     auto surface_format = chooseSwapSurfaceFormat(support.formats);
     auto present_mode = chooseSwapPresentMode(support.present_modes);
@@ -37,7 +37,7 @@ void Swapchain::createSwapchain() {
         vk::ImageUsageFlagBits::eColorAttachment
     };
 
-    auto indices = device_.findQueueFamilies();
+    auto indices = device_.FindQueueFamilies();
     uint32_t family_indices[] = {indices.graphics_family.value(), indices.present_family.value()};
 
     if (indices.graphics_family != indices.present_family) {
@@ -85,7 +85,7 @@ void Swapchain::createSyncObjects() {
     }
 }
 
-vk::Result Swapchain::acquireNextImage(uint32_t* image_index) {
+vk::Result Swapchain::AcquireNextImage(uint32_t* image_index) {
     auto wait_result = device_.device().waitForFences(
         *in_flight_fences_[current_frame_], vk::True, UINT64_MAX);
     (void)wait_result;
@@ -97,7 +97,7 @@ vk::Result Swapchain::acquireNextImage(uint32_t* image_index) {
     return result;
 }
 
-vk::Result Swapchain::submitCommandBuffer(const vk::raii::CommandBuffer& buffer, uint32_t image_index) {
+vk::Result Swapchain::SubmitCommandBuffer(const vk::raii::CommandBuffer& buffer, uint32_t image_index) {
     device_.device().resetFences(*in_flight_fences_[current_frame_]);
 
     vk::Semaphore wait_semaphores[] = {*image_available_semaphores_[current_frame_]};

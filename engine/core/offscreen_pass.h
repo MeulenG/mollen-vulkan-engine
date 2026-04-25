@@ -17,22 +17,22 @@ public:
 
     uint32_t width() const { return width_; }
     uint32_t height() const { return height_; }
-    vk::Format colorFormat() const { return color_format_; }
-    vk::Format depthFormat() const { return depth_format_; }
+    vk::Format ColorFormat() const { return color_format_; }
+    vk::Format DepthFormat() const { return depth_format_; }
 
-    const vk::raii::ImageView& colorImageView() const { return color_view_; }
+    const vk::raii::ImageView& ColorImageView() const { return color_view_; }
     const vk::raii::Sampler& sampler() const { return sampler_; }
 
     // Returns a descriptor suitable for ImGui::Image()
-    vk::DescriptorImageInfo descriptorInfo() const {
+    vk::DescriptorImageInfo DescriptorInfo() const {
         return {*sampler_, *color_view_, vk::ImageLayout::eShaderReadOnlyOptimal};
     }
 
     // Begin recording: transitions color+depth to attachment layout
-    void beginRendering(const vk::raii::CommandBuffer& cmd);
+    void BeginRendering(const vk::raii::CommandBuffer& cmd);
 
     // End recording: transitions color to shader-read layout (for ImGui sampling)
-    void endRendering(const vk::raii::CommandBuffer& cmd);
+    void EndRendering(const vk::raii::CommandBuffer& cmd);
 
     void resize(uint32_t width, uint32_t height);
 

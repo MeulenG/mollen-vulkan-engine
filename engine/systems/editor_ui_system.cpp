@@ -25,13 +25,13 @@ void EditorUISystem::drawViewport(Scene& scene, float delta_time) {
 
         if (vp_w != pm_offscreen.width() || vp_h != pm_offscreen.height()) {
             pm_offscreen.resize(vp_w, vp_h);
-            pm_viewport_tex = pm_imgui_ctx.registerTexture(
-                *pm_offscreen.sampler(), *pm_offscreen.colorImageView());
+            pm_viewport_tex = pm_imgui_ctx.RegisterTexture(
+                *pm_offscreen.sampler(), *pm_offscreen.ColorImageView());
         }
 
         if (pm_viewport_tex == ImTextureID_Invalid) {
-            pm_viewport_tex = pm_imgui_ctx.registerTexture(
-                *pm_offscreen.sampler(), *pm_offscreen.colorImageView());
+            pm_viewport_tex = pm_imgui_ctx.RegisterTexture(
+                *pm_offscreen.sampler(), *pm_offscreen.ColorImageView());
         }
 
         ImGui::Image(pm_viewport_tex, viewport_size);
@@ -44,7 +44,7 @@ void EditorUISystem::drawViewport(Scene& scene, float delta_time) {
 
         if (active_cam && ImGui::IsItemHovered()) {
             double mx, my;
-            pm_window.getCursorPos(mx, my);
+            pm_window.GetCursorPos(mx, my);
             if (pm_first_mouse) { pm_last_x = mx; pm_last_y = my; pm_first_mouse = false; }
             double dx = mx - pm_last_x, dy = my - pm_last_y;
             pm_last_x = mx; pm_last_y = my;
@@ -54,18 +54,18 @@ void EditorUISystem::drawViewport(Scene& scene, float delta_time) {
             if (ImGui::IsMouseDown(ImGuiMouseButton_Middle))
                 active_cam->pan(float(-dx) * 0.005f, float(dy) * 0.005f);
 
-            float scroll = pm_window.getScrollDelta();
+            float scroll = pm_window.GetScrollDelta();
             if (scroll != 0.0f) active_cam->zoom(scroll * 0.3f);
         } else {
             double mx, my;
-            pm_window.getCursorPos(mx, my);
+            pm_window.GetCursorPos(mx, my);
             pm_last_x = mx; pm_last_y = my;
-            pm_window.getScrollDelta();
+            pm_window.GetScrollDelta();
         }
 
         if (active_cam) {
             float aspect = viewport_size.x / viewport_size.y;
-            active_cam->setPerspective(45.0f, aspect, 0.1f, 1000.0f);
+            active_cam->SetPerspective(45.0f, aspect, 0.1f, 1000.0f);
         }
     }
     ImGui::End();
@@ -74,7 +74,7 @@ void EditorUISystem::drawViewport(Scene& scene, float delta_time) {
 void EditorUISystem::drawProperties(Scene& scene, RenderSystem& render_system) {
     ImGui::Begin("Properties");
 
-    auto& ubo = render_system.sceneData();
+    auto& ubo = render_system.SceneData();
 
     ImGui::SeparatorText("Lighting");
     float light_dir[3] = {ubo.pm_light_dir.x, ubo.pm_light_dir.y, ubo.pm_light_dir.z};
@@ -149,9 +149,9 @@ void EditorUISystem::drawSceneHierarchy(Scene& scene) {
     ImGui::Begin("Scene");
 
     for (auto& entity : scene.entities()) {
-        bool selected = (scene.selectedEntity() == entity->id());
+        bool selected = (scene.SelectedEntity() == entity->id());
         if (ImGui::Selectable(entity->name().c_str(), selected)) {
-            scene.selectEntity(entity->id());
+            scene.SelectEntity(entity->id());
         }
     }
 

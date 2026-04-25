@@ -58,7 +58,7 @@ void Pipeline::bind(const vk::raii::CommandBuffer& command_buffer) {
     command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphics_pipeline_);
 }
 
-std::vector<char> Pipeline::readFile(const std::string& filepath) {
+std::vector<char> Pipeline::ReadFile(const std::string& filepath) {
     std::ifstream file(filepath, std::ios::ate | std::ios::binary);
 
     if (!file.is_open()) {
@@ -79,8 +79,8 @@ void Pipeline::createGraphicsPipeline(
     const std::string& frag_path,
     const PipelineConfig& config) {
 
-    auto vert_module = createShaderModule(readFile(vert_path));
-    auto frag_module = createShaderModule(readFile(frag_path));
+    auto vert_module = createShaderModule(ReadFile(vert_path));
+    auto frag_module = createShaderModule(ReadFile(frag_path));
 
     std::array<vk::PipelineShaderStageCreateInfo, 2> shader_stages{
         vk::PipelineShaderStageCreateInfo{{}, vk::ShaderStageFlagBits::eVertex, *vert_module, "main"},

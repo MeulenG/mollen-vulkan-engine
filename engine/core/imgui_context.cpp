@@ -39,7 +39,7 @@ void ImGuiContext::initImGui(Window& window, Device& device, vk::Format swapchai
     style.FrameRounding = 2.0f;
     style.GrabRounding = 2.0f;
 
-    ImGui_ImplGlfw_InitForVulkan(window.getGLFWWindow(), true);
+    ImGui_ImplGlfw_InitForVulkan(window.GetGLFWWindow(), true);
 
     // No Render Pass
     ImGui_ImplVulkan_InitInfo init_info{};
@@ -47,7 +47,7 @@ void ImGuiContext::initImGui(Window& window, Device& device, vk::Format swapchai
     init_info.PhysicalDevice = *device.physicalDevice();
     init_info.Device = *device.device();
 
-    auto indices = device.findQueueFamilies();
+    auto indices = device.FindQueueFamilies();
     init_info.QueueFamily = indices.graphics_family.value();
     init_info.Queue = *device.graphicsQueue();
     init_info.DescriptorPool = *descriptor_pool_;
@@ -64,7 +64,7 @@ void ImGuiContext::initImGui(Window& window, Device& device, vk::Format swapchai
     ImGui_ImplVulkan_Init(&init_info);
 }
 
-void ImGuiContext::newFrame() {
+void ImGuiContext::NewFrame() {
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
@@ -75,7 +75,7 @@ void ImGuiContext::render(const vk::raii::CommandBuffer& cmd) {
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), *cmd);
 }
 
-ImTextureID ImGuiContext::registerTexture(vk::Sampler sampler, vk::ImageView view,
+ImTextureID ImGuiContext::RegisterTexture(vk::Sampler sampler, vk::ImageView view,
                                            vk::ImageLayout layout) {
     VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(
         static_cast<VkSampler>(sampler),

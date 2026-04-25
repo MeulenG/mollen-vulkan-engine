@@ -4,18 +4,18 @@
 
 namespace mve {
 
-Entity* Scene::createEntity(const std::string& name) {
+Entity* Scene::CreateEntity(const std::string& name) {
     auto entity = std::make_unique<Entity>(pm_next_id++, *this, name);
     Entity* raw = entity.get();
     pm_entities.push_back(std::move(entity));
     return raw;
 }
 
-void Scene::destroyEntity(EntityId id) {
+void Scene::DestroyEntity(EntityId id) {
     pm_pending_destroy.push_back(id);
 }
 
-void Scene::flushDestroyed() {
+void Scene::FlushDestroyed() {
     if (pm_pending_destroy.empty()) return;
 
     for (EntityId id : pm_pending_destroy) {
@@ -32,14 +32,14 @@ void Scene::flushDestroyed() {
     pm_pending_destroy.clear();
 }
 
-Entity* Scene::findEntity(EntityId id) {
+Entity* Scene::FindEntity(EntityId id) {
     for (auto& entity : pm_entities) {
         if (entity->id() == id) return entity.get();
     }
     return nullptr;
 }
 
-Entity* Scene::findEntityByName(const std::string& name) {
+Entity* Scene::FindEntityByName(const std::string& name) {
     for (auto& entity : pm_entities) {
         if (entity->name() == name) return entity.get();
     }

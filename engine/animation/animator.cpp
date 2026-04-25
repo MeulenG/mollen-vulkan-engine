@@ -5,7 +5,7 @@
 namespace mve {
 
 Animator::Animator(const Skeleton& skeleton) : skeleton_{skeleton} {
-    uint32_t count = skeleton_.boneCount();
+    uint32_t count = skeleton_.BoneCount();
 
     // Cache the bind pose defaults
     bind_positions_.resize(count);
@@ -13,14 +13,14 @@ Animator::Animator(const Skeleton& skeleton) : skeleton_{skeleton} {
     bind_scales_.resize(count);
 
     for (uint32_t i = 0; i < count; i++) {
-        const auto& bone = skeleton_.getBone(i);
+        const auto& bone = skeleton_.GetBone(i);
         bind_positions_[i] = bone.bind_position;
         bind_rotations_[i] = bone.bind_rotation;
         bind_scales_[i] = bone.bind_scale;
     }
 
     // Start with identity matrices (bind pose)
-    bone_matrices_ = skeleton_.getIdentityBoneMatrices();
+    bone_matrices_ = skeleton_.GetIdentityBoneMatrices();
 }
 
 void Animator::play(const AnimationClip* clip, bool loop) {
@@ -33,7 +33,7 @@ void Animator::play(const AnimationClip* clip, bool loop) {
 void Animator::stop() {
     playing_ = false;
     current_time_ = 0.0f;
-    bone_matrices_ = skeleton_.getIdentityBoneMatrices();
+    bone_matrices_ = skeleton_.GetIdentityBoneMatrices();
 }
 
 void Animator::update(float delta_time) {
@@ -59,7 +59,7 @@ void Animator::update(float delta_time) {
 
     current_clip_->sample(
         current_time_,
-        skeleton_.boneCount(),
+        skeleton_.BoneCount(),
         bind_positions_,
         bind_rotations_,
         bind_scales_,
@@ -68,10 +68,10 @@ void Animator::update(float delta_time) {
         scales);
 
     // Use M2 pivot-based computation if available, otherwise generic
-    if (skeleton_.hasM2Pivots()) {
-        bone_matrices_ = skeleton_.computeM2BoneMatrices(positions, rotations, scales);
+    if (skeleton_.HasM2Pivots()) {
+        bone_matrices_ = skeleton_.ComputeM2BoneMatrices(positions, rotations, scales);
     } else {
-        bone_matrices_ = skeleton_.computeBoneMatrices(positions, rotations, scales);
+        bone_matrices_ = skeleton_.ComputeBoneMatrices(positions, rotations, scales);
     }
 }
 

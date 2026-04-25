@@ -36,12 +36,12 @@ public:
     void render(Scene& scene, const Camera& active_camera,
                 const vk::raii::CommandBuffer& cmd);
 
-    void updateSceneUBO();
+    void UpdateSceneUBO();
 
-    SceneUBO& sceneData() { return pm_scene_data; }
-    const vk::raii::DescriptorSetLayout& descriptorLayout() const { return pm_descriptor_layout; }
-    DescriptorPool& descriptorPool() { return *pm_descriptor_pool; }
-    const Buffer& sceneUBOBuffer() const { return *pm_scene_ubo; }
+    SceneUBO& SceneData() { return pm_scene_data; }
+    const vk::raii::DescriptorSetLayout& DescriptorLayout() const { return pm_descriptor_layout; }
+    mve::DescriptorPool& GetDescriptorPool() { return *pm_descriptor_pool; }
+    const Buffer& SceneUBOBuffer() const { return *pm_scene_ubo; }
 
 private:
     Device& pm_device;

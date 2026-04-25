@@ -32,7 +32,7 @@ M2Model M2Loader::load(
     return model;
 }
 
-M2Model M2Loader::loadFile(const std::string& m2_path) {
+M2Model M2Loader::LoadFile(const std::string& m2_path) {
     // Read M2 file
     std::ifstream m2_file(m2_path, std::ios::binary | std::ios::ate);
     if (!m2_file.is_open()) {
@@ -113,13 +113,13 @@ void M2Loader::parseBones(const uint8_t* data, const m2::M2Header& header, M2Mod
         bone.bind_rotation = glm::quat{1.0f, 0.0f, 0.0f, 0.0f};
         bone.bind_scale = glm::vec3{1.0f};
 
-        model.skeleton.addBone(bone);
-        model.skeleton.setPivot(i, {src.pivot.x, src.pivot.y, src.pivot.z});
+        model.skeleton.AddBone(bone);
+        model.skeleton.SetPivot(i, {src.pivot.x, src.pivot.y, src.pivot.z});
     }
 
     // For M2 models, inverse bind matrices are not used —
     // the pivot-based computation handles everything.
-    model.skeleton.computeInverseBindMatrices();
+    model.skeleton.ComputeInverseBindMatrices();
 }
 
 void M2Loader::parseTextures(const uint8_t* data, const m2::M2Header& header, M2Model& model) {
@@ -281,7 +281,7 @@ void M2Loader::parseAnimations(const uint8_t* data, uint32_t data_size,
                             !track.scale_keys.empty();
 
             if (has_data) {
-                clip->setBoneTrack(b, track);
+                clip->SetBoneTrack(b, track);
             }
         }
 

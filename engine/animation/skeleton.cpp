@@ -7,7 +7,7 @@
 
 namespace mve {
 
-uint32_t Skeleton::addBone(const Bone& bone) {
+uint32_t Skeleton::AddBone(const Bone& bone) {
     uint32_t index = static_cast<uint32_t>(bones_.size());
     bones_.push_back(bone);
     return index;
@@ -25,8 +25,8 @@ glm::mat4 Skeleton::composeTransform(
     return T * R * S;
 }
 
-void Skeleton::computeInverseBindMatrices() {
-    uint32_t count = boneCount();
+void Skeleton::ComputeInverseBindMatrices() {
+    uint32_t count = BoneCount();
 
     std::vector<glm::mat4> bind_world(count);
     for (uint32_t i = 0; i < count; i++) {
@@ -48,12 +48,12 @@ void Skeleton::computeInverseBindMatrices() {
     }
 }
 
-std::vector<glm::mat4> Skeleton::computeBoneMatrices(
+std::vector<glm::mat4> Skeleton::ComputeBoneMatrices(
     const std::vector<glm::vec3>& positions,
     const std::vector<glm::quat>& rotations,
     const std::vector<glm::vec3>& scales) const {
 
-    uint32_t count = boneCount();
+    uint32_t count = BoneCount();
     std::vector<glm::mat4> world_transforms(count);
     std::vector<glm::mat4> bone_matrices(count);
 
@@ -72,12 +72,12 @@ std::vector<glm::mat4> Skeleton::computeBoneMatrices(
     return bone_matrices;
 }
 
-std::vector<glm::mat4> Skeleton::computeM2BoneMatrices(
+std::vector<glm::mat4> Skeleton::ComputeM2BoneMatrices(
     const std::vector<glm::vec3>& positions,
     const std::vector<glm::quat>& rotations,
     const std::vector<glm::vec3>& scales) const {
 
-    uint32_t count = boneCount();
+    uint32_t count = BoneCount();
     std::vector<glm::mat4> bone_matrices(count, glm::mat4{1.0f});
 
     for (uint32_t i = 0; i < count; i++) {
@@ -100,8 +100,8 @@ std::vector<glm::mat4> Skeleton::computeM2BoneMatrices(
     return bone_matrices;
 }
 
-std::vector<glm::mat4> Skeleton::getIdentityBoneMatrices() const {
-    return std::vector<glm::mat4>(boneCount(), glm::mat4{1.0f});
+std::vector<glm::mat4> Skeleton::GetIdentityBoneMatrices() const {
+    return std::vector<glm::mat4>(BoneCount(), glm::mat4{1.0f});
 }
 
 } // namespace mve

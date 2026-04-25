@@ -33,7 +33,7 @@ public:
     float duration() const { return duration_; }
 
     // Set keyframes for a specific bone
-    void setBoneTrack(uint32_t bone_index, const BoneTrack& track);
+    void SetBoneTrack(uint32_t bone_index, const BoneTrack& track);
 
     // Sample the animation at a given time (in seconds).
     // Returns interpolated local transforms for each bone.

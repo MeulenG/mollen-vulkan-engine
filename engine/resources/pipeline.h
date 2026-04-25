@@ -40,7 +40,7 @@ public:
 
     void bind(const vk::raii::CommandBuffer& command_buffer);
 
-    static std::vector<char> readFile(const std::string& filepath);
+    static std::vector<char> ReadFile(const std::string& filepath);
 
 private:
     void createGraphicsPipeline(

@@ -54,7 +54,7 @@ public:
     static BlpTexture load(const uint8_t* data, uint32_t size);
 
     // Parse a BLP file from disk
-    static BlpTexture loadFile(const std::string& path);
+    static BlpTexture LoadFile(const std::string& path);
 
 private:
     static BlpTexture loadDxt(const BlpHeader& header, const uint8_t* data);

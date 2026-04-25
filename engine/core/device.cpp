@@ -40,7 +40,7 @@ void Device::createInstance() {
         VK_API_VERSION_1_4
     };
 
-    auto extensions = Window::getRequiredInstanceExtensions();
+    auto extensions = Window::GetRequiredInstanceExtensions();
     if (enable_validation_) {
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
@@ -116,7 +116,7 @@ void Device::pickPhysicalDevice() {
 }
 
 void Device::createLogicalDevice() {
-    QueueFamilyIndices indices = findQueueFamilies(*physical_device_);
+    QueueFamilyIndices indices = FindQueueFamilies(*physical_device_);
 
     std::vector<vk::DeviceQueueCreateInfo> queue_create_infos;
     std::set<uint32_t> unique_families = {
@@ -154,7 +154,7 @@ void Device::createLogicalDevice() {
 }
 
 void Device::createCommandPool() {
-    QueueFamilyIndices indices = findQueueFamilies(*physical_device_);
+    QueueFamilyIndices indices = FindQueueFamilies(*physical_device_);
 
     vk::CommandPoolCreateInfo pool_info{
         vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
@@ -165,20 +165,20 @@ void Device::createCommandPool() {
 }
 
 bool Device::isDeviceSuitable(const vk::raii::PhysicalDevice& device) const {
-    QueueFamilyIndices indices = findQueueFamilies(*device);
+    QueueFamilyIndices indices = FindQueueFamilies(*device);
 
     bool extensions_supported = checkDeviceExtensionSupport(device);
 
     bool swapchain_adequate = false;
     if (extensions_supported) {
-        auto support = querySwapchainSupport(*device);
+        auto support = QuerySwapchainSupport(*device);
         swapchain_adequate = !support.formats.empty() && !support.present_modes.empty();
     }
 
-    return indices.isComplete() && extensions_supported && swapchain_adequate;
+    return indices.IsComplete() && extensions_supported && swapchain_adequate;
 }
 
-QueueFamilyIndices Device::findQueueFamilies(vk::PhysicalDevice device) const {
+QueueFamilyIndices Device::FindQueueFamilies(vk::PhysicalDevice device) const {
     QueueFamilyIndices indices;
 
     auto families = device.getQueueFamilyProperties();
@@ -192,13 +192,13 @@ QueueFamilyIndices Device::findQueueFamilies(vk::PhysicalDevice device) const {
             indices.present_family = i;
         }
 
-        if (indices.isComplete()) break;
+        if (indices.IsComplete()) break;
     }
 
     return indices;
 }
 
-SwapchainSupportDetails Device::querySwapchainSupport(vk::PhysicalDevice device) const {
+SwapchainSupportDetails Device::QuerySwapchainSupport(vk::PhysicalDevice device) const {
     return {
         device.getSurfaceCapabilitiesKHR(*surface_),
         device.getSurfaceFormatsKHR(*surface_),
@@ -234,7 +234,7 @@ bool Device::checkValidationLayerSupport() const {
     return true;
 }
 
-vk::Format Device::findSupportedFormat(
+vk::Format Device::FindSupportedFormat(
     const std::vector<vk::Format>& candidates,
     vk::ImageTiling tiling,
     vk::FormatFeatureFlags features) const {
@@ -250,14 +250,14 @@ vk::Format Device::findSupportedFormat(
     throw std::runtime_error("Failed to find supported format");
 }
 
-vk::Format Device::findDepthFormat() const {
-    return findSupportedFormat(
+vk::Format Device::FindDepthFormat() const {
+    return FindSupportedFormat(
         {vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint},
         vk::ImageTiling::eOptimal,
         vk::FormatFeatureFlagBits::eDepthStencilAttachment);
 }
 
-uint32_t Device::findMemoryType(uint32_t type_filter, vk::MemoryPropertyFlags properties) const {
+uint32_t Device::FindMemoryType(uint32_t type_filter, vk::MemoryPropertyFlags properties) const {
     auto mem_props = physical_device_.getMemoryProperties();
 
     for (uint32_t i = 0; i < mem_props.memoryTypeCount; i++) {
@@ -269,7 +269,7 @@ uint32_t Device::findMemoryType(uint32_t type_filter, vk::MemoryPropertyFlags pr
     throw std::runtime_error("Failed to find suitable memory type");
 }
 
-vk::raii::CommandBuffer Device::beginSingleTimeCommands() {
+vk::raii::CommandBuffer Device::BeginSingleTimeCommands() {
     vk::CommandBufferAllocateInfo alloc_info{*command_pool_, vk::CommandBufferLevel::ePrimary, 1};
 
     auto buffers = device_.allocateCommandBuffers(alloc_info);
@@ -279,7 +279,7 @@ vk::raii::CommandBuffer Device::beginSingleTimeCommands() {
     return command_buffer;
 }
 
-void Device::endSingleTimeCommands(vk::raii::CommandBuffer command_buffer) {
+void Device::EndSingleTimeCommands(vk::raii::CommandBuffer command_buffer) {
     command_buffer.end();
 
     vk::SubmitInfo submit_info{};

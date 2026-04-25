@@ -29,33 +29,33 @@ public:
     Skeleton() = default;
 
     // Add a bone. Returns its index.
-    uint32_t addBone(const Bone& bone);
+    uint32_t AddBone(const Bone& bone);
 
-    uint32_t boneCount() const { return static_cast<uint32_t>(bones_.size()); }
-    const Bone& getBone(uint32_t index) const { return bones_[index]; }
+    uint32_t BoneCount() const { return static_cast<uint32_t>(bones_.size()); }
+    const Bone& GetBone(uint32_t index) const { return bones_[index]; }
 
     // See docs/wiki/Math-Skeletal-Animation.md
-    void computeInverseBindMatrices();
+    void ComputeInverseBindMatrices();
 
-    std::vector<glm::mat4> computeBoneMatrices(
+    std::vector<glm::mat4> ComputeBoneMatrices(
         const std::vector<glm::vec3>& positions,
         const std::vector<glm::quat>& rotations,
         const std::vector<glm::vec3>& scales) const;
 
-    std::vector<glm::mat4> computeM2BoneMatrices(
+    std::vector<glm::mat4> ComputeM2BoneMatrices(
         const std::vector<glm::vec3>& positions,
         const std::vector<glm::quat>& rotations,
         const std::vector<glm::vec3>& scales) const;
 
     // Store pivot points for M2 mode
-    void setPivot(uint32_t bone_index, glm::vec3 pivot) {
+    void SetPivot(uint32_t bone_index, glm::vec3 pivot) {
         if (pivots_.size() <= bone_index) pivots_.resize(bone_index + 1, glm::vec3{0.0f});
         pivots_[bone_index] = pivot;
     }
-    bool hasM2Pivots() const { return !pivots_.empty(); }
+    bool HasM2Pivots() const { return !pivots_.empty(); }
 
     // Get the bind-pose bone matrices (for static/un-animated rendering)
-    std::vector<glm::mat4> getIdentityBoneMatrices() const;
+    std::vector<glm::mat4> GetIdentityBoneMatrices() const;
 
     static constexpr uint32_t MAX_BONES = 256;
 

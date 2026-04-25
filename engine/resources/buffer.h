@@ -25,7 +25,7 @@ public:
     void unmap();
     void write(const void* data, vk::DeviceSize size);
 
-    static Buffer createWithStaging(
+    static Buffer CreateWithStaging(
         Device& device,
         const void* data,
         vk::DeviceSize size,

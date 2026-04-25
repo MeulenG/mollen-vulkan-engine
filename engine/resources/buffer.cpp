@@ -18,7 +18,7 @@ Buffer::Buffer(
 
     memory_ = device_.device().allocateMemory({
         mem_requirements.size,
-        device_.findMemoryType(mem_requirements.memoryTypeBits, properties)
+        device_.FindMemoryType(mem_requirements.memoryTypeBits, properties)
     });
 
     buffer_.bindMemory(*memory_, 0);
@@ -44,7 +44,7 @@ void Buffer::write(const void* data, vk::DeviceSize size) {
     unmap();
 }
 
-Buffer Buffer::createWithStaging(
+Buffer Buffer::CreateWithStaging(
     Device& device,
     const void* data,
     vk::DeviceSize size,
@@ -63,9 +63,9 @@ Buffer Buffer::createWithStaging(
         vk::MemoryPropertyFlagBits::eDeviceLocal
     };
 
-    auto cmd = device.beginSingleTimeCommands();
+    auto cmd = device.BeginSingleTimeCommands();
     cmd.copyBuffer(*staging.buffer(), *gpu_buffer.buffer(), vk::BufferCopy{0, 0, size});
-    device.endSingleTimeCommands(std::move(cmd));
+    device.EndSingleTimeCommands(std::move(cmd));
 
     return gpu_buffer;
 }

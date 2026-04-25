@@ -44,7 +44,7 @@ void Image::createImage(uint32_t width, uint32_t height, vk::Format format, uint
     auto mem_reqs = image_.getMemoryRequirements();
     memory_ = device_.device().allocateMemory({
         mem_reqs.size,
-        device_.findMemoryType(mem_reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal)
+        device_.FindMemoryType(mem_reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal)
     });
     image_.bindMemory(*memory_, 0);
 }
@@ -85,12 +85,12 @@ void Image::uploadPixels(const uint8_t* pixels, uint32_t width, uint32_t height)
 
     transitionLayout(vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
 
-    auto cmd = device_.beginSingleTimeCommands();
+    auto cmd = device_.BeginSingleTimeCommands();
     vk::BufferImageCopy region{};
     region.imageSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1};
     region.imageExtent = vk::Extent3D{width, height, 1};
     cmd.copyBufferToImage(*staging.buffer(), *image_, vk::ImageLayout::eTransferDstOptimal, region);
-    device_.endSingleTimeCommands(std::move(cmd));
+    device_.EndSingleTimeCommands(std::move(cmd));
 
     transitionLayout(vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
 }
@@ -120,7 +120,7 @@ void Image::uploadCompressed(const BlpTexture& blp) {
 
     transitionLayout(vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, blp.mip_count);
 
-    auto cmd = device_.beginSingleTimeCommands();
+    auto cmd = device_.BeginSingleTimeCommands();
 
     // Issue one copy command per mip level
     staging_offset = 0;
@@ -141,13 +141,13 @@ void Image::uploadCompressed(const BlpTexture& blp) {
         staging_offset += blp.mip_data[m].size();
     }
 
-    device_.endSingleTimeCommands(std::move(cmd));
+    device_.EndSingleTimeCommands(std::move(cmd));
 
     transitionLayout(vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, blp.mip_count);
 }
 
 void Image::transitionLayout(vk::ImageLayout old_layout, vk::ImageLayout new_layout, uint32_t mip_levels) {
-    auto cmd = device_.beginSingleTimeCommands();
+    auto cmd = device_.BeginSingleTimeCommands();
 
     vk::ImageMemoryBarrier2 barrier{};
     barrier.oldLayout = old_layout;
@@ -175,10 +175,10 @@ void Image::transitionLayout(vk::ImageLayout old_layout, vk::ImageLayout new_lay
     dep_info.setImageMemoryBarriers(barrier);
     cmd.pipelineBarrier2(dep_info);
 
-    device_.endSingleTimeCommands(std::move(cmd));
+    device_.EndSingleTimeCommands(std::move(cmd));
 }
 
-Image Image::createCheckerboard(Device& device, uint32_t size, uint32_t cell_size) {
+Image Image::CreateCheckerboard(Device& device, uint32_t size, uint32_t cell_size) {
     std::vector<uint8_t> pixels(size * size * 4);
 
     for (uint32_t y = 0; y < size; y++) {

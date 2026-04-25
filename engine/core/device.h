@@ -15,7 +15,7 @@ struct QueueFamilyIndices {
     std::optional<uint32_t> graphics_family;
     std::optional<uint32_t> present_family;
 
-    bool isComplete() const {
+    bool IsComplete() const {
         return graphics_family.has_value() && present_family.has_value();
     }
 };
@@ -41,19 +41,19 @@ public:
     const vk::raii::Queue& presentQueue() const { return present_queue_; }
     const vk::raii::CommandPool& commandPool() const { return command_pool_; }
 
-    QueueFamilyIndices findQueueFamilies() const { return findQueueFamilies(*physical_device_); }
-    SwapchainSupportDetails querySwapchainSupport() const { return querySwapchainSupport(*physical_device_); }
+    QueueFamilyIndices FindQueueFamilies() const { return FindQueueFamilies(*physical_device_); }
+    SwapchainSupportDetails QuerySwapchainSupport() const { return QuerySwapchainSupport(*physical_device_); }
 
-    vk::Format findSupportedFormat(
+    vk::Format FindSupportedFormat(
         const std::vector<vk::Format>& candidates,
         vk::ImageTiling tiling,
         vk::FormatFeatureFlags features) const;
 
-    uint32_t findMemoryType(uint32_t type_filter, vk::MemoryPropertyFlags properties) const;
-    vk::Format findDepthFormat() const;
+    uint32_t FindMemoryType(uint32_t type_filter, vk::MemoryPropertyFlags properties) const;
+    vk::Format FindDepthFormat() const;
 
-    vk::raii::CommandBuffer beginSingleTimeCommands();
-    void endSingleTimeCommands(vk::raii::CommandBuffer command_buffer);
+    vk::raii::CommandBuffer BeginSingleTimeCommands();
+    void EndSingleTimeCommands(vk::raii::CommandBuffer command_buffer);
 
 private:
     void createInstance();
@@ -64,8 +64,8 @@ private:
     void createCommandPool();
 
     bool isDeviceSuitable(const vk::raii::PhysicalDevice& device) const;
-    QueueFamilyIndices findQueueFamilies(vk::PhysicalDevice device) const;
-    SwapchainSupportDetails querySwapchainSupport(vk::PhysicalDevice device) const;
+    QueueFamilyIndices FindQueueFamilies(vk::PhysicalDevice device) const;
+    SwapchainSupportDetails QuerySwapchainSupport(vk::PhysicalDevice device) const;
     bool checkDeviceExtensionSupport(const vk::raii::PhysicalDevice& device) const;
     bool checkValidationLayerSupport() const;
 

@@ -17,14 +17,14 @@ public:
     Renderer(const Renderer&) = delete;
     Renderer& operator=(const Renderer&) = delete;
 
-    bool beginFrame(vk::raii::CommandBuffer** out_command_buffer);
-    void beginRendering(const vk::raii::CommandBuffer& command_buffer, bool with_depth = true);
-    void endRendering(const vk::raii::CommandBuffer& command_buffer);
-    void endFrame(const vk::raii::CommandBuffer& command_buffer);
+    bool BeginFrame(vk::raii::CommandBuffer** out_command_buffer);
+    void BeginRendering(const vk::raii::CommandBuffer& command_buffer, bool with_depth = true);
+    void EndRendering(const vk::raii::CommandBuffer& command_buffer);
+    void EndFrame(const vk::raii::CommandBuffer& command_buffer);
 
-    vk::Extent2D getSwapchainExtent() const { return swapchain_->extent(); }
-    vk::Format getSwapchainImageFormat() const { return swapchain_->imageFormat(); }
-    vk::Format getDepthFormat() const { return depth_format_; }
+    vk::Extent2D GetSwapchainExtent() const { return swapchain_->extent(); }
+    vk::Format GetSwapchainImageFormat() const { return swapchain_->ImageFormat(); }
+    vk::Format GetDepthFormat() const { return depth_format_; }
 
 private:
     void createCommandBuffers();

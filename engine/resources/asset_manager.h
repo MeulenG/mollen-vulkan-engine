@@ -23,18 +23,18 @@ public:
 
     // Load an M2 model and spawn a fully-wired entity in the scene.
     // Caches M2 data and textures so loading the same model twice shares GPU resources.
-    Entity* loadM2IntoScene(const std::string& m2_path, Scene& scene);
+    Entity* LoadM2IntoScene(const std::string& m2_path, Scene& scene);
 
     // Set the descriptor layout + pool that entities will use.
     // Must be called before loadM2IntoScene.
-    void setDescriptorResources(
+    void SetDescriptorResources(
         const vk::raii::DescriptorSetLayout& layout,
         DescriptorPool& pool,
         const Buffer& scene_ubo);
 
-    MeshHandle getMesh(const std::string& key) const;
-    TextureHandle getTexture(const std::string& key) const;
-    TextureHandle getDefaultTexture();
+    MeshHandle GetMesh(const std::string& key) const;
+    TextureHandle GetTexture(const std::string& key) const;
+    TextureHandle GetDefaultTexture();
 
 private:
     Device& pm_device;

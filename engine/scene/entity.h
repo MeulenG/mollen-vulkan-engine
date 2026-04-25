@@ -29,11 +29,11 @@ public:
 
     EntityId id() const { return pm_id; }
     const std::string& name() const { return pm_name; }
-    void setName(const std::string& name) { pm_name = name; }
+    void SetName(const std::string& name) { pm_name = name; }
     Scene& scene() { return pm_scene; }
 
     template<typename T, typename... Args>
-    T* addComponent(Args&&... args) {
+    T* AddComponent(Args&&... args) {
         auto ptr = std::make_unique<T>(std::forward<Args>(args)...);
         T* raw = ptr.get();
         pm_components[std::type_index(typeid(T))] = std::move(ptr);
@@ -41,24 +41,24 @@ public:
     }
 
     template<typename T>
-    T* getComponent() {
+    T* GetComponent() {
         auto it = pm_components.find(std::type_index(typeid(T)));
         return it != pm_components.end() ? static_cast<T*>(it->second.get()) : nullptr;
     }
 
     template<typename T>
-    const T* getComponent() const {
+    const T* GetComponent() const {
         auto it = pm_components.find(std::type_index(typeid(T)));
         return it != pm_components.end() ? static_cast<const T*>(it->second.get()) : nullptr;
     }
 
     template<typename T>
-    bool hasComponent() const {
+    bool HasComponent() const {
         return pm_components.count(std::type_index(typeid(T))) > 0;
     }
 
     template<typename T>
-    void removeComponent() {
+    void RemoveComponent() {
         pm_components.erase(std::type_index(typeid(T)));
     }
 

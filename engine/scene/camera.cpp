@@ -5,7 +5,7 @@
 
 namespace mve {
 
-void Camera::setOrbit(float distance, float yaw, float pitch) {
+void Camera::SetOrbit(float distance, float yaw, float pitch) {
     distance_ = distance;
     yaw_ = yaw;
     pitch_ = pitch;
@@ -37,17 +37,17 @@ void Camera::zoom(float delta) {
     updatePosition();
 }
 
-void Camera::setPerspective(float fov_degrees, float aspect, float near, float far) {
+void Camera::SetPerspective(float fov_degrees, float aspect, float near, float far) {
     projection_ = glm::perspective(glm::radians(fov_degrees), aspect, near, far);
     // Vulkan clip space has inverted Y
     projection_[1][1] *= -1.0f;
 }
 
-glm::mat4 Camera::getViewMatrix() const {
+glm::mat4 Camera::GetViewMatrix() const {
     return glm::lookAt(position_, target_, up_);
 }
 
-glm::vec3 Camera::getPosition() const {
+glm::vec3 Camera::GetPosition() const {
     return position_;
 }
 

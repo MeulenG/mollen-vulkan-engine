@@ -30,7 +30,7 @@ BlpTexture BlpLoader::load(const uint8_t* data, uint32_t size) {
     }
 }
 
-BlpTexture BlpLoader::loadFile(const std::string& path) {
+BlpTexture BlpLoader::LoadFile(const std::string& path) {
     std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
         throw std::runtime_error("Failed to open BLP file: " + path);

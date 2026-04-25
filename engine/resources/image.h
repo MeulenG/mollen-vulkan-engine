@@ -21,15 +21,15 @@ public:
     Image(Image&&) = default;
     Image& operator=(Image&&) = default;
 
-    const vk::raii::ImageView& imageView() const { return image_view_; }
+    const vk::raii::ImageView& ImageView() const { return image_view_; }
     const vk::raii::Sampler& sampler() const { return sampler_; }
 
-    vk::DescriptorImageInfo descriptorInfo() const {
+    vk::DescriptorImageInfo DescriptorInfo() const {
         return {*sampler_, *image_view_, vk::ImageLayout::eShaderReadOnlyOptimal};
     }
 
     // Generate a simple checkerboard test texture
-    static Image createCheckerboard(Device& device, uint32_t size = 64, uint32_t cell_size = 8);
+    static Image CreateCheckerboard(Device& device, uint32_t size = 64, uint32_t cell_size = 8);
 
 private:
     void createImage(uint32_t width, uint32_t height, vk::Format format, uint32_t mip_levels = 1);

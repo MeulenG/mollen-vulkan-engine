@@ -42,8 +42,8 @@ public:
     void draw(const vk::raii::CommandBuffer& command_buffer) const;
 
     static Mesh CreatePyramid(Device& device, glm::vec3 color = {0.8f, 0.8f, 0.8f});
-    static Mesh createCube(Device& device, glm::vec3 color = {0.8f, 0.8f, 0.8f});
-    static Mesh createGroundPlane(Device& device, float size = 20.0f);
+    static Mesh CreateCube(Device& device, glm::vec3 color = {0.8f, 0.8f, 0.8f});
+    static Mesh CreateGroundPlane(Device& device, float size = 20.0f);
 
 private:
     uint32_t index_count_;

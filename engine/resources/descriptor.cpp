@@ -4,7 +4,7 @@
 
 namespace mve {
 
-DescriptorSetLayoutBuilder& DescriptorSetLayoutBuilder::addBinding(
+DescriptorSetLayoutBuilder& DescriptorSetLayoutBuilder::AddBinding(
     uint32_t binding,
     vk::DescriptorType type,
     vk::ShaderStageFlags stage_flags,
@@ -40,7 +40,7 @@ DescriptorPool::DescriptorPool(
     pool_ = device_.device().createDescriptorPool(pool_info);
 }
 
-vk::raii::DescriptorSet DescriptorPool::allocateSet(const vk::raii::DescriptorSetLayout& layout) {
+vk::raii::DescriptorSet DescriptorPool::AllocateSet(const vk::raii::DescriptorSetLayout& layout) {
     vk::DescriptorSetLayout raw_layout = *layout;
 
     vk::DescriptorSetAllocateInfo alloc_info{};
@@ -52,7 +52,7 @@ vk::raii::DescriptorSet DescriptorPool::allocateSet(const vk::raii::DescriptorSe
     return std::move(sets[0]);
 }
 
-DescriptorWriter& DescriptorWriter::writeBuffer(
+DescriptorWriter& DescriptorWriter::WriteBuffer(
     uint32_t binding,
     const vk::DescriptorBufferInfo& buffer_info,
     vk::DescriptorType type) {
@@ -69,7 +69,7 @@ DescriptorWriter& DescriptorWriter::writeBuffer(
     return *this;
 }
 
-DescriptorWriter& DescriptorWriter::writeImage(
+DescriptorWriter& DescriptorWriter::WriteImage(
     uint32_t binding,
     const vk::DescriptorImageInfo& image_info,
     vk::DescriptorType type) {

@@ -27,7 +27,7 @@ void OffscreenPass::createResources() {
     auto color_reqs = color_image_.getMemoryRequirements();
     color_memory_ = device_.device().allocateMemory({
         color_reqs.size,
-        device_.findMemoryType(color_reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal)
+        device_.FindMemoryType(color_reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal)
     });
     color_image_.bindMemory(*color_memory_, 0);
 
@@ -52,7 +52,7 @@ void OffscreenPass::createResources() {
     auto depth_reqs = depth_image_.getMemoryRequirements();
     depth_memory_ = device_.device().allocateMemory({
         depth_reqs.size,
-        device_.findMemoryType(depth_reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal)
+        device_.FindMemoryType(depth_reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal)
     });
     depth_image_.bindMemory(*depth_memory_, 0);
 
@@ -72,7 +72,7 @@ void OffscreenPass::createResources() {
     sampler_ = device_.device().createSampler(sampler_info);
 }
 
-void OffscreenPass::beginRendering(const vk::raii::CommandBuffer& cmd) {
+void OffscreenPass::BeginRendering(const vk::raii::CommandBuffer& cmd) {
     transitionImage(cmd, *color_image_,
         vk::ImageLayout::eUndefined,
         vk::ImageLayout::eColorAttachmentOptimal);
@@ -111,7 +111,7 @@ void OffscreenPass::beginRendering(const vk::raii::CommandBuffer& cmd) {
     cmd.setScissor(0, scissor);
 }
 
-void OffscreenPass::endRendering(const vk::raii::CommandBuffer& cmd) {
+void OffscreenPass::EndRendering(const vk::raii::CommandBuffer& cmd) {
     cmd.endRendering();
 
     // Transition color image to shader-readable for ImGui to sample

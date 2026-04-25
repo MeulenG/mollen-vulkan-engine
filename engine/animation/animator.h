@@ -19,12 +19,12 @@ public:
     // delta_time is in seconds (e.g., 0.016 for 60fps).
     void update(float delta_time);
 
-    bool isPlaying() const { return playing_; }
-    float currentTime() const { return current_time_; }
+    bool IsPlaying() const { return playing_; }
+    float CurrentTime() const { return current_time_; }
 
     // The bone matrices to upload to the GPU.
     // Each matrix = current_world * inverse_bind for that bone.
-    const std::vector<glm::mat4>& boneMatrices() const { return bone_matrices_; }
+    const std::vector<glm::mat4>& BoneMatrices() const { return bone_matrices_; }
 
 private:
     const Skeleton& skeleton_;

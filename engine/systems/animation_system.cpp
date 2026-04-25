@@ -13,7 +13,7 @@ void AnimationSystem::update(Scene& scene, float delta_time) {
             skel.pm_animator->update(delta_time * skel.pm_speed);
 
             // Upload bone matrices to GPU
-            auto matrices = skel.pm_animator->boneMatrices();
+            auto matrices = skel.pm_animator->BoneMatrices();
             matrices.resize(Skeleton::MAX_BONES, glm::mat4{1.0f});
             vk::DeviceSize size = Skeleton::MAX_BONES * sizeof(glm::mat4);
             mat.pm_bone_buffer->write(matrices.data(), size);

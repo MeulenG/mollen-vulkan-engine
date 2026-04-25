@@ -9,7 +9,7 @@ namespace mve {
 
 RenderSystem::RenderSystem(Device& device, OffscreenPass& offscreen)
     : pm_device{device}, pm_offscreen{offscreen},
-      pm_ground_mesh{Mesh::createGroundPlane(device, 30.0f)} {
+      pm_ground_mesh{Mesh::CreateGroundPlane(device, 30.0f)} {
 
     pm_scene_data.pm_light_dir = glm::normalize(glm::vec3{0.5f, 1.0f, 0.3f});
     pm_scene_data.pm_ambient = 0.15f;
@@ -22,9 +22,9 @@ void RenderSystem::init() {
 
     // Descriptor layout: binding 0 = UBO, binding 1 = texture, binding 2 = bones
     pm_descriptor_layout = DescriptorSetLayoutBuilder{pm_device}
-        .addBinding(0, vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eFragment)
-        .addBinding(1, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
-        .addBinding(2, vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eVertex)
+        .AddBinding(0, vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eFragment)
+        .AddBinding(1, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
+        .AddBinding(2, vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eVertex)
         .build();
 
     pm_descriptor_pool = std::make_unique<DescriptorPool>(pm_device, 100, std::vector<vk::DescriptorPoolSize>{
@@ -49,8 +49,8 @@ void RenderSystem::init() {
 
     auto model_config = PipelineConfig::defaultConfig();
     model_config.pipeline_layout = *pm_model_pipeline_layout;
-    model_config.color_attachment_format = pm_offscreen.colorFormat();
-    model_config.depth_attachment_format = pm_offscreen.depthFormat();
+    model_config.color_attachment_format = pm_offscreen.ColorFormat();
+    model_config.depth_attachment_format = pm_offscreen.DepthFormat();
     model_config.binding_descriptions = Vertex::getBindingDescriptions();
     model_config.attribute_descriptions = Vertex::getAttributeDescriptions();
 
@@ -63,8 +63,8 @@ void RenderSystem::init() {
 
     auto bg_config = PipelineConfig::defaultConfig();
     bg_config.pipeline_layout = *pm_bg_pipeline_layout;
-    bg_config.color_attachment_format = pm_offscreen.colorFormat();
-    bg_config.depth_attachment_format = pm_offscreen.depthFormat();
+    bg_config.color_attachment_format = pm_offscreen.ColorFormat();
+    bg_config.depth_attachment_format = pm_offscreen.DepthFormat();
     bg_config.depth_stencil_info.depthTestEnable = vk::False;
     bg_config.depth_stencil_info.depthWriteEnable = vk::False;
     bg_config.rasterization_info.cullMode = vk::CullModeFlagBits::eNone;
@@ -83,8 +83,8 @@ void RenderSystem::init() {
 
     auto ground_config = PipelineConfig::defaultConfig();
     ground_config.pipeline_layout = *pm_ground_pipeline_layout;
-    ground_config.color_attachment_format = pm_offscreen.colorFormat();
-    ground_config.depth_attachment_format = pm_offscreen.depthFormat();
+    ground_config.color_attachment_format = pm_offscreen.ColorFormat();
+    ground_config.depth_attachment_format = pm_offscreen.DepthFormat();
     ground_config.binding_descriptions = Vertex::getBindingDescriptions();
     ground_config.attribute_descriptions = Vertex::getAttributeDescriptions();
     ground_config.rasterization_info.cullMode = vk::CullModeFlagBits::eNone;
@@ -101,13 +101,13 @@ void RenderSystem::init() {
         ground_config);
 }
 
-void RenderSystem::updateSceneUBO() {
+void RenderSystem::UpdateSceneUBO() {
     pm_scene_ubo->write(&pm_scene_data, sizeof(SceneUBO));
 }
 
 void RenderSystem::render(Scene& scene, const Camera& active_camera,
                            const vk::raii::CommandBuffer& cmd) {
-    pm_offscreen.beginRendering(cmd);
+    pm_offscreen.BeginRendering(cmd);
 
     // Background gradient
     pm_bg_pipeline->bind(cmd);
@@ -119,7 +119,7 @@ void RenderSystem::render(Scene& scene, const Camera& active_camera,
         glm::mat4 ground_model{1.0f};
         PushConstants ground_push{};
         ground_push.pm_model = ground_model;
-        ground_push.pm_mvp = active_camera.getProjectionMatrix() * active_camera.getViewMatrix() * ground_model;
+        ground_push.pm_mvp = active_camera.GetProjectionMatrix() * active_camera.GetViewMatrix() * ground_model;
         cmd.pushConstants<PushConstants>(
             *pm_ground_pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, ground_push);
 
@@ -142,7 +142,7 @@ void RenderSystem::render(Scene& scene, const Camera& active_camera,
             glm::mat4 model = transform.modelMatrix();
             PushConstants push{};
             push.pm_model = model;
-            push.pm_mvp = active_camera.getProjectionMatrix() * active_camera.getViewMatrix() * model;
+            push.pm_mvp = active_camera.GetProjectionMatrix() * active_camera.GetViewMatrix() * model;
             cmd.pushConstants<PushConstants>(
                 *pm_model_pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, push);
 
@@ -150,7 +150,7 @@ void RenderSystem::render(Scene& scene, const Camera& active_camera,
             mesh_comp.pm_mesh->draw(cmd);
         });
 
-    pm_offscreen.endRendering(cmd);
+    pm_offscreen.EndRendering(cmd);
 }
 
 } // namespace mve

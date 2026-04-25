@@ -14,17 +14,17 @@ public:
     Swapchain(const Swapchain&) = delete;
     Swapchain& operator=(const Swapchain&) = delete;
 
-    vk::Format imageFormat() const { return image_format_; }
+    vk::Format ImageFormat() const { return image_format_; }
     vk::Extent2D extent() const { return extent_; }
-    uint32_t imageCount() const { return static_cast<uint32_t>(images_.size()); }
+    uint32_t ImageCount() const { return static_cast<uint32_t>(images_.size()); }
 
-    vk::Image getImage(uint32_t index) const { return images_[index]; }
-    const vk::raii::ImageView& getImageView(uint32_t index) const { return image_views_[index]; }
+    vk::Image GetImage(uint32_t index) const { return images_[index]; }
+    const vk::raii::ImageView& GetImageView(uint32_t index) const { return image_views_[index]; }
 
-    vk::Result acquireNextImage(uint32_t* image_index);
-    vk::Result submitCommandBuffer(const vk::raii::CommandBuffer& buffer, uint32_t image_index);
+    vk::Result AcquireNextImage(uint32_t* image_index);
+    vk::Result SubmitCommandBuffer(const vk::raii::CommandBuffer& buffer, uint32_t image_index);
 
-    uint32_t currentFrame() const { return current_frame_; }
+    uint32_t CurrentFrame() const { return current_frame_; }
 
 private:
     void createSwapchain();

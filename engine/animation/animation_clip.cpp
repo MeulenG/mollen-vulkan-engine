@@ -5,7 +5,7 @@ namespace mve {
 AnimationClip::AnimationClip(const std::string& name, float duration)
     : name_{name}, duration_{duration} {}
 
-void AnimationClip::setBoneTrack(uint32_t bone_index, const BoneTrack& track) {
+void AnimationClip::SetBoneTrack(uint32_t bone_index, const BoneTrack& track) {
     tracks_.emplace_back(bone_index, track);
 }
 

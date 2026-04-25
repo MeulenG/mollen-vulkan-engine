@@ -12,19 +12,19 @@ class Camera {
 public:
     Camera() = default;
 
-    void setOrbit(float distance, float yaw, float pitch);
-    void setTarget(glm::vec3 target) { target_ = target; }
+    void SetOrbit(float distance, float yaw, float pitch);
+    void SetTarget(glm::vec3 target) { target_ = target; }
 
     void rotate(float delta_yaw, float delta_pitch);
     void pan(float dx, float dy);
     void zoom(float delta);
 
-    void setPerspective(float fov_degrees, float aspect, float near, float far);
+    void SetPerspective(float fov_degrees, float aspect, float near, float far);
 
-    glm::mat4 getViewMatrix() const;
-    glm::mat4 getProjectionMatrix() const { return projection_; }
+    glm::mat4 GetViewMatrix() const;
+    glm::mat4 GetProjectionMatrix() const { return projection_; }
 
-    glm::vec3 getPosition() const;
+    glm::vec3 GetPosition() const;
 
 private:
     void updatePosition();

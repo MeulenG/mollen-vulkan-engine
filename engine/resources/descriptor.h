@@ -14,7 +14,7 @@ class DescriptorSetLayoutBuilder {
 public:
     DescriptorSetLayoutBuilder(Device& device) : device_{device} {}
 
-    DescriptorSetLayoutBuilder& addBinding(
+    DescriptorSetLayoutBuilder& AddBinding(
         uint32_t binding,
         vk::DescriptorType type,
         vk::ShaderStageFlags stage_flags,
@@ -38,7 +38,7 @@ public:
     DescriptorPool(const DescriptorPool&) = delete;
     DescriptorPool& operator=(const DescriptorPool&) = delete;
 
-    vk::raii::DescriptorSet allocateSet(const vk::raii::DescriptorSetLayout& layout);
+    vk::raii::DescriptorSet AllocateSet(const vk::raii::DescriptorSetLayout& layout);
 
 private:
     Device& device_;
@@ -50,12 +50,12 @@ class DescriptorWriter {
 public:
     DescriptorWriter() = default;
 
-    DescriptorWriter& writeBuffer(
+    DescriptorWriter& WriteBuffer(
         uint32_t binding,
         const vk::DescriptorBufferInfo& buffer_info,
         vk::DescriptorType type = vk::DescriptorType::eUniformBuffer);
 
-    DescriptorWriter& writeImage(
+    DescriptorWriter& WriteImage(
         uint32_t binding,
         const vk::DescriptorImageInfo& image_info,
         vk::DescriptorType type = vk::DescriptorType::eCombinedImageSampler);

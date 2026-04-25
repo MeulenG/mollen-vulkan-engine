@@ -64,7 +64,7 @@ public:
         const uint8_t* skin_data = nullptr, uint32_t skin_size = 0);
 
     // Load from file paths
-    static M2Model loadFile(const std::string& m2_path);
+    static M2Model LoadFile(const std::string& m2_path);
 
 private:
     static void parseHeader(const uint8_t* data, uint32_t size, M2Model& model);

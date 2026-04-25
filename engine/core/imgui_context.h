@@ -19,11 +19,11 @@ public:
     ImGuiContext(const ImGuiContext&) = delete;
     ImGuiContext& operator=(const ImGuiContext&) = delete;
 
-    void newFrame();
+    void NewFrame();
 
     void render(const vk::raii::CommandBuffer& cmd);
 
-    ImTextureID registerTexture(vk::Sampler sampler, vk::ImageView view,
+    ImTextureID RegisterTexture(vk::Sampler sampler, vk::ImageView view,
                                 vk::ImageLayout layout = vk::ImageLayout::eShaderReadOnlyOptimal);
 
 private:

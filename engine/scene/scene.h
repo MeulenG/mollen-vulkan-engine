@@ -14,12 +14,12 @@ class Scene {
 public:
     Scene() = default;
 
-    Entity* createEntity(const std::string& name = "Entity");
-    void destroyEntity(EntityId id);
-    void flushDestroyed();
+    Entity* CreateEntity(const std::string& name = "Entity");
+    void DestroyEntity(EntityId id);
+    void FlushDestroyed();
 
-    Entity* findEntity(EntityId id);
-    Entity* findEntityByName(const std::string& name);
+    Entity* FindEntity(EntityId id);
+    Entity* FindEntityByName(const std::string& name);
     const std::vector<std::unique_ptr<Entity>>& entities() const { return pm_entities; }
 
     // Query: iterate all entities that have ALL of the specified component types.
@@ -27,15 +27,15 @@ public:
     template<typename... Comps, typename Func>
     void each(Func&& func) {
         for (auto& entity : pm_entities) {
-            if ((entity->hasComponent<Comps>() && ...)) {
-                func(*entity, *entity->getComponent<Comps>()...);
+            if ((entity->HasComponent<Comps>() && ...)) {
+                func(*entity, *entity->GetComponent<Comps>()...);
             }
         }
     }
 
-    EntityId selectedEntity() const { return pm_selected; }
-    void selectEntity(EntityId id) { pm_selected = id; }
-    void clearSelection() { pm_selected = NULL_ENTITY; }
+    EntityId SelectedEntity() const { return pm_selected; }
+    void SelectEntity(EntityId id) { pm_selected = id; }
+    void ClearSelection() { pm_selected = NULL_ENTITY; }
 
 private:
     std::vector<std::unique_ptr<Entity>> pm_entities;

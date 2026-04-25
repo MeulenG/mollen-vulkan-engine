@@ -6,8 +6,8 @@ namespace mve {
 
 Renderer::Renderer(Window& window, Device& device)
     : window_{window}, device_{device} {
-    depth_format_ = device_.findDepthFormat();
-    swapchain_ = std::make_unique<Swapchain>(device_, window_.getExtent());
+    depth_format_ = device_.FindDepthFormat();
+    swapchain_ = std::make_unique<Swapchain>(device_, window_.GetExtent());
     createCommandBuffers();
     createDepthResources();
 }
@@ -16,7 +16,7 @@ void Renderer::createCommandBuffers() {
     vk::CommandBufferAllocateInfo alloc_info{
         *device_.commandPool(),
         vk::CommandBufferLevel::ePrimary,
-        swapchain_->imageCount()
+        swapchain_->ImageCount()
     };
 
     command_buffers_ = device_.device().allocateCommandBuffers(alloc_info);
@@ -40,7 +40,7 @@ void Renderer::createDepthResources() {
     auto mem_reqs = depth_image_.getMemoryRequirements();
     depth_memory_ = device_.device().allocateMemory({
         mem_reqs.size,
-        device_.findMemoryType(mem_reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal)
+        device_.FindMemoryType(mem_reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal)
     });
     depth_image_.bindMemory(*depth_memory_, 0);
 
@@ -54,9 +54,9 @@ void Renderer::createDepthResources() {
 }
 
 void Renderer::recreateSwapchain() {
-    auto extent = window_.getExtent();
+    auto extent = window_.GetExtent();
     while (extent.width == 0 || extent.height == 0) {
-        extent = window_.getExtent();
+        extent = window_.GetExtent();
         glfwWaitEvents();
     }
 
@@ -72,8 +72,8 @@ void Renderer::recreateSwapchain() {
     createDepthResources();
 }
 
-bool Renderer::beginFrame(vk::raii::CommandBuffer** out_command_buffer) {
-    auto result = swapchain_->acquireNextImage(&current_image_index_);
+bool Renderer::BeginFrame(vk::raii::CommandBuffer** out_command_buffer) {
+    auto result = swapchain_->AcquireNextImage(&current_image_index_);
 
     if (result == vk::Result::eErrorOutOfDateKHR) {
         recreateSwapchain();
@@ -86,7 +86,7 @@ bool Renderer::beginFrame(vk::raii::CommandBuffer** out_command_buffer) {
 
     is_frame_started_ = true;
 
-    auto& command_buffer = command_buffers_[swapchain_->currentFrame()];
+    auto& command_buffer = command_buffers_[swapchain_->CurrentFrame()];
     command_buffer.reset();
     command_buffer.begin({});
 
@@ -94,8 +94,8 @@ bool Renderer::beginFrame(vk::raii::CommandBuffer** out_command_buffer) {
     return true;
 }
 
-void Renderer::beginRendering(const vk::raii::CommandBuffer& command_buffer, bool with_depth) {
-    vk::Image image = swapchain_->getImage(current_image_index_);
+void Renderer::BeginRendering(const vk::raii::CommandBuffer& command_buffer, bool with_depth) {
+    vk::Image image = swapchain_->GetImage(current_image_index_);
 
     transitionImage(command_buffer, image,
         vk::ImageLayout::eUndefined,
@@ -116,7 +116,7 @@ void Renderer::beginRendering(const vk::raii::CommandBuffer& command_buffer, boo
     }
 
     vk::RenderingAttachmentInfo color_attachment{};
-    color_attachment.imageView = *swapchain_->getImageView(current_image_index_);
+    color_attachment.imageView = *swapchain_->GetImageView(current_image_index_);
     color_attachment.imageLayout = vk::ImageLayout::eColorAttachmentOptimal;
     color_attachment.loadOp = vk::AttachmentLoadOp::eClear;
     color_attachment.storeOp = vk::AttachmentStoreOp::eStore;
@@ -144,22 +144,22 @@ void Renderer::beginRendering(const vk::raii::CommandBuffer& command_buffer, boo
     command_buffer.setScissor(0, scissor);
 }
 
-void Renderer::endRendering(const vk::raii::CommandBuffer& command_buffer) {
+void Renderer::EndRendering(const vk::raii::CommandBuffer& command_buffer) {
     command_buffer.endRendering();
 
     transitionImage(command_buffer,
-        swapchain_->getImage(current_image_index_),
+        swapchain_->GetImage(current_image_index_),
         vk::ImageLayout::eColorAttachmentOptimal,
         vk::ImageLayout::ePresentSrcKHR);
 }
 
-void Renderer::endFrame(const vk::raii::CommandBuffer& command_buffer) {
+void Renderer::EndFrame(const vk::raii::CommandBuffer& command_buffer) {
     command_buffer.end();
 
-    auto result = swapchain_->submitCommandBuffer(command_buffer, current_image_index_);
+    auto result = swapchain_->SubmitCommandBuffer(command_buffer, current_image_index_);
 
-    if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR || window_.wasResized()) {
-        window_.resetResizedFlag();
+    if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR || window_.WasResized()) {
+        window_.ResetResizedFlag();
         recreateSwapchain();
     } else if (result != vk::Result::eSuccess) {
         throw std::runtime_error("Failed to present swap chain image");
