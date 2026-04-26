@@ -18,10 +18,10 @@ public:
     void Update(Scene& scene, RenderSystem& render_system, float delta_time);
 
 private:
-    void drawViewport(Scene& scene, float delta_time);
-    void drawProperties(Scene& scene, RenderSystem& render_system);
-    void drawModelInfo(Scene& scene);
-    void drawSceneHierarchy(Scene& scene);
+    void DrawViewport(Scene& scene, float delta_time);
+    void DrawProperties(Scene& scene, RenderSystem& render_system);
+    void DrawModelInfo(Scene& scene);
+    void DrawSceneHierarchy(Scene& scene);
 
     Window& pm_window;
     ImGuiContext& pm_imgui_ctx;

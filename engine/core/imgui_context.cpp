@@ -94,7 +94,7 @@ ImTextureID ImGuiContext::RegisterTexture(vk::Sampler sampler, vk::ImageView vie
         static_cast<VkImageView>(view),
         static_cast<VkImageLayout>(layout));
 
-    return static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(ds));
+    return (ImTextureID)ds;
 }
 
 } // namespace mve

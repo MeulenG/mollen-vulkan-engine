@@ -15,7 +15,7 @@ void EditorUISystem::Update(Scene& scene, RenderSystem& render_system, float del
     drawSceneHierarchy(scene);
 }
 
-void EditorUISystem::drawViewport(Scene& scene, float delta_time) {
+void EditorUISystem::DrawViewport(Scene& scene, float delta_time) {
     ImGui::Begin("Viewport");
     ImVec2 viewport_size = ImGui::GetContentRegionAvail();
 
@@ -36,7 +36,7 @@ void EditorUISystem::drawViewport(Scene& scene, float delta_time) {
 
         ImGui::Image(pm_viewport_tex, viewport_size);
 
-        // Camera input — find active camera
+        // Camera input - find active camera
         Camera* active_cam = nullptr;
         scene.Each<CameraComponent>([&](Entity&, CameraComponent& cc) {
             if (cc.pm_is_active) active_cam = &cc.pm_camera;
@@ -71,7 +71,7 @@ void EditorUISystem::drawViewport(Scene& scene, float delta_time) {
     ImGui::End();
 }
 
-void EditorUISystem::drawProperties(Scene& scene, RenderSystem& render_system) {
+void EditorUISystem::DrawProperties(Scene& scene, RenderSystem& render_system) {
     ImGui::Begin("Properties");
 
     auto& ubo = render_system.SceneData();
@@ -111,7 +111,7 @@ void EditorUISystem::drawProperties(Scene& scene, RenderSystem& render_system) {
     ImGui::End();
 }
 
-void EditorUISystem::drawModelInfo(Scene& scene) {
+void EditorUISystem::DrawModelInfo(Scene& scene) {
     ImGui::Begin("Model");
 
     bool found = false;
@@ -145,7 +145,7 @@ void EditorUISystem::drawModelInfo(Scene& scene) {
     ImGui::End();
 }
 
-void EditorUISystem::drawSceneHierarchy(Scene& scene) {
+void EditorUISystem::DrawSceneHierarchy(Scene& scene) {
     ImGui::Begin("Scene");
 
     for (auto& entity : scene.Entities()) {
