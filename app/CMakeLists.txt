@@ -64,20 +64,33 @@ if(MVE_ENABLE_PSQL AND WIN32)
         # Pick out the ones that exist in BOTH dirs — anything missing from
         # either side is silently skipped to keep the build green if vcpkg
         # ships a slimmer config than expected.
-        set(_dlls_to_copy "")
+        set(_copy_args "")
         foreach(_dll ${_candidate_dlls})
             if(EXISTS "${_dll_release_dir}/${_dll}" AND
                EXISTS "${_dll_debug_dir}/${_dll}")
-                list(APPEND _dlls_to_copy "${_dll}")
+                list(APPEND _copy_args
+                    "$<IF:$<CONFIG:Debug>,${_dll_debug_dir},${_dll_release_dir}>/${_dll}")
             endif()
         endforeach()
 
-        foreach(_dll ${_dlls_to_copy})
-            add_custom_command(TARGET mollen-wow-tools POST_BUILD
+        # We use a custom target with ALL (rather than add_custom_command's
+        # POST_BUILD form) so the copy is checked on every build, even when
+        # the .exe didn't relink. POST_BUILD only fires when MSBuild re-runs
+        # the link step — meaning if the DLLs are deleted externally (IDE
+        # clean, git clean -fdx, antivirus, etc.) and the .exe is still
+        # up-to-date, the next incremental build won't restore them and
+        # launching the .exe fails with "pqxx.dll not found".
+        #
+        # copy_if_different is idempotent and stat-only fast, so running it
+        # every build is cheap.
+        if(_copy_args)
+            add_custom_target(mollen-wow-tools-runtime-dlls ALL
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    "$<IF:$<CONFIG:Debug>,${_dll_debug_dir},${_dll_release_dir}>/${_dll}"
-                    "$<TARGET_FILE_DIR:mollen-wow-tools>")
-        endforeach()
+                    ${_copy_args}
+                    "$<TARGET_FILE_DIR:mollen-wow-tools>"
+                COMMENT "Staging libpqxx runtime DLLs next to mollen-wow-tools.exe")
+            add_dependencies(mollen-wow-tools-runtime-dlls mollen-wow-tools)
+        endif()
     else()
         message(WARNING
             "MVE_ENABLE_PSQL is ON but pqxx.dll could not be located.\n"
