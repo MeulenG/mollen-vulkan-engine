@@ -14,7 +14,7 @@ Swapchain::Swapchain(Device& device, vk::Extent2D window_extent)
 }
 
 void Swapchain::createSwapchain() {
-    auto support = device_.querySwapchainSupport();
+    auto support = device_.QuerySwapchainSupport();
 
     auto surface_format = chooseSwapSurfaceFormat(support.formats);
     auto present_mode = chooseSwapPresentMode(support.present_modes);
@@ -28,7 +28,7 @@ void Swapchain::createSwapchain() {
 
     vk::SwapchainCreateInfoKHR create_info{
         {},
-        *device_.surface(),
+        *device_.GetSurface(),
         image_count,
         image_format_,
         surface_format.colorSpace,
@@ -37,7 +37,7 @@ void Swapchain::createSwapchain() {
         vk::ImageUsageFlagBits::eColorAttachment
     };
 
-    auto indices = device_.findQueueFamilies();
+    auto indices = device_.FindQueueFamilies();
     uint32_t family_indices[] = {indices.graphics_family.value(), indices.present_family.value()};
 
     if (indices.graphics_family != indices.present_family) {
@@ -53,7 +53,7 @@ void Swapchain::createSwapchain() {
     create_info.presentMode = present_mode;
     create_info.clipped = vk::True;
 
-    swapchain_ = device_.device().createSwapchainKHR(create_info);
+    swapchain_ = device_.GetDevice().createSwapchainKHR(create_info);
     images_ = swapchain_.getImages();
 }
 
@@ -70,7 +70,7 @@ void Swapchain::createImageViews() {
             {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
         };
 
-        image_views_.push_back(device_.device().createImageView(view_info));
+        image_views_.push_back(device_.GetDevice().createImageView(view_info));
     }
 }
 
@@ -78,15 +78,15 @@ void Swapchain::createSyncObjects() {
     uint32_t count = static_cast<uint32_t>(images_.size());
 
     for (uint32_t i = 0; i < count; i++) {
-        image_available_semaphores_.push_back(device_.device().createSemaphore({}));
-        render_finished_semaphores_.push_back(device_.device().createSemaphore({}));
+        image_available_semaphores_.push_back(device_.GetDevice().createSemaphore({}));
+        render_finished_semaphores_.push_back(device_.GetDevice().createSemaphore({}));
         in_flight_fences_.push_back(
-            device_.device().createFence({vk::FenceCreateFlagBits::eSignaled}));
+            device_.GetDevice().createFence({vk::FenceCreateFlagBits::eSignaled}));
     }
 }
 
-vk::Result Swapchain::acquireNextImage(uint32_t* image_index) {
-    auto wait_result = device_.device().waitForFences(
+vk::Result Swapchain::AcquireNextImage(uint32_t* image_index) {
+    auto wait_result = device_.GetDevice().waitForFences(
         *in_flight_fences_[current_frame_], vk::True, UINT64_MAX);
     (void)wait_result;
 
@@ -97,8 +97,8 @@ vk::Result Swapchain::acquireNextImage(uint32_t* image_index) {
     return result;
 }
 
-vk::Result Swapchain::submitCommandBuffer(const vk::raii::CommandBuffer& buffer, uint32_t image_index) {
-    device_.device().resetFences(*in_flight_fences_[current_frame_]);
+vk::Result Swapchain::SubmitCommandBuffer(const vk::raii::CommandBuffer& buffer, uint32_t image_index) {
+    device_.GetDevice().resetFences(*in_flight_fences_[current_frame_]);
 
     vk::Semaphore wait_semaphores[] = {*image_available_semaphores_[current_frame_]};
     vk::PipelineStageFlags wait_stages[] = {vk::PipelineStageFlagBits::eColorAttachmentOutput};
@@ -111,7 +111,7 @@ vk::Result Swapchain::submitCommandBuffer(const vk::raii::CommandBuffer& buffer,
     submit_info.setCommandBuffers(cmd);
     submit_info.setSignalSemaphores(signal_semaphores);
 
-    device_.graphicsQueue().submit(submit_info, *in_flight_fences_[current_frame_]);
+    device_.GetGraphicsQueue().submit(submit_info, *in_flight_fences_[current_frame_]);
 
     vk::PresentInfoKHR present_info{};
     present_info.setWaitSemaphores(signal_semaphores);
@@ -121,7 +121,7 @@ vk::Result Swapchain::submitCommandBuffer(const vk::raii::CommandBuffer& buffer,
 
     vk::Result result;
     try {
-        result = device_.presentQueue().presentKHR(present_info);
+        result = device_.GetPresentQueue().presentKHR(present_info);
     } catch (const vk::OutOfDateKHRError&) {
         result = vk::Result::eErrorOutOfDateKHR;
     }

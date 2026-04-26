@@ -18,14 +18,14 @@ public:
     Buffer(Buffer&&) = default;
     Buffer& operator=(Buffer&&) = default;
 
-    const vk::raii::Buffer& buffer() const { return buffer_; }
-    vk::DeviceSize size() const { return size_; }
+    const vk::raii::Buffer& GetBuffer() const { return buffer_; }
+    vk::DeviceSize Size() const { return size_; }
 
-    void* map();
-    void unmap();
-    void write(const void* data, vk::DeviceSize size);
+    void* Map();
+    void Unmap();
+    void Write(const void* data, vk::DeviceSize size);
 
-    static Buffer createWithStaging(
+    static Buffer CreateWithStaging(
         Device& device,
         const void* data,
         vk::DeviceSize size,

@@ -35,6 +35,7 @@ bld/
 
 # Visual Studio 2015/2017 cache/options directory
 .vs/
+.vscode/
 # Uncomment if you have tasks that create the project's static files in wwwroot
 #wwwroot/
 
@@ -370,5 +371,9 @@ CMakeUserPresets.json
 # Compiled shaders
 *.spv
 
-# Database config
+# Database config (contains credentials)
 db_config.toml
+
+# Assets and docs
+assets/
+docs/

@@ -38,4 +38,8 @@ if(MVE_BUILD_DBC_TOOLS)
     if(MVE_ENABLE_PSQL)
         target_compile_definitions(dbc-extract PRIVATE MVE_ENABLE_PSQL)
     endif()
+
+    # Asset extraction tool (M2, skin, BLP files from MPQ)
+    add_executable(asset-extract tools/asset_extract.cpp)
+    target_link_libraries(asset-extract PRIVATE mollen-storm-mpq)
 endif()

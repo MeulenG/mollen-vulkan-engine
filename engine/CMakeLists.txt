@@ -5,8 +5,23 @@ add_library(mollen-engine STATIC
     core/renderer.cpp
     resources/pipeline.cpp
     resources/buffer.cpp
+    resources/descriptor.cpp
+    resources/image.cpp
+    resources/asset_manager.cpp
+    systems/render_system.cpp
+    systems/animation_system.cpp
+    systems/editor_ui_system.cpp
     scene/mesh.cpp
     scene/camera.cpp
+    scene/entity.cpp
+    scene/scene.cpp
+    animation/skeleton.cpp
+    animation/animation_clip.cpp
+    animation/animator.cpp
+    core/offscreen_pass.cpp
+    core/imgui_context.cpp
+    formats/blp_loader.cpp
+    formats/m2_loader.cpp
 )
 
 target_include_directories(mollen-engine PUBLIC
@@ -17,6 +32,7 @@ target_link_libraries(mollen-engine PUBLIC
     Vulkan::Vulkan
     glfw
     glm::glm
+    imgui_lib
 )
 
 # Compile GLSL shaders to SPIR-V

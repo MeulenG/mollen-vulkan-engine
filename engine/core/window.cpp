@@ -43,7 +43,7 @@ vk::SurfaceKHR Window::createSurface(vk::Instance instance) {
     return vk::SurfaceKHR{raw_surface};
 }
 
-std::vector<const char*> Window::getRequiredInstanceExtensions() {
+std::vector<const char*> Window::GetRequiredInstanceExtensions() {
     uint32_t count = 0;
     const char** extensions = glfwGetRequiredInstanceExtensions(&count);
     return {extensions, extensions + count};
@@ -56,15 +56,15 @@ void Window::framebufferResizeCallback(GLFWwindow* window, int width, int height
     app_window->height_ = static_cast<uint32_t>(height);
 }
 
-bool Window::isMouseButtonDown(int button) const {
+bool Window::IsMouseButtonDown(int button) const {
     return glfwGetMouseButton(window_, button) == GLFW_PRESS;
 }
 
-void Window::getCursorPos(double& x, double& y) const {
+void Window::GetCursorPos(double& x, double& y) const {
     glfwGetCursorPos(window_, &x, &y);
 }
 
-float Window::getScrollDelta() {
+float Window::GetScrollDelta() {
     float d = scroll_delta_;
     scroll_delta_ = 0.0f;
     return d;

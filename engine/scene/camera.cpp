@@ -5,14 +5,14 @@
 
 namespace mve {
 
-void Camera::setOrbit(float distance, float yaw, float pitch) {
+void Camera::SetOrbit(float distance, float yaw, float pitch) {
     distance_ = distance;
     yaw_ = yaw;
     pitch_ = pitch;
     updatePosition();
 }
 
-void Camera::rotate(float delta_yaw, float delta_pitch) {
+void Camera::Rotate(float delta_yaw, float delta_pitch) {
     yaw_ += delta_yaw;
     pitch_ += delta_pitch;
 
@@ -23,7 +23,7 @@ void Camera::rotate(float delta_yaw, float delta_pitch) {
     updatePosition();
 }
 
-void Camera::pan(float dx, float dy) {
+void Camera::Pan(float dx, float dy) {
     glm::vec3 forward = glm::normalize(target_ - position_);
     glm::vec3 right = glm::normalize(glm::cross(forward, up_));
     glm::vec3 up = glm::normalize(glm::cross(right, forward));
@@ -32,22 +32,22 @@ void Camera::pan(float dx, float dy) {
     updatePosition();
 }
 
-void Camera::zoom(float delta) {
+void Camera::Zoom(float delta) {
     distance_ = std::max(0.1f, distance_ - delta);
     updatePosition();
 }
 
-void Camera::setPerspective(float fov_degrees, float aspect, float near, float far) {
+void Camera::SetPerspective(float fov_degrees, float aspect, float near, float far) {
     projection_ = glm::perspective(glm::radians(fov_degrees), aspect, near, far);
     // Vulkan clip space has inverted Y
     projection_[1][1] *= -1.0f;
 }
 
-glm::mat4 Camera::getViewMatrix() const {
+glm::mat4 Camera::GetViewMatrix() const {
     return glm::lookAt(position_, target_, up_);
 }
 
-glm::vec3 Camera::getPosition() const {
+glm::vec3 Camera::GetPosition() const {
     return position_;
 }
 

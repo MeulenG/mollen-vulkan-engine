@@ -12,39 +12,39 @@ Buffer::Buffer(
     vk::MemoryPropertyFlags properties)
     : device_{device}, size_{size} {
 
-    buffer_ = device_.device().createBuffer({{}, size, usage});
+    buffer_ = device_.GetDevice().createBuffer({{}, size, usage});
 
     auto mem_requirements = buffer_.getMemoryRequirements();
 
-    memory_ = device_.device().allocateMemory({
+    memory_ = device_.GetDevice().allocateMemory({
         mem_requirements.size,
-        device_.findMemoryType(mem_requirements.memoryTypeBits, properties)
+        device_.FindMemoryType(mem_requirements.memoryTypeBits, properties)
     });
 
     buffer_.bindMemory(*memory_, 0);
 }
 
-void* Buffer::map() {
+void* Buffer::Map() {
     if (!mapped_) {
         mapped_ = memory_.mapMemory(0, size_);
     }
     return mapped_;
 }
 
-void Buffer::unmap() {
+void Buffer::Unmap() {
     if (mapped_) {
         memory_.unmapMemory();
         mapped_ = nullptr;
     }
 }
 
-void Buffer::write(const void* data, vk::DeviceSize size) {
-    void* dest = map();
+void Buffer::Write(const void* data, vk::DeviceSize size) {
+    void* dest = Map();
     std::memcpy(dest, data, static_cast<size_t>(size));
-    unmap();
+    Unmap();
 }
 
-Buffer Buffer::createWithStaging(
+Buffer Buffer::CreateWithStaging(
     Device& device,
     const void* data,
     vk::DeviceSize size,
@@ -55,7 +55,7 @@ Buffer Buffer::createWithStaging(
         vk::BufferUsageFlagBits::eTransferSrc,
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
     };
-    staging.write(data, size);
+    staging.Write(data, size);
 
     Buffer gpu_buffer{
         device, size,
@@ -63,9 +63,9 @@ Buffer Buffer::createWithStaging(
         vk::MemoryPropertyFlagBits::eDeviceLocal
     };
 
-    auto cmd = device.beginSingleTimeCommands();
-    cmd.copyBuffer(*staging.buffer(), *gpu_buffer.buffer(), vk::BufferCopy{0, 0, size});
-    device.endSingleTimeCommands(std::move(cmd));
+    auto cmd = device.BeginSingleTimeCommands();
+    cmd.copyBuffer(*staging.GetBuffer(), *gpu_buffer.GetBuffer(), vk::BufferCopy{0, 0, size});
+    device.EndSingleTimeCommands(std::move(cmd));
 
     return gpu_buffer;
 }

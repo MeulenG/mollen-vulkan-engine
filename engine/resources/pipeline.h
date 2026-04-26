@@ -24,7 +24,7 @@ struct PipelineConfig {
     std::vector<vk::VertexInputBindingDescription> binding_descriptions;
     std::vector<vk::VertexInputAttributeDescription> attribute_descriptions;
 
-    static PipelineConfig defaultConfig();
+    static PipelineConfig DefaultConfig();
 };
 
 class Pipeline {
@@ -38,9 +38,9 @@ public:
     Pipeline(const Pipeline&) = delete;
     Pipeline& operator=(const Pipeline&) = delete;
 
-    void bind(const vk::raii::CommandBuffer& command_buffer);
+    void Bind(const vk::raii::CommandBuffer& command_buffer);
 
-    static std::vector<char> readFile(const std::string& filepath);
+    static std::vector<char> ReadFile(const std::string& filepath);
 
 private:
     void createGraphicsPipeline(
