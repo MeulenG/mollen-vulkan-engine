@@ -1,5 +1,6 @@
 #include "dbc_browser_system.h"
 #include "dbc_naming.h"
+#include "schema_registry.h"
 
 #include <imgui.h>
 
@@ -15,37 +16,77 @@ bool IsPaddingField(const char* name) {
     return name && name[0] == '_' && std::strncmp(name, "_pad", 4) == 0;
 }
 
-bool MatchesFilter(const std::string& name, const char* filter) {
+bool MatchesFilter(const std::string& haystack, const char* filter) {
     if (!filter || !*filter) return true;
     auto to_lower = [](unsigned char c) { return static_cast<char>(std::tolower(c)); };
-    std::string n; n.reserve(name.size());
-    for (unsigned char c : name) n.push_back(to_lower(c));
+    std::string n; n.reserve(haystack.size());
+    for (unsigned char c : haystack) n.push_back(to_lower(c));
     std::string f; f.reserve(std::strlen(filter));
     for (const char* p = filter; *p; ++p) f.push_back(to_lower(static_cast<unsigned char>(*p)));
     return n.find(f) != std::string::npos;
 }
 
+// Default column width per data type. Values are deliberately conservative so
+// the table fits a lot of columns horizontally without scrolling for the
+// common case (id-heavy tables). String columns are wider because most of
+// them carry display names.
+float ColumnWidthForType(DbcFieldType type) {
+    switch (type) {
+    case DbcFieldType::String:                                return 220.0f;
+    case DbcFieldType::Float:                                 return  90.0f;
+    case DbcFieldType::UInt32:
+    case DbcFieldType::Int32:                                 return  90.0f;
+    case DbcFieldType::UInt8:
+    case DbcFieldType::Int8:
+    case DbcFieldType::UInt16:
+    case DbcFieldType::Int16:                                 return  70.0f;
+    }
+    return 90.0f;
+}
+
+// If the last item drawn was clipped (rendered text wider than its cell),
+// show its full content as a tooltip on hover. Cheap to call after every
+// cell because IsItemHovered short-circuits in the common case.
+void TooltipIfHovered(const char* full_text) {
+    if (!full_text || !*full_text) return;
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal |
+                             ImGuiHoveredFlags_NoSharedDelay)) {
+        ImGui::SetTooltip("%s", full_text);
+    }
+}
+
 // ---- File-mode cell rendering (read-only, mirrors original behavior) ----
+
+// Render a cell's text + a tooltip with the same content. The tooltip is
+// what makes long values discoverable when the column clips them.
+void DrawTextCell(const char* text) {
+    ImGui::TextUnformatted(text);
+    TooltipIfHovered(text);
+}
 
 void DrawNonPackedFileCell(const DbcFile& dbc, const DbcFieldDef& field,
                            uint32_t record, uint32_t field_index) {
+    char buf[256];
     switch (field.type) {
     case DbcFieldType::UInt32:
     case DbcFieldType::UInt8:
     case DbcFieldType::UInt16:
-        ImGui::Text("%u", dbc.GetUInt32(record, field_index));
+        std::snprintf(buf, sizeof(buf), "%u", dbc.GetUInt32(record, field_index));
+        DrawTextCell(buf);
         break;
     case DbcFieldType::Int32:
     case DbcFieldType::Int8:
     case DbcFieldType::Int16:
-        ImGui::Text("%d", dbc.GetInt32(record, field_index));
+        std::snprintf(buf, sizeof(buf), "%d", dbc.GetInt32(record, field_index));
+        DrawTextCell(buf);
         break;
     case DbcFieldType::Float:
-        ImGui::Text("%.3f", dbc.GetFloat(record, field_index));
+        std::snprintf(buf, sizeof(buf), "%.3f", dbc.GetFloat(record, field_index));
+        DrawTextCell(buf);
         break;
     case DbcFieldType::String: {
         const char* s = dbc.GetStringField(record, field_index);
-        ImGui::TextUnformatted(s ? s : "");
+        DrawTextCell(s ? s : "");
         break;
     }
     }
@@ -55,24 +96,32 @@ void DrawPackedFileCell(const DbcFile& dbc, const DbcSchema* schema,
                         uint32_t record, uint32_t field_index) {
     uint32_t offset = DbcFile::GetFieldOffset(schema, field_index);
     const auto& field = schema->fields[field_index];
+    char buf[256];
     switch (field.type) {
     case DbcFieldType::UInt8:
-        ImGui::Text("%u", dbc.GetUInt8At(record, offset)); break;
+        std::snprintf(buf, sizeof(buf), "%u", dbc.GetUInt8At(record, offset));
+        DrawTextCell(buf); break;
     case DbcFieldType::Int8:
-        ImGui::Text("%d", dbc.GetInt8At(record, offset)); break;
+        std::snprintf(buf, sizeof(buf), "%d", dbc.GetInt8At(record, offset));
+        DrawTextCell(buf); break;
     case DbcFieldType::UInt16:
-        ImGui::Text("%u", dbc.GetUInt16At(record, offset)); break;
+        std::snprintf(buf, sizeof(buf), "%u", dbc.GetUInt16At(record, offset));
+        DrawTextCell(buf); break;
     case DbcFieldType::Int16:
-        ImGui::Text("%d", dbc.GetInt16At(record, offset)); break;
+        std::snprintf(buf, sizeof(buf), "%d", dbc.GetInt16At(record, offset));
+        DrawTextCell(buf); break;
     case DbcFieldType::UInt32:
-        ImGui::Text("%u", dbc.GetUInt32At(record, offset)); break;
+        std::snprintf(buf, sizeof(buf), "%u", dbc.GetUInt32At(record, offset));
+        DrawTextCell(buf); break;
     case DbcFieldType::Int32:
-        ImGui::Text("%d", dbc.GetInt32At(record, offset)); break;
+        std::snprintf(buf, sizeof(buf), "%d", dbc.GetInt32At(record, offset));
+        DrawTextCell(buf); break;
     case DbcFieldType::Float:
-        ImGui::Text("%.3f", dbc.GetFloatAt(record, offset)); break;
+        std::snprintf(buf, sizeof(buf), "%.3f", dbc.GetFloatAt(record, offset));
+        DrawTextCell(buf); break;
     case DbcFieldType::String: {
         const char* s = dbc.GetStringAt(record, offset);
-        ImGui::TextUnformatted(s ? s : "");
+        DrawTextCell(s ? s : "");
         break;
     }
     }
@@ -158,11 +207,16 @@ void DbcBrowserSystem::DrawConnectionHeader() {
 
 void DbcBrowserSystem::DrawDbcList() {
     ImGui::SetNextItemWidth(-FLT_MIN);
-    ImGui::InputTextWithHint("##filter", "Filter...", pm_filter, sizeof(pm_filter));
+    ImGui::InputTextWithHint("##filter", "Filter (matches pretty or raw name)...",
+                             pm_filter, sizeof(pm_filter));
     ImGui::Separator();
 
     for (const auto& name : pm_registry.AvailableNames()) {
-        if (!MatchesFilter(name, pm_filter)) continue;
+        std::string pretty = DbcPrettyName(name.c_str());
+        // Filter applies to both forms — typing "creature" finds
+        // "Creature Display Info" and the raw "CreatureDisplayInfo".
+        if (!MatchesFilter(name, pm_filter) &&
+            !MatchesFilter(pretty, pm_filter)) continue;
 
         SourceMode mode = SourceFor(name);
         bool selected = (name == pm_selected);
@@ -182,12 +236,23 @@ void DbcBrowserSystem::DrawDbcList() {
             badge = "[raw] ";
         }
 
+        // Use ##unique-id form so two pretty names that collide (rare but
+        // possible after splitting) don't break selection.
+        std::string label = badge + std::string(" ") + pretty + "##" + name;
         ImGui::PushStyleColor(ImGuiCol_Text, color);
-        if (ImGui::Selectable((badge + std::string(" ") + name).c_str(), selected)) {
+        if (ImGui::Selectable(label.c_str(), selected)) {
             pm_selected = name;
             pm_edit.column = -1;  // cancel any in-progress edit
         }
         ImGui::PopStyleColor();
+
+        // Hover -> show raw schema name + table name. Helps when writing
+        // SQL or reading server logs that use the canonical names.
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+            ImGui::SetTooltip("%s\nSQL table: %s",
+                              name.c_str(),
+                              DbcTableName(name.c_str()).c_str());
+        }
     }
 }
 
@@ -210,13 +275,29 @@ void DbcBrowserSystem::DrawRecordTable() {
 
     SourceMode mode = SourceFor(pm_selected);
 
-    ImGui::Text("File:    %s", entry->path.filename().string().c_str());
-    ImGui::Text("Records: %u", entry->file->GetRecordCount());
-    ImGui::Text("Fields:  %u  (record size %u bytes)",
-                entry->file->GetFieldCount(), entry->file->GetRecordSize());
+    // Pretty name as the heading; raw schema + SQL table as muted subtitles
+    // aligned to the right.
+    std::string pretty = DbcPrettyName(pm_selected.c_str());
+    std::string sql_table = DbcTableName(pm_selected.c_str());
+
+    ImGui::PushFont(nullptr);  // (no big font yet — placeholder for future styling)
+    ImGui::TextUnformatted(pretty.c_str());
+    ImGui::PopFont();
+
+    ImGui::SameLine();
+    ImGui::Dummy(ImVec2(8, 0));
+    ImGui::SameLine();
+    ImGui::TextDisabled("schema: %s   sql: %s",
+                        pm_selected.c_str(), sql_table.c_str());
+
+    ImGui::Text("Records: %u   Fields: %u   Record size: %u bytes",
+                entry->file->GetRecordCount(),
+                entry->file->GetFieldCount(),
+                entry->file->GetRecordSize());
+
     if (mode == SourceMode::Psql) {
         ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1),
-                           "Source: PostgreSQL  (cells editable)");
+                           "Source: PostgreSQL  (double-click a cell to edit)");
     } else if (!entry->schema) {
         ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1),
                            "Source: file (raw uint32 columns, no schema)");
@@ -304,7 +385,10 @@ void DbcBrowserSystem::DrawPsqlTable(DbcRegistry::Entry& entry,
     }
 
     for (const auto& v : view) {
-        ImGui::TableSetupColumn(schema->fields[v.field_index].name);
+        const auto& field = schema->fields[v.field_index];
+        ImGui::TableSetupColumn(field.name,
+                                ImGuiTableColumnFlags_WidthFixed,
+                                ColumnWidthForType(field.type));
     }
     ImGui::TableSetupScrollFreeze(0, 1);
     ImGui::TableHeadersRow();
@@ -387,6 +471,7 @@ void DbcBrowserSystem::DrawPsqlTable(DbcRegistry::Entry& entry,
                         val.empty() ? " " : val.c_str(),
                         false,
                         ImGuiSelectableFlags_AllowDoubleClick);
+                    TooltipIfHovered(val.c_str());
                     if (clicked && ImGui::IsMouseDoubleClicked(0)) {
                         pm_edit.dbc = pm_selected;
                         pm_edit.row_id = row_id;
@@ -439,18 +524,25 @@ void DbcBrowserSystem::DrawFileTable(DbcRegistry::Entry& entry) {
 
     if (schema) {
         for (uint32_t f = 0; f < schema->field_count; f++) {
-            const char* name = schema->fields[f].name;
-            if (IsPaddingField(name)) {
-                ImGui::TableSetupColumn("(pad)", ImGuiTableColumnFlags_DefaultHide);
+            const auto& field = schema->fields[f];
+            if (IsPaddingField(field.name)) {
+                ImGui::TableSetupColumn("(pad)",
+                    ImGuiTableColumnFlags_DefaultHide |
+                    ImGuiTableColumnFlags_WidthFixed,
+                    50.0f);
             } else {
-                ImGui::TableSetupColumn(name);
+                ImGui::TableSetupColumn(field.name,
+                    ImGuiTableColumnFlags_WidthFixed,
+                    ColumnWidthForType(field.type));
             }
         }
     } else {
         for (uint32_t f = 0; f < col_count; f++) {
             char buf[16];
             std::snprintf(buf, sizeof(buf), "f%u", f);
-            ImGui::TableSetupColumn(buf);
+            ImGui::TableSetupColumn(buf,
+                ImGuiTableColumnFlags_WidthFixed,
+                ColumnWidthForType(DbcFieldType::UInt32));
         }
     }
     ImGui::TableSetupScrollFreeze(0, 1);

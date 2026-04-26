@@ -15,4 +15,12 @@
 std::string DbcTableName(const char* schema_name);
 std::string DbcColumnName(const char* field_name);
 
+// Pretty display name: split CamelCase / snake_case into words.
+//   "CreatureDisplayInfo"    -> "Creature Display Info"
+//   "Achievement_Category"   -> "Achievement Category"
+//   "GMSurvey_Surveys"       -> "GM Survey Surveys"
+// Used by the editor to make the DBC list scannable while keeping the
+// canonical schema name available elsewhere in the UI.
+std::string DbcPrettyName(const char* schema_name);
+
 #endif // DBC_NAMING_H
