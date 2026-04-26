@@ -8,9 +8,11 @@ add_library(mollen-engine STATIC
     resources/descriptor.cpp
     resources/image.cpp
     resources/asset_manager.cpp
+    resources/dbc_registry.cpp
     systems/render_system.cpp
     systems/animation_system.cpp
     systems/editor_ui_system.cpp
+    systems/dbc_browser_system.cpp
     scene/mesh.cpp
     scene/camera.cpp
     scene/entity.cpp
@@ -33,6 +35,7 @@ target_link_libraries(mollen-engine PUBLIC
     glfw
     glm::glm
     imgui_lib
+    mollen-dbc
 )
 
 # Compile GLSL shaders to SPIR-V

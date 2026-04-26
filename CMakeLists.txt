@@ -104,8 +104,8 @@ endif()
 # =============================================================================
 # Subdirectories
 # =============================================================================
-add_subdirectory(engine)
 add_subdirectory(dbc)
+add_subdirectory(engine)
 add_subdirectory(app)
 
 if(MVE_BUILD_TESTS AND MVE_ENABLE_PSQL)
