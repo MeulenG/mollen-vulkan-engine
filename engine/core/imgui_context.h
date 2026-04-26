@@ -26,6 +26,16 @@ public:
     ImTextureID RegisterTexture(vk::Sampler sampler, vk::ImageView view,
                                 vk::ImageLayout layout = vk::ImageLayout::eShaderReadOnlyOptimal);
 
+    // Free a descriptor set previously returned by RegisterTexture.
+    // Safe to call with ImTextureID_Invalid (no-op). The caller MUST ensure
+    // the GPU is idle (e.g. via OffscreenPass::Resize -> waitIdle) before
+    // calling — otherwise the descriptor set may still be in flight.
+    //
+    // Failing to unregister leaks one descriptor set per call to register;
+    // the pool caps at 100, so a few minutes of dragging a window can
+    // exhaust it and produce uninitialized handles.
+    void UnregisterTexture(ImTextureID tex);
+
 private:
     void initImGui(Window& window, Device& device, vk::Format swapchain_format);
 
