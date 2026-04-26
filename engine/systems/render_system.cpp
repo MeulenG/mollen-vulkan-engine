@@ -85,8 +85,12 @@ void RenderSystem::Init() {
     ground_config.pipeline_layout = *pm_ground_pipeline_layout;
     ground_config.color_attachment_format = pm_offscreen.ColorFormat();
     ground_config.depth_attachment_format = pm_offscreen.DepthFormat();
+    // Ground shader only consumes position — declare just that to avoid
+    // "Vertex attribute not consumed" validation warnings.
     ground_config.binding_descriptions = Vertex::GetBindingDescriptions();
-    ground_config.attribute_descriptions = Vertex::GetAttributeDescriptions();
+    ground_config.attribute_descriptions = {
+        {0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, position)},
+    };
     ground_config.rasterization_info.cullMode = vk::CullModeFlagBits::eNone;
     ground_config.color_blend_attachment.blendEnable = vk::True;
     ground_config.color_blend_attachment.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha;
@@ -137,7 +141,7 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
             cmd.bindDescriptorSets(
                 vk::PipelineBindPoint::eGraphics,
                 *pm_model_pipeline_layout, 0,
-                mat.pm_descriptor_set, nullptr);
+                *mat.pm_descriptor_set, nullptr);
 
             glm::mat4 model = transform.ModelMatrix();
             PushConstants push{};

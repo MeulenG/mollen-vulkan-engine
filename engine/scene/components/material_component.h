@@ -19,7 +19,7 @@ struct SubmeshMaterial {
 
 struct MaterialComponent : Component {
     std::vector<SubmeshMaterial> pm_submesh_materials;
-    vk::DescriptorSet pm_descriptor_set = nullptr;
+    vk::raii::DescriptorSet pm_descriptor_set = nullptr;
     std::unique_ptr<Buffer> pm_bone_buffer;
 };
 
