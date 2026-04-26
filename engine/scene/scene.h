@@ -20,12 +20,10 @@ public:
 
     Entity* FindEntity(EntityId id);
     Entity* FindEntityByName(const std::string& name);
-    const std::vector<std::unique_ptr<Entity>>& entities() const { return pm_entities; }
+    const std::vector<std::unique_ptr<Entity>>& Entities() const { return pm_entities; }
 
-    // Query: iterate all entities that have ALL of the specified component types.
-    // Uses C++17 fold expression to check every type in the pack.
     template<typename... Comps, typename Func>
-    void each(Func&& func) {
+    void Each(Func&& func) {
         for (auto& entity : pm_entities) {
             if ((entity->HasComponent<Comps>() && ...)) {
                 func(*entity, *entity->GetComponent<Comps>()...);

@@ -20,11 +20,11 @@ DescriptorSetLayoutBuilder& DescriptorSetLayoutBuilder::AddBinding(
     return *this;
 }
 
-vk::raii::DescriptorSetLayout DescriptorSetLayoutBuilder::build() {
+vk::raii::DescriptorSetLayout DescriptorSetLayoutBuilder::Build() {
     vk::DescriptorSetLayoutCreateInfo create_info{};
     create_info.setBindings(bindings_);
 
-    return device_.device().createDescriptorSetLayout(create_info);
+    return device_.GetDevice().createDescriptorSetLayout(create_info);
 }
 
 DescriptorPool::DescriptorPool(
@@ -37,7 +37,7 @@ DescriptorPool::DescriptorPool(
     pool_info.setPoolSizes(pool_sizes);
     pool_info.maxSets = max_sets;
 
-    pool_ = device_.device().createDescriptorPool(pool_info);
+    pool_ = device_.GetDevice().createDescriptorPool(pool_info);
 }
 
 vk::raii::DescriptorSet DescriptorPool::AllocateSet(const vk::raii::DescriptorSetLayout& layout) {
@@ -48,7 +48,7 @@ vk::raii::DescriptorSet DescriptorPool::AllocateSet(const vk::raii::DescriptorSe
     alloc_info.descriptorSetCount = 1;
     alloc_info.setSetLayouts(raw_layout);
 
-    auto sets = device_.device().allocateDescriptorSets(alloc_info);
+    auto sets = device_.GetDevice().allocateDescriptorSets(alloc_info);
     return std::move(sets[0]);
 }
 
@@ -85,7 +85,7 @@ DescriptorWriter& DescriptorWriter::WriteImage(
     return *this;
 }
 
-void DescriptorWriter::apply(const vk::raii::Device& device, const vk::raii::DescriptorSet& set) {
+void DescriptorWriter::Apply(const vk::raii::Device& device, const vk::raii::DescriptorSet& set) {
     uint32_t buf_idx = 0;
     uint32_t img_idx = 0;
 

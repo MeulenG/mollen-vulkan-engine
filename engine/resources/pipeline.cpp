@@ -5,7 +5,7 @@
 
 namespace mve {
 
-PipelineConfig PipelineConfig::defaultConfig() {
+PipelineConfig PipelineConfig::DefaultConfig() {
     PipelineConfig config{};
 
     config.input_assembly_info.topology = vk::PrimitiveTopology::eTriangleList;
@@ -54,7 +54,7 @@ Pipeline::Pipeline(
     createGraphicsPipeline(vert_path, frag_path, config);
 }
 
-void Pipeline::bind(const vk::raii::CommandBuffer& command_buffer) {
+void Pipeline::Bind(const vk::raii::CommandBuffer& command_buffer) {
     command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphics_pipeline_);
 }
 
@@ -114,7 +114,7 @@ void Pipeline::createGraphicsPipeline(
     pipeline_info.pDynamicState = &config.dynamic_state_info;
     pipeline_info.layout = config.pipeline_layout;
 
-    graphics_pipeline_ = device_.device().createGraphicsPipeline(nullptr, pipeline_info);
+    graphics_pipeline_ = device_.GetDevice().createGraphicsPipeline(nullptr, pipeline_info);
 }
 
 vk::raii::ShaderModule Pipeline::createShaderModule(const std::vector<char>& code) {
@@ -124,7 +124,7 @@ vk::raii::ShaderModule Pipeline::createShaderModule(const std::vector<char>& cod
         reinterpret_cast<const uint32_t*>(code.data())
     };
 
-    return device_.device().createShaderModule(create_info);
+    return device_.GetDevice().createShaderModule(create_info);
 }
 
 } // namespace mve

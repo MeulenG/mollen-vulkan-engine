@@ -25,8 +25,8 @@ struct Vertex {
     glm::uvec4 bone_indices{0, 0, 0, 0};
     glm::vec4 bone_weights{1.0f, 0.0f, 0.0f, 0.0f}; // default: 100% bone 0
 
-    static std::vector<vk::VertexInputBindingDescription> getBindingDescriptions();
-    static std::vector<vk::VertexInputAttributeDescription> getAttributeDescriptions();
+    static std::vector<vk::VertexInputBindingDescription> GetBindingDescriptions();
+    static std::vector<vk::VertexInputAttributeDescription> GetAttributeDescriptions();
 };
 
 class Mesh {
@@ -38,8 +38,8 @@ public:
     Mesh(Mesh&&) = default;
     Mesh& operator=(Mesh&&) = default;
 
-    void bind(const vk::raii::CommandBuffer& command_buffer) const;
-    void draw(const vk::raii::CommandBuffer& command_buffer) const;
+    void Bind(const vk::raii::CommandBuffer& command_buffer) const;
+    void Draw(const vk::raii::CommandBuffer& command_buffer) const;
 
     static Mesh CreatePyramid(Device& device, glm::vec3 color = {0.8f, 0.8f, 0.8f});
     static Mesh CreateCube(Device& device, glm::vec3 color = {0.8f, 0.8f, 0.8f});

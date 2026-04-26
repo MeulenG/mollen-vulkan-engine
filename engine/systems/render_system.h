@@ -31,9 +31,9 @@ class RenderSystem {
 public:
     RenderSystem(Device& device, OffscreenPass& offscreen);
 
-    void init();
+    void Init();
 
-    void render(Scene& scene, const Camera& active_camera,
+    void Render(Scene& scene, const Camera& active_camera,
                 const vk::raii::CommandBuffer& cmd);
 
     void UpdateSceneUBO();

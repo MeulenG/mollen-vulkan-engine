@@ -14,12 +14,12 @@ Renderer::Renderer(Window& window, Device& device)
 
 void Renderer::createCommandBuffers() {
     vk::CommandBufferAllocateInfo alloc_info{
-        *device_.commandPool(),
+        *device_.GetCommandPool(),
         vk::CommandBufferLevel::ePrimary,
         swapchain_->ImageCount()
     };
 
-    command_buffers_ = device_.device().allocateCommandBuffers(alloc_info);
+    command_buffers_ = device_.GetDevice().allocateCommandBuffers(alloc_info);
 }
 
 void Renderer::createDepthResources() {
@@ -35,10 +35,10 @@ void Renderer::createDepthResources() {
     image_info.tiling = vk::ImageTiling::eOptimal;
     image_info.usage = vk::ImageUsageFlagBits::eDepthStencilAttachment;
 
-    depth_image_ = device_.device().createImage(image_info);
+    depth_image_ = device_.GetDevice().createImage(image_info);
 
     auto mem_reqs = depth_image_.getMemoryRequirements();
-    depth_memory_ = device_.device().allocateMemory({
+    depth_memory_ = device_.GetDevice().allocateMemory({
         mem_reqs.size,
         device_.FindMemoryType(mem_reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal)
     });
@@ -50,7 +50,7 @@ void Renderer::createDepthResources() {
     view_info.format = depth_format_;
     view_info.subresourceRange = {vk::ImageAspectFlagBits::eDepth, 0, 1, 0, 1};
 
-    depth_image_view_ = device_.device().createImageView(view_info);
+    depth_image_view_ = device_.GetDevice().createImageView(view_info);
 }
 
 void Renderer::recreateSwapchain() {
@@ -60,7 +60,7 @@ void Renderer::recreateSwapchain() {
         glfwWaitEvents();
     }
 
-    device_.device().waitIdle();
+    device_.GetDevice().waitIdle();
 
     command_buffers_.clear();
     depth_image_view_ = nullptr;

@@ -33,13 +33,13 @@ public:
     Device(const Device&) = delete;
     Device& operator=(const Device&) = delete;
 
-    const vk::raii::Device& device() const { return device_; }
-    const vk::raii::PhysicalDevice& physicalDevice() const { return physical_device_; }
-    const vk::raii::Instance& instance() const { return instance_; }
-    const vk::raii::SurfaceKHR& surface() const { return surface_; }
-    const vk::raii::Queue& graphicsQueue() const { return graphics_queue_; }
-    const vk::raii::Queue& presentQueue() const { return present_queue_; }
-    const vk::raii::CommandPool& commandPool() const { return command_pool_; }
+    const vk::raii::Device& GetDevice() const { return device_; }
+    const vk::raii::PhysicalDevice& GetPhysicalDevice() const { return physical_device_; }
+    const vk::raii::Instance& GetInstance() const { return instance_; }
+    const vk::raii::SurfaceKHR& GetSurface() const { return surface_; }
+    const vk::raii::Queue& GetGraphicsQueue() const { return graphics_queue_; }
+    const vk::raii::Queue& GetPresentQueue() const { return present_queue_; }
+    const vk::raii::CommandPool& GetCommandPool() const { return command_pool_; }
 
     QueueFamilyIndices FindQueueFamilies() const { return FindQueueFamilies(*physical_device_); }
     SwapchainSupportDetails QuerySwapchainSupport() const { return QuerySwapchainSupport(*physical_device_); }

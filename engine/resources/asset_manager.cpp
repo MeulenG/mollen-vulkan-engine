@@ -80,11 +80,9 @@ Entity* AssetManager::LoadM2IntoScene(const std::string& m2_path, Scene& scene) 
     TextureHandle texture;
     std::string blp_path;
 
-    // Find a texture: first try referenced paths, then scan for BLPs in same directory
     if (!model.texture_paths.empty() && !model.texture_paths[0].empty()) {
         blp_path = "assets/" + model.texture_paths[0];
     } else {
-        // Replaceable texture — scan directory for a BLP
         fs::path m2_dir = fs::path(m2_path).parent_path();
         for (auto& entry : fs::directory_iterator(m2_dir)) {
             auto ext = entry.path().extension().string();
@@ -115,19 +113,19 @@ Entity* AssetManager::LoadM2IntoScene(const std::string& m2_path, Scene& scene) 
         texture = GetDefaultTexture();
     }
 
-    // 4. Create entity
+    // Create entity
     Entity* entity = scene.CreateEntity(model.name.empty() ? "M2Model" : model.name);
 
-    // 5. TransformComponent with WoW coordinate conversion
+    // TransformComponent with WoW coordinate conversion
     auto* transform = entity->AddComponent<TransformComponent>();
     float ground_offset = -model.bbox_min.z;
-    transform->applyWowCoordTransform(ground_offset);
+    transform->ApplyWowCoordTransform(ground_offset);
 
-    // 6. MeshComponent
+    // MeshComponent
     auto* mesh_comp = entity->AddComponent<MeshComponent>();
     mesh_comp->pm_mesh = mesh;
 
-    // 7. MaterialComponent with per-entity bone buffer and descriptor set
+    // MaterialComponent with per-entity bone buffer and descriptor set
     auto* mat = entity->AddComponent<MaterialComponent>();
 
     vk::DeviceSize bone_buffer_size = Skeleton::MAX_BONES * sizeof(glm::mat4);
@@ -136,31 +134,28 @@ Entity* AssetManager::LoadM2IntoScene(const std::string& m2_path, Scene& scene) 
         vk::BufferUsageFlagBits::eStorageBuffer,
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
-    // Init bone buffer with identity
     std::vector<glm::mat4> identity(Skeleton::MAX_BONES, glm::mat4{1.0f});
-    mat->pm_bone_buffer->write(identity.data(), bone_buffer_size);
+    mat->pm_bone_buffer->Write(identity.data(), bone_buffer_size);
 
-    // Allocate descriptor set
     auto desc_set = pm_descriptor_pool->AllocateSet(*pm_descriptor_layout);
 
-    vk::DescriptorBufferInfo ubo_info{*pm_scene_ubo->buffer(), 0, sizeof(float) * 8}; // SceneUBO size
+    vk::DescriptorBufferInfo ubo_info{*pm_scene_ubo->GetBuffer(), 0, sizeof(float) * 8};
     auto tex_info = texture->DescriptorInfo();
-    vk::DescriptorBufferInfo bone_info{*mat->pm_bone_buffer->buffer(), 0, bone_buffer_size};
+    vk::DescriptorBufferInfo bone_info{*mat->pm_bone_buffer->GetBuffer(), 0, bone_buffer_size};
 
     DescriptorWriter{}
         .WriteBuffer(0, ubo_info)
         .WriteImage(1, tex_info)
         .WriteBuffer(2, bone_info, vk::DescriptorType::eStorageBuffer)
-        .apply(pm_device.device(), desc_set);
+        .Apply(pm_device.GetDevice(), desc_set);
 
     mat->pm_descriptor_set = *desc_set;
 
-    // Store one submesh material entry
     SubmeshMaterial sub_mat;
     sub_mat.pm_texture = texture;
     mat->pm_submesh_materials.push_back(sub_mat);
 
-    // 8. SkeletonComponent
+    // SkeletonComponent
     if (model.skeleton.BoneCount() > 0) {
         auto* skel = entity->AddComponent<SkeletonComponent>();
         skel->pm_skeleton = &model.skeleton;
@@ -171,11 +166,11 @@ Entity* AssetManager::LoadM2IntoScene(const std::string& m2_path, Scene& scene) 
         }
 
         if (!skel->pm_clips.empty()) {
-            skel->pm_animator->play(skel->pm_clips[0]);
+            skel->pm_animator->Play(skel->pm_clips[0]);
         }
     }
 
-    // 9. M2InfoComponent
+    // M2InfoComponent
     auto* info = entity->AddComponent<M2InfoComponent>();
     info->pm_model_name = model.name;
     info->pm_vertex_count = static_cast<uint32_t>(model.vertices.size());

@@ -15,13 +15,13 @@ public:
     OffscreenPass(const OffscreenPass&) = delete;
     OffscreenPass& operator=(const OffscreenPass&) = delete;
 
-    uint32_t width() const { return width_; }
-    uint32_t height() const { return height_; }
+    uint32_t Width() const { return width_; }
+    uint32_t Height() const { return height_; }
     vk::Format ColorFormat() const { return color_format_; }
     vk::Format DepthFormat() const { return depth_format_; }
 
     const vk::raii::ImageView& ColorImageView() const { return color_view_; }
-    const vk::raii::Sampler& sampler() const { return sampler_; }
+    const vk::raii::Sampler& GetSampler() const { return sampler_; }
 
     // Returns a descriptor suitable for ImGui::Image()
     vk::DescriptorImageInfo DescriptorInfo() const {
@@ -34,7 +34,7 @@ public:
     // End recording: transitions color to shader-read layout (for ImGui sampling)
     void EndRendering(const vk::raii::CommandBuffer& cmd);
 
-    void resize(uint32_t width, uint32_t height);
+    void Resize(uint32_t width, uint32_t height);
 
 private:
     void createResources();

@@ -2,11 +2,11 @@
 
 namespace mve {
 
-std::vector<vk::VertexInputBindingDescription> Vertex::getBindingDescriptions() {
+std::vector<vk::VertexInputBindingDescription> Vertex::GetBindingDescriptions() {
     return {{0, sizeof(Vertex), vk::VertexInputRate::eVertex}};
 }
 
-std::vector<vk::VertexInputAttributeDescription> Vertex::getAttributeDescriptions() {
+std::vector<vk::VertexInputAttributeDescription> Vertex::GetAttributeDescriptions() {
     return {
         {0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, position)},
         {1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, normal)},
@@ -33,12 +33,12 @@ Mesh::Mesh(Device& device, const std::vector<Vertex>& vertices, const std::vecto
         vk::BufferUsageFlagBits::eIndexBuffer));
 }
 
-void Mesh::bind(const vk::raii::CommandBuffer& command_buffer) const {
-    command_buffer.bindVertexBuffers(0, *vertex_buffer_->buffer(), {0});
-    command_buffer.bindIndexBuffer(*index_buffer_->buffer(), 0, vk::IndexType::eUint32);
+void Mesh::Bind(const vk::raii::CommandBuffer& command_buffer) const {
+    command_buffer.bindVertexBuffers(0, *vertex_buffer_->GetBuffer(), {0});
+    command_buffer.bindIndexBuffer(*index_buffer_->GetBuffer(), 0, vk::IndexType::eUint32);
 }
 
-void Mesh::draw(const vk::raii::CommandBuffer& command_buffer) const {
+void Mesh::Draw(const vk::raii::CommandBuffer& command_buffer) const {
     command_buffer.drawIndexed(index_count_, 1, 0, 0, 0);
 }
 

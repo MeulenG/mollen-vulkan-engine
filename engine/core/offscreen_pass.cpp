@@ -23,9 +23,9 @@ void OffscreenPass::createResources() {
     // COLOR_ATTACHMENT: we render to it. SAMPLED: ImGui reads it as a texture.
     color_info.usage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled;
 
-    color_image_ = device_.device().createImage(color_info);
+    color_image_ = device_.GetDevice().createImage(color_info);
     auto color_reqs = color_image_.getMemoryRequirements();
-    color_memory_ = device_.device().allocateMemory({
+    color_memory_ = device_.GetDevice().allocateMemory({
         color_reqs.size,
         device_.FindMemoryType(color_reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal)
     });
@@ -36,7 +36,7 @@ void OffscreenPass::createResources() {
     color_view_info.viewType = vk::ImageViewType::e2D;
     color_view_info.format = color_format_;
     color_view_info.subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
-    color_view_ = device_.device().createImageView(color_view_info);
+    color_view_ = device_.GetDevice().createImageView(color_view_info);
 
     vk::ImageCreateInfo depth_info{};
     depth_info.imageType = vk::ImageType::e2D;
@@ -48,9 +48,9 @@ void OffscreenPass::createResources() {
     depth_info.tiling = vk::ImageTiling::eOptimal;
     depth_info.usage = vk::ImageUsageFlagBits::eDepthStencilAttachment;
 
-    depth_image_ = device_.device().createImage(depth_info);
+    depth_image_ = device_.GetDevice().createImage(depth_info);
     auto depth_reqs = depth_image_.getMemoryRequirements();
-    depth_memory_ = device_.device().allocateMemory({
+    depth_memory_ = device_.GetDevice().allocateMemory({
         depth_reqs.size,
         device_.FindMemoryType(depth_reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal)
     });
@@ -61,7 +61,7 @@ void OffscreenPass::createResources() {
     depth_view_info.viewType = vk::ImageViewType::e2D;
     depth_view_info.format = depth_format_;
     depth_view_info.subresourceRange = {vk::ImageAspectFlagBits::eDepth, 0, 1, 0, 1};
-    depth_view_ = device_.device().createImageView(depth_view_info);
+    depth_view_ = device_.GetDevice().createImageView(depth_view_info);
 
     // Sampler to read color image
     vk::SamplerCreateInfo sampler_info{};
@@ -69,7 +69,7 @@ void OffscreenPass::createResources() {
     sampler_info.minFilter = vk::Filter::eLinear;
     sampler_info.addressModeU = vk::SamplerAddressMode::eClampToEdge;
     sampler_info.addressModeV = vk::SamplerAddressMode::eClampToEdge;
-    sampler_ = device_.device().createSampler(sampler_info);
+    sampler_ = device_.GetDevice().createSampler(sampler_info);
 }
 
 void OffscreenPass::BeginRendering(const vk::raii::CommandBuffer& cmd) {
@@ -120,11 +120,11 @@ void OffscreenPass::EndRendering(const vk::raii::CommandBuffer& cmd) {
         vk::ImageLayout::eShaderReadOnlyOptimal);
 }
 
-void OffscreenPass::resize(uint32_t width, uint32_t height) {
+void OffscreenPass::Resize(uint32_t width, uint32_t height) {
     if (width == width_ && height == height_) return;
     if (width == 0 || height == 0) return;
 
-    device_.device().waitIdle();
+    device_.GetDevice().waitIdle();
 
     width_ = width;
     height_ = height;

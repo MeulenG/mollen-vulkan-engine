@@ -15,7 +15,7 @@ class EditorUISystem {
 public:
     EditorUISystem(Window& window, ImGuiContext& imgui_ctx, OffscreenPass& offscreen);
 
-    void update(Scene& scene, RenderSystem& render_system, float delta_time);
+    void Update(Scene& scene, RenderSystem& render_system, float delta_time);
 
 private:
     void drawViewport(Scene& scene, float delta_time);

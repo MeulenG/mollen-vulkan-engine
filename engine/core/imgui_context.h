@@ -21,7 +21,7 @@ public:
 
     void NewFrame();
 
-    void render(const vk::raii::CommandBuffer& cmd);
+    void Render(const vk::raii::CommandBuffer& cmd);
 
     ImTextureID RegisterTexture(vk::Sampler sampler, vk::ImageView view,
                                 vk::ImageLayout layout = vk::ImageLayout::eShaderReadOnlyOptimal);

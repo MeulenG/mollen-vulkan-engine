@@ -27,10 +27,10 @@ public:
     Entity(Entity&&) = default;
     Entity& operator=(Entity&&) = default;
 
-    EntityId id() const { return pm_id; }
-    const std::string& name() const { return pm_name; }
+    EntityId Id() const { return pm_id; }
+    const std::string& Name() const { return pm_name; }
     void SetName(const std::string& name) { pm_name = name; }
-    Scene& scene() { return pm_scene; }
+    Scene& GetScene() { return pm_scene; }
 
     template<typename T, typename... Args>
     T* AddComponent(Args&&... args) {

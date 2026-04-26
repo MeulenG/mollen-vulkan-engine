@@ -29,16 +29,12 @@ class AnimationClip {
 public:
     AnimationClip(const std::string& name, float duration);
 
-    const std::string& name() const { return name_; }
-    float duration() const { return duration_; }
+    const std::string& Name() const { return name_; }
+    float Duration() const { return duration_; }
 
-    // Set keyframes for a specific bone
     void SetBoneTrack(uint32_t bone_index, const BoneTrack& track);
 
-    // Sample the animation at a given time (in seconds).
-    // Returns interpolated local transforms for each bone.
-    // For bones without keyframes, returns the provided default values.
-    void sample(
+    void Sample(
         float time,
         uint32_t bone_count,
         const std::vector<glm::vec3>& default_positions,

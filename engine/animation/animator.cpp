@@ -23,41 +23,38 @@ Animator::Animator(const Skeleton& skeleton) : skeleton_{skeleton} {
     bone_matrices_ = skeleton_.GetIdentityBoneMatrices();
 }
 
-void Animator::play(const AnimationClip* clip, bool loop) {
+void Animator::Play(const AnimationClip* clip, bool loop) {
     current_clip_ = clip;
     playing_ = true;
     looping_ = loop;
     current_time_ = 0.0f;
 }
 
-void Animator::stop() {
+void Animator::Stop() {
     playing_ = false;
     current_time_ = 0.0f;
     bone_matrices_ = skeleton_.GetIdentityBoneMatrices();
 }
 
-void Animator::update(float delta_time) {
+void Animator::Update(float delta_time) {
     if (!playing_ || !current_clip_) return;
 
     current_time_ += delta_time;
 
-    if (current_time_ >= current_clip_->duration()) {
+    if (current_time_ >= current_clip_->Duration()) {
         if (looping_) {
-            // fmod wraps the time back to the start
-            // e.g., if duration=2.0 and time=2.3, we get 0.3
-            current_time_ = std::fmod(current_time_, current_clip_->duration());
+            current_time_ = std::fmod(current_time_, current_clip_->Duration());
         } else {
-            current_time_ = current_clip_->duration();
+            current_time_ = current_clip_->Duration();
             playing_ = false;
         }
     }
 
-    // Sample the animation at current time to get per-bone transforms
     std::vector<glm::vec3> positions;
     std::vector<glm::quat> rotations;
     std::vector<glm::vec3> scales;
 
-    current_clip_->sample(
+    current_clip_->Sample(
         current_time_,
         skeleton_.BoneCount(),
         bind_positions_,

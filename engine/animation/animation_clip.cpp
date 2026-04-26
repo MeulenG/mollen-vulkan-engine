@@ -9,7 +9,7 @@ void AnimationClip::SetBoneTrack(uint32_t bone_index, const BoneTrack& track) {
     tracks_.emplace_back(bone_index, track);
 }
 
-void AnimationClip::sample(
+void AnimationClip::Sample(
     float time,
     uint32_t bone_count,
     const std::vector<glm::vec3>& default_positions,

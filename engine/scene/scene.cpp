@@ -21,7 +21,7 @@ void Scene::FlushDestroyed() {
     for (EntityId id : pm_pending_destroy) {
         pm_entities.erase(
             std::remove_if(pm_entities.begin(), pm_entities.end(),
-                [id](const std::unique_ptr<Entity>& e) { return e->id() == id; }),
+                [id](const std::unique_ptr<Entity>& e) { return e->Id() == id; }),
             pm_entities.end());
 
         if (pm_selected == id) {
@@ -34,14 +34,14 @@ void Scene::FlushDestroyed() {
 
 Entity* Scene::FindEntity(EntityId id) {
     for (auto& entity : pm_entities) {
-        if (entity->id() == id) return entity.get();
+        if (entity->Id() == id) return entity.get();
     }
     return nullptr;
 }
 
 Entity* Scene::FindEntityByName(const std::string& name) {
     for (auto& entity : pm_entities) {
-        if (entity->name() == name) return entity.get();
+        if (entity->Name() == name) return entity.get();
     }
     return nullptr;
 }

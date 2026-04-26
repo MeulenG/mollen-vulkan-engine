@@ -25,7 +25,7 @@ void ImGuiContext::initImGui(Window& window, Device& device, vk::Format swapchai
     pool_info.maxSets = 100;
     pool_info.setPoolSizes(pool_sizes);
 
-    descriptor_pool_ = device.device().createDescriptorPool(pool_info);
+    descriptor_pool_ = device.GetDevice().createDescriptorPool(pool_info);
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -43,13 +43,13 @@ void ImGuiContext::initImGui(Window& window, Device& device, vk::Format swapchai
 
     // No Render Pass
     ImGui_ImplVulkan_InitInfo init_info{};
-    init_info.Instance = *device.instance();
-    init_info.PhysicalDevice = *device.physicalDevice();
-    init_info.Device = *device.device();
+    init_info.Instance = *device.GetInstance();
+    init_info.PhysicalDevice = *device.GetPhysicalDevice();
+    init_info.Device = *device.GetDevice();
 
     auto indices = device.FindQueueFamilies();
     init_info.QueueFamily = indices.graphics_family.value();
-    init_info.Queue = *device.graphicsQueue();
+    init_info.Queue = *device.GetGraphicsQueue();
     init_info.DescriptorPool = *descriptor_pool_;
     init_info.MinImageCount = 2;
     init_info.ImageCount = 3;
@@ -70,7 +70,7 @@ void ImGuiContext::NewFrame() {
     ImGui::NewFrame();
 }
 
-void ImGuiContext::render(const vk::raii::CommandBuffer& cmd) {
+void ImGuiContext::Render(const vk::raii::CommandBuffer& cmd) {
     ImGui::Render();
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), *cmd);
 }

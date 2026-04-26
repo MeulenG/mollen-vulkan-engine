@@ -15,9 +15,9 @@ public:
     void SetOrbit(float distance, float yaw, float pitch);
     void SetTarget(glm::vec3 target) { target_ = target; }
 
-    void rotate(float delta_yaw, float delta_pitch);
-    void pan(float dx, float dy);
-    void zoom(float delta);
+    void Rotate(float delta_yaw, float delta_pitch);
+    void Pan(float dx, float dy);
+    void Zoom(float delta);
 
     void SetPerspective(float fov_degrees, float aspect, float near, float far);
 

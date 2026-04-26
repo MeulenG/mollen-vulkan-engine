@@ -39,10 +39,10 @@ void Image::createImage(uint32_t width, uint32_t height, vk::Format format, uint
     image_info.tiling = vk::ImageTiling::eOptimal;
     image_info.usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled;
 
-    image_ = device_.device().createImage(image_info);
+    image_ = device_.GetDevice().createImage(image_info);
 
     auto mem_reqs = image_.getMemoryRequirements();
-    memory_ = device_.device().allocateMemory({
+    memory_ = device_.GetDevice().allocateMemory({
         mem_reqs.size,
         device_.FindMemoryType(mem_reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal)
     });
@@ -56,7 +56,7 @@ void Image::createImageView(vk::Format format, uint32_t mip_levels) {
     view_info.format = format;
     view_info.subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, mip_levels, 0, 1};
 
-    image_view_ = device_.device().createImageView(view_info);
+    image_view_ = device_.GetDevice().createImageView(view_info);
 }
 
 void Image::createSampler(uint32_t mip_levels) {
@@ -72,7 +72,7 @@ void Image::createSampler(uint32_t mip_levels) {
     sampler_info.mipmapMode = vk::SamplerMipmapMode::eLinear;
     sampler_info.maxLod = static_cast<float>(mip_levels - 1);
 
-    sampler_ = device_.device().createSampler(sampler_info);
+    sampler_ = device_.GetDevice().createSampler(sampler_info);
 }
 
 void Image::uploadPixels(const uint8_t* pixels, uint32_t width, uint32_t height) {
@@ -81,7 +81,7 @@ void Image::uploadPixels(const uint8_t* pixels, uint32_t width, uint32_t height)
     Buffer staging{device_, image_size,
         vk::BufferUsageFlagBits::eTransferSrc,
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent};
-    staging.write(pixels, image_size);
+    staging.Write(pixels, image_size);
 
     transitionLayout(vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
 
@@ -89,7 +89,7 @@ void Image::uploadPixels(const uint8_t* pixels, uint32_t width, uint32_t height)
     vk::BufferImageCopy region{};
     region.imageSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1};
     region.imageExtent = vk::Extent3D{width, height, 1};
-    cmd.copyBufferToImage(*staging.buffer(), *image_, vk::ImageLayout::eTransferDstOptimal, region);
+    cmd.copyBufferToImage(*staging.GetBuffer(), *image_, vk::ImageLayout::eTransferDstOptimal, region);
     device_.EndSingleTimeCommands(std::move(cmd));
 
     transitionLayout(vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
@@ -110,13 +110,13 @@ void Image::uploadCompressed(const BlpTexture& blp) {
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent};
 
     // Copy all mip levels into staging buffer sequentially
-    auto* mapped = static_cast<uint8_t*>(staging.map());
+    auto* mapped = static_cast<uint8_t*>(staging.Map());
     vk::DeviceSize staging_offset = 0;
     for (const auto& mip : blp.mip_data) {
         std::memcpy(mapped + staging_offset, mip.data(), mip.size());
         staging_offset += mip.size();
     }
-    staging.unmap();
+    staging.Unmap();
 
     transitionLayout(vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, blp.mip_count);
 
@@ -136,7 +136,7 @@ void Image::uploadCompressed(const BlpTexture& blp) {
         region.imageSubresource = {vk::ImageAspectFlagBits::eColor, m, 0, 1};
         region.imageExtent = vk::Extent3D{mip_w, mip_h, 1};
 
-        cmd.copyBufferToImage(*staging.buffer(), *image_, vk::ImageLayout::eTransferDstOptimal, region);
+        cmd.copyBufferToImage(*staging.GetBuffer(), *image_, vk::ImageLayout::eTransferDstOptimal, region);
 
         staging_offset += blp.mip_data[m].size();
     }

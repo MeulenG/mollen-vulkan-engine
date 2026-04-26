@@ -20,7 +20,7 @@ public:
         vk::ShaderStageFlags stage_flags,
         uint32_t count = 1);
 
-    vk::raii::DescriptorSetLayout build();
+    vk::raii::DescriptorSetLayout Build();
 
 private:
     Device& device_;
@@ -60,7 +60,7 @@ public:
         const vk::DescriptorImageInfo& image_info,
         vk::DescriptorType type = vk::DescriptorType::eCombinedImageSampler);
 
-    void apply(const vk::raii::Device& device, const vk::raii::DescriptorSet& set);
+    void Apply(const vk::raii::Device& device, const vk::raii::DescriptorSet& set);
 
 private:
     std::vector<vk::WriteDescriptorSet> writes_;

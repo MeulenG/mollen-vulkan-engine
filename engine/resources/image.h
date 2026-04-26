@@ -21,8 +21,8 @@ public:
     Image(Image&&) = default;
     Image& operator=(Image&&) = default;
 
-    const vk::raii::ImageView& ImageView() const { return image_view_; }
-    const vk::raii::Sampler& sampler() const { return sampler_; }
+    const vk::raii::ImageView& GetImageView() const { return image_view_; }
+    const vk::raii::Sampler& GetSampler() const { return sampler_; }
 
     vk::DescriptorImageInfo DescriptorInfo() const {
         return {*sampler_, *image_view_, vk::ImageLayout::eShaderReadOnlyOptimal};

@@ -8,7 +8,7 @@ namespace mve {
 EditorUISystem::EditorUISystem(Window& window, ImGuiContext& imgui_ctx, OffscreenPass& offscreen)
     : pm_window{window}, pm_imgui_ctx{imgui_ctx}, pm_offscreen{offscreen} {}
 
-void EditorUISystem::update(Scene& scene, RenderSystem& render_system, float delta_time) {
+void EditorUISystem::Update(Scene& scene, RenderSystem& render_system, float delta_time) {
     drawViewport(scene, delta_time);
     drawProperties(scene, render_system);
     drawModelInfo(scene);
@@ -23,22 +23,22 @@ void EditorUISystem::drawViewport(Scene& scene, float delta_time) {
         uint32_t vp_w = static_cast<uint32_t>(viewport_size.x);
         uint32_t vp_h = static_cast<uint32_t>(viewport_size.y);
 
-        if (vp_w != pm_offscreen.width() || vp_h != pm_offscreen.height()) {
-            pm_offscreen.resize(vp_w, vp_h);
+        if (vp_w != pm_offscreen.Width() || vp_h != pm_offscreen.Height()) {
+            pm_offscreen.Resize(vp_w, vp_h);
             pm_viewport_tex = pm_imgui_ctx.RegisterTexture(
-                *pm_offscreen.sampler(), *pm_offscreen.ColorImageView());
+                *pm_offscreen.GetSampler(), *pm_offscreen.ColorImageView());
         }
 
         if (pm_viewport_tex == ImTextureID_Invalid) {
             pm_viewport_tex = pm_imgui_ctx.RegisterTexture(
-                *pm_offscreen.sampler(), *pm_offscreen.ColorImageView());
+                *pm_offscreen.GetSampler(), *pm_offscreen.ColorImageView());
         }
 
         ImGui::Image(pm_viewport_tex, viewport_size);
 
         // Camera input — find active camera
         Camera* active_cam = nullptr;
-        scene.each<CameraComponent>([&](Entity&, CameraComponent& cc) {
+        scene.Each<CameraComponent>([&](Entity&, CameraComponent& cc) {
             if (cc.pm_is_active) active_cam = &cc.pm_camera;
         });
 
@@ -50,12 +50,12 @@ void EditorUISystem::drawViewport(Scene& scene, float delta_time) {
             pm_last_x = mx; pm_last_y = my;
 
             if (ImGui::IsMouseDown(ImGuiMouseButton_Left))
-                active_cam->rotate(float(-dx) * 0.005f, float(dy) * 0.005f);
+                active_cam->Rotate(float(-dx) * 0.005f, float(dy) * 0.005f);
             if (ImGui::IsMouseDown(ImGuiMouseButton_Middle))
-                active_cam->pan(float(-dx) * 0.005f, float(dy) * 0.005f);
+                active_cam->Pan(float(-dx) * 0.005f, float(dy) * 0.005f);
 
             float scroll = pm_window.GetScrollDelta();
-            if (scroll != 0.0f) active_cam->zoom(scroll * 0.3f);
+            if (scroll != 0.0f) active_cam->Zoom(scroll * 0.3f);
         } else {
             double mx, my;
             pm_window.GetCursorPos(mx, my);
@@ -87,19 +87,19 @@ void EditorUISystem::drawProperties(Scene& scene, RenderSystem& render_system) {
     // Animation controls for selected or first skeleton entity
     ImGui::SeparatorText("Animation");
 
-    scene.each<SkeletonComponent>([&](Entity& entity, SkeletonComponent& skel) {
-        ImGui::PushID(entity.id());
+    scene.Each<SkeletonComponent>([&](Entity& entity, SkeletonComponent& skel) {
+        ImGui::PushID(entity.Id());
         ImGui::Checkbox("Animate", &skel.pm_playing);
         ImGui::SliderFloat("Speed", &skel.pm_speed, 0.0f, 3.0f);
 
         if (!skel.pm_clips.empty()) {
-            const char* current_name = skel.pm_clips[skel.pm_current_clip_index]->name().c_str();
+            const char* current_name = skel.pm_clips[skel.pm_current_clip_index]->Name().c_str();
             if (ImGui::BeginCombo("Animation", current_name)) {
                 for (int i = 0; i < static_cast<int>(skel.pm_clips.size()); i++) {
                     bool selected = (i == skel.pm_current_clip_index);
-                    if (ImGui::Selectable(skel.pm_clips[i]->name().c_str(), selected)) {
+                    if (ImGui::Selectable(skel.pm_clips[i]->Name().c_str(), selected)) {
                         skel.pm_current_clip_index = i;
-                        if (skel.pm_animator) skel.pm_animator->play(skel.pm_clips[i]);
+                        if (skel.pm_animator) skel.pm_animator->Play(skel.pm_clips[i]);
                     }
                 }
                 ImGui::EndCombo();
@@ -115,7 +115,7 @@ void EditorUISystem::drawModelInfo(Scene& scene) {
     ImGui::Begin("Model");
 
     bool found = false;
-    scene.each<M2InfoComponent>([&](Entity& entity, M2InfoComponent& info) {
+    scene.Each<M2InfoComponent>([&](Entity& entity, M2InfoComponent& info) {
         if (found) return;
         found = true;
 
@@ -148,10 +148,10 @@ void EditorUISystem::drawModelInfo(Scene& scene) {
 void EditorUISystem::drawSceneHierarchy(Scene& scene) {
     ImGui::Begin("Scene");
 
-    for (auto& entity : scene.entities()) {
-        bool selected = (scene.SelectedEntity() == entity->id());
-        if (ImGui::Selectable(entity->name().c_str(), selected)) {
-            scene.SelectEntity(entity->id());
+    for (auto& entity : scene.Entities()) {
+        bool selected = (scene.SelectedEntity() == entity->Id());
+        if (ImGui::Selectable(entity->Name().c_str(), selected)) {
+            scene.SelectEntity(entity->Id());
         }
     }
 

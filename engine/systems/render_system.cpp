@@ -17,7 +17,7 @@ RenderSystem::RenderSystem(Device& device, OffscreenPass& offscreen)
     pm_scene_data.pm_light_intensity = 0.85f;
 }
 
-void RenderSystem::init() {
+void RenderSystem::Init() {
     std::string shader_dir = MVE_SHADER_DIR;
 
     // Descriptor layout: binding 0 = UBO, binding 1 = texture, binding 2 = bones
@@ -25,7 +25,7 @@ void RenderSystem::init() {
         .AddBinding(0, vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eFragment)
         .AddBinding(1, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
         .AddBinding(2, vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eVertex)
-        .build();
+        .Build();
 
     pm_descriptor_pool = std::make_unique<DescriptorPool>(pm_device, 100, std::vector<vk::DescriptorPoolSize>{
         {vk::DescriptorType::eUniformBuffer, 100},
@@ -45,23 +45,23 @@ void RenderSystem::init() {
     vk::PipelineLayoutCreateInfo model_layout_info{};
     model_layout_info.setPushConstantRanges(push_range);
     model_layout_info.setSetLayouts(layouts);
-    pm_model_pipeline_layout = pm_device.device().createPipelineLayout(model_layout_info);
+    pm_model_pipeline_layout = pm_device.GetDevice().createPipelineLayout(model_layout_info);
 
-    auto model_config = PipelineConfig::defaultConfig();
+    auto model_config = PipelineConfig::DefaultConfig();
     model_config.pipeline_layout = *pm_model_pipeline_layout;
     model_config.color_attachment_format = pm_offscreen.ColorFormat();
     model_config.depth_attachment_format = pm_offscreen.DepthFormat();
-    model_config.binding_descriptions = Vertex::getBindingDescriptions();
-    model_config.attribute_descriptions = Vertex::getAttributeDescriptions();
+    model_config.binding_descriptions = Vertex::GetBindingDescriptions();
+    model_config.attribute_descriptions = Vertex::GetAttributeDescriptions();
 
     pm_model_pipeline = std::make_unique<Pipeline>(
         pm_device, shader_dir + "/basic.vert.spv", shader_dir + "/basic.frag.spv",
         model_config);
 
     // Background pipeline (fullscreen gradient, no vertex input, no depth)
-    pm_bg_pipeline_layout = pm_device.device().createPipelineLayout({});
+    pm_bg_pipeline_layout = pm_device.GetDevice().createPipelineLayout({});
 
-    auto bg_config = PipelineConfig::defaultConfig();
+    auto bg_config = PipelineConfig::DefaultConfig();
     bg_config.pipeline_layout = *pm_bg_pipeline_layout;
     bg_config.color_attachment_format = pm_offscreen.ColorFormat();
     bg_config.depth_attachment_format = pm_offscreen.DepthFormat();
@@ -79,14 +79,14 @@ void RenderSystem::init() {
     vk::PushConstantRange ground_push{vk::ShaderStageFlagBits::eVertex, 0, sizeof(PushConstants)};
     vk::PipelineLayoutCreateInfo ground_layout_info{};
     ground_layout_info.setPushConstantRanges(ground_push);
-    pm_ground_pipeline_layout = pm_device.device().createPipelineLayout(ground_layout_info);
+    pm_ground_pipeline_layout = pm_device.GetDevice().createPipelineLayout(ground_layout_info);
 
-    auto ground_config = PipelineConfig::defaultConfig();
+    auto ground_config = PipelineConfig::DefaultConfig();
     ground_config.pipeline_layout = *pm_ground_pipeline_layout;
     ground_config.color_attachment_format = pm_offscreen.ColorFormat();
     ground_config.depth_attachment_format = pm_offscreen.DepthFormat();
-    ground_config.binding_descriptions = Vertex::getBindingDescriptions();
-    ground_config.attribute_descriptions = Vertex::getAttributeDescriptions();
+    ground_config.binding_descriptions = Vertex::GetBindingDescriptions();
+    ground_config.attribute_descriptions = Vertex::GetAttributeDescriptions();
     ground_config.rasterization_info.cullMode = vk::CullModeFlagBits::eNone;
     ground_config.color_blend_attachment.blendEnable = vk::True;
     ground_config.color_blend_attachment.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha;
@@ -102,19 +102,19 @@ void RenderSystem::init() {
 }
 
 void RenderSystem::UpdateSceneUBO() {
-    pm_scene_ubo->write(&pm_scene_data, sizeof(SceneUBO));
+    pm_scene_ubo->Write(&pm_scene_data, sizeof(SceneUBO));
 }
 
-void RenderSystem::render(Scene& scene, const Camera& active_camera,
+void RenderSystem::Render(Scene& scene, const Camera& active_camera,
                            const vk::raii::CommandBuffer& cmd) {
     pm_offscreen.BeginRendering(cmd);
 
     // Background gradient
-    pm_bg_pipeline->bind(cmd);
+    pm_bg_pipeline->Bind(cmd);
     cmd.draw(3, 1, 0, 0);
 
     // Ground plane
-    pm_ground_pipeline->bind(cmd);
+    pm_ground_pipeline->Bind(cmd);
     {
         glm::mat4 ground_model{1.0f};
         PushConstants ground_push{};
@@ -123,14 +123,14 @@ void RenderSystem::render(Scene& scene, const Camera& active_camera,
         cmd.pushConstants<PushConstants>(
             *pm_ground_pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, ground_push);
 
-        pm_ground_mesh.bind(cmd);
-        pm_ground_mesh.draw(cmd);
+        pm_ground_mesh.Bind(cmd);
+        pm_ground_mesh.Draw(cmd);
     }
 
     // Render all entities with mesh + transform + material
-    pm_model_pipeline->bind(cmd);
+    pm_model_pipeline->Bind(cmd);
 
-    scene.each<TransformComponent, MeshComponent, MaterialComponent>(
+    scene.Each<TransformComponent, MeshComponent, MaterialComponent>(
         [&](Entity& entity, TransformComponent& transform, MeshComponent& mesh_comp, MaterialComponent& mat) {
             if (!mesh_comp.pm_visible || !mesh_comp.pm_mesh) return;
 
@@ -139,15 +139,15 @@ void RenderSystem::render(Scene& scene, const Camera& active_camera,
                 *pm_model_pipeline_layout, 0,
                 mat.pm_descriptor_set, nullptr);
 
-            glm::mat4 model = transform.modelMatrix();
+            glm::mat4 model = transform.ModelMatrix();
             PushConstants push{};
             push.pm_model = model;
             push.pm_mvp = active_camera.GetProjectionMatrix() * active_camera.GetViewMatrix() * model;
             cmd.pushConstants<PushConstants>(
                 *pm_model_pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, push);
 
-            mesh_comp.pm_mesh->bind(cmd);
-            mesh_comp.pm_mesh->draw(cmd);
+            mesh_comp.pm_mesh->Bind(cmd);
+            mesh_comp.pm_mesh->Draw(cmd);
         });
 
     pm_offscreen.EndRendering(cmd);

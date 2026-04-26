@@ -7,7 +7,7 @@ namespace mve {
 
 class AnimationSystem {
 public:
-    void update(Scene& scene, float delta_time);
+    void Update(Scene& scene, float delta_time);
 };
 
 } // namespace mve

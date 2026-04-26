@@ -12,12 +12,10 @@ class Animator {
 public:
     Animator(const Skeleton& skeleton);
 
-    void play(const AnimationClip* clip, bool loop = true);
-    void stop();
+    void Play(const AnimationClip* clip, bool loop = true);
+    void Stop();
 
-    // Advance time and compute bone matrices for this frame.
-    // delta_time is in seconds (e.g., 0.016 for 60fps).
-    void update(float delta_time);
+    void Update(float delta_time);
 
     bool IsPlaying() const { return playing_; }
     float CurrentTime() const { return current_time_; }
