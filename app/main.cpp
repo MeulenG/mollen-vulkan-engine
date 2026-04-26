@@ -8,6 +8,7 @@
 #include "scene/components/m2_info_component.h"
 #include "resources/asset_manager.h"
 #include "resources/dbc_registry.h"
+#include "db/db_connection.h"
 #include "systems/render_system.h"
 #include "systems/animation_system.h"
 #include "systems/editor_ui_system.h"
@@ -51,7 +52,14 @@ int main() {
         mve::EditorUISystem editor_ui{window, imgui_ctx, *offscreen};
 
         mve::DbcRegistry dbc_registry{"assets/dbc"};
-        mve::DbcBrowserSystem dbc_browser{dbc_registry};
+
+        // Best-effort connect — failure leaves the browser in file-only mode.
+        mve::DbConnection db;
+        if (!db.Connect("db_config.toml")) {
+            std::cerr << "DB connect: " << db.LastError() << "\n";
+        }
+
+        mve::DbcBrowserSystem dbc_browser{dbc_registry, db};
 
         // Editor camera
         auto* cam_entity = scene.CreateEntity("EditorCamera");
