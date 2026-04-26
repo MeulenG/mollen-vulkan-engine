@@ -2,30 +2,69 @@
 #define MVE_DBC_BROWSER_SYSTEM_H
 
 #include "../resources/dbc_registry.h"
+#include "../db/db_connection.h"
 
 #include <string>
+#include <unordered_map>
 
 namespace mve {
 
-// Read-only ImGui panel for browsing extracted .dbc files.
+// ImGui panel for browsing and editing DBC data.
 //
-// Left pane: filterable list of DBCs the registry discovered on disk.
-// Right pane: scrollable table view of the selected DBC's records, with
-// columns derived from the registered schema.
+// Two source modes, chosen per-DBC at display time:
+//
+//   - PSQL mode    — DbConnection is connected AND the table exists in the
+//                    public schema. Rows come from SELECT, cells are
+//                    editable, edits commit via UPDATE.
+//   - file mode    — fallback for any other case (no connection, table
+//                    missing, schema mismatch, no schema registered).
+//                    Rows come from the .dbc file via DbcRegistry, cells
+//                    are read-only.
+//
+// PSQL tables are fetched once and cached. The user can refresh per-table
+// or after a failed UPDATE.
 class DbcBrowserSystem {
 public:
-    explicit DbcBrowserSystem(DbcRegistry& registry);
+    DbcBrowserSystem(DbcRegistry& registry, DbConnection& db);
 
     void Update();
 
 private:
+    enum class SourceMode { File, Psql };
+
+    struct EditState {
+        std::string dbc;       // selected dbc name when entering edit
+        int64_t row_id = 0;    // primary key value
+        int column = -1;       // -1 = no edit in progress
+        char buffer[256] = {0};
+        std::string last_error;
+    };
+
+    void DrawConnectionHeader();
     void DrawDbcList();
     void DrawRecordTable();
 
+    // PSQL helpers
+    SourceMode SourceFor(const std::string& name) const;
+    DbConnection::Table* GetCachedTable(const std::string& dbc_name);
+    void InvalidateTable(const std::string& dbc_name);
+
+    void DrawPsqlTable(DbcRegistry::Entry& entry,
+                       DbConnection::Table& table);
+    void DrawFileTable(DbcRegistry::Entry& entry);
+
     DbcRegistry& pm_registry;
+    DbConnection& pm_db;
+
     std::string pm_selected;
     char pm_filter[64] = {0};
     int pm_max_rows = 1000;
+
+    // Cache of fetched PSQL tables, keyed by DBC name (NOT lowercased table
+    // name — keeps lookups consistent with the registry).
+    std::unordered_map<std::string, DbConnection::Table> pm_psql_cache;
+
+    EditState pm_edit;
 };
 
 } // namespace mve
