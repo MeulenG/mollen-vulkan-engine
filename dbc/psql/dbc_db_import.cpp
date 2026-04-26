@@ -1,4 +1,5 @@
 #include "dbc_db_import.h"
+#include "dbc_naming.h"
 
 #include <cstdio>
 #include <cstring>
@@ -9,17 +10,6 @@
 
 static bool IsPadding(const char* name) {
     return name && name[0] == '_' && strncmp(name, "_pad", 4) == 0;
-}
-
-static std::string ToSnakeCase(const char* name) {
-    std::string result;
-    for (const char* p = name; *p; ++p) {
-        if (isupper(*p) && !result.empty() && result.back() != '_') {
-            result += '_';
-        }
-        result += (char)tolower(*p);
-    }
-    return result;
 }
 
 static std::string PgTypeName(DbcFieldType type) {
@@ -56,14 +46,6 @@ static std::string EscapeSql(const char* str) {
     return result;
 }
 
-static std::string ToLower(const char* str) {
-    std::string result;
-    for (const char* p = str; *p; ++p) {
-        result += (char)tolower(*p);
-    }
-    return result;
-}
-
 static std::string QuoteIdent(const std::string& name) {
     return "\"" + name + "\"";
 }
@@ -71,7 +53,7 @@ static std::string QuoteIdent(const std::string& name) {
 bool DbCreateTable(psql_connector& db, const DbcSchema* schema) {
     if (!schema || !db.IsConnected()) return false;
 
-    std::string table_name = ToLower(schema->dbc_name);
+    std::string table_name = DbcTableName(schema->dbc_name);
 
     std::ostringstream sql;
     sql << "CREATE TABLE IF NOT EXISTS " << QuoteIdent(table_name) << " (\n";
@@ -84,7 +66,7 @@ bool DbCreateTable(psql_connector& db, const DbcSchema* schema) {
         if (!first) sql << ",\n";
         first = false;
 
-        std::string col = ToSnakeCase(schema->fields[f].name);
+        std::string col = DbcColumnName(schema->fields[f].name);
         sql << "    " << QuoteIdent(col) << " " << PgTypeName(schema->fields[f].type);
 
         if (f == 0 && strcmp(schema->fields[f].name, "Id") == 0) {
@@ -173,7 +155,7 @@ bool DbImportDbc(psql_connector& db, const DbcFile& dbc, const DbcSchema* schema
         }
     }
 
-    std::string table_name = ToLower(schema->dbc_name);
+    std::string table_name = DbcTableName(schema->dbc_name);
 
     // Build column list once
     std::vector<uint32_t> col_indices;
@@ -184,7 +166,7 @@ bool DbImportDbc(psql_connector& db, const DbcFile& dbc, const DbcSchema* schema
         col_indices.push_back(f);
         if (!first) cols << ", ";
         first = false;
-        cols << QuoteIdent(ToSnakeCase(schema->fields[f].name));
+        cols << QuoteIdent(DbcColumnName(schema->fields[f].name));
     }
     std::string col_list = cols.str();
 
