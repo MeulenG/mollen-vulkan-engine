@@ -6,7 +6,7 @@
 static const DbcFieldDef ground_effect_doodad_fields[] = {
     { "Id",          DbcFieldType::UInt32 },
     { "Doodadpath",  DbcFieldType::String },
-    { "Flags",       DbcFieldType::UInt32 },
+    { "Flags", DbcFieldType::UInt32, DbcSemantic::Bitmask },
 };
 
 static const DbcSchema schema_ground_effect_doodad = {

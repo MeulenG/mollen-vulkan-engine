@@ -7,7 +7,7 @@ static const DbcFieldDef attack_anim_kits_fields[] = {
     { "Id",             DbcFieldType::UInt32 },
     { "Animation",      DbcFieldType::UInt32 },
     { "Type",           DbcFieldType::UInt32 },
-    { "Flags",          DbcFieldType::UInt32 },
+    { "Flags", DbcFieldType::UInt32, DbcSemantic::Bitmask },
     { "Unknown",        DbcFieldType::UInt32 },
 };
 

@@ -29,11 +29,11 @@ static const DbcFieldDef sound_entries_fields[] = {
     { "Freq10",          DbcFieldType::UInt32 },
     { "DirectoryBase",   DbcFieldType::String },
     { "VolumeFloat",     DbcFieldType::Float  },
-    { "Flags",           DbcFieldType::UInt32 },
+    { "Flags", DbcFieldType::UInt32, DbcSemantic::Bitmask },
     { "MinDistance",     DbcFieldType::Float  },
     { "DistanceCutoff",  DbcFieldType::Float  },
     { "EAXDef",          DbcFieldType::UInt32 },
-    { "SoundEntriesAdvancedID", DbcFieldType::UInt32 },
+    { "SoundEntriesAdvancedID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "soundentriesadvanced" },
 };
 
 static const DbcSchema schema_sound_entries = {

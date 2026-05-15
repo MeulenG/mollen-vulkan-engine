@@ -5,7 +5,7 @@
 
 static const DbcFieldDef sound_entries_advanced_fields[] = {
     { "Id",                  DbcFieldType::UInt32 },
-    { "SoundEntryID",        DbcFieldType::UInt32 },
+    { "SoundEntryID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "soundentry" },
     { "InnerRadius2D",       DbcFieldType::Float  },
     { "TimeA",               DbcFieldType::UInt32 },
     { "TimeB",               DbcFieldType::UInt32 },

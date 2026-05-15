@@ -5,7 +5,7 @@
 
 static const DbcFieldDef world_map_overlay_fields[] = {
     { "Id",             DbcFieldType::UInt32 },
-    { "WorldMapAreaID", DbcFieldType::UInt32 },
+    { "WorldMapAreaID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "worldmaparea" },
     { "AreaTableID1",   DbcFieldType::UInt32 },
     { "AreaTableID2",   DbcFieldType::UInt32 },
     { "AreaTableID3",   DbcFieldType::UInt32 },

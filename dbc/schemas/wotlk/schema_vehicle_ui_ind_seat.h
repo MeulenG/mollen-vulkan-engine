@@ -5,7 +5,7 @@
 
 static const DbcFieldDef vehicle_ui_ind_seat_fields[] = {
     { "Id",                     DbcFieldType::UInt32 },
-    { "VehicleUIIndicatorID",   DbcFieldType::UInt32 },
+    { "VehicleUIIndicatorID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "vehicleuiindicator" },
     { "VirtualSeatIndex",       DbcFieldType::UInt32 },
     { "XPos",                   DbcFieldType::Float  },
     { "YPos",                   DbcFieldType::Float  },

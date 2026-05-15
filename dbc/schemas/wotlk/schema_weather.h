@@ -5,7 +5,7 @@
 
 static const DbcFieldDef weather_fields[] = {
     { "Id",                DbcFieldType::UInt32 },
-    { "AmbienceID",        DbcFieldType::UInt32 },
+    { "AmbienceID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "ambience" },
     { "EffectType",        DbcFieldType::UInt32 },
     { "TransitionSkyBox",  DbcFieldType::Float  },
     { "EffectColor",       DbcFieldType::Float  },

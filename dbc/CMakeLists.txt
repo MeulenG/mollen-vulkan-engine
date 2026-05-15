@@ -4,6 +4,7 @@ set(DBC_SOURCES
     schema_registry.cpp
     dbc_generator.cpp
     dbc_naming.cpp
+    enums/enum_registry.cpp
 )
 
 if(MVE_ENABLE_PSQL)
@@ -19,6 +20,7 @@ add_library(mollen-dbc STATIC ${DBC_SOURCES})
 target_include_directories(mollen-dbc PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/psql
+    ${CMAKE_CURRENT_SOURCE_DIR}/enums
     ${CMAKE_CURRENT_SOURCE_DIR}/schemas
     ${CMAKE_CURRENT_SOURCE_DIR}/schemas/wotlk
 )

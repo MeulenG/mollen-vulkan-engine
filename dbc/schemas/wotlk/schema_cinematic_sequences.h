@@ -5,7 +5,7 @@
 
 static const DbcFieldDef cinematic_sequences_fields[] = {
     { "Id",          DbcFieldType::UInt32 },
-    { "SoundID",     DbcFieldType::UInt32 },
+    { "SoundID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "soundentries" },
     { "Camera1",     DbcFieldType::UInt32 },
     { "Camera2",     DbcFieldType::UInt32 },
     { "Camera3",     DbcFieldType::UInt32 },

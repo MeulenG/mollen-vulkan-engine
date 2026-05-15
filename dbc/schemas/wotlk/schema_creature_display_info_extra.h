@@ -5,13 +5,13 @@
 
 static const DbcFieldDef creature_display_info_extra_fields[] = {
     { "Id",              DbcFieldType::UInt32 },
-    { "DisplayRaceID",   DbcFieldType::UInt32 },
-    { "DisplaySexID",    DbcFieldType::UInt32 },
-    { "SkinID",          DbcFieldType::UInt32 },
-    { "FaceID",          DbcFieldType::UInt32 },
-    { "HairStyleID",     DbcFieldType::UInt32 },
-    { "HairColorID",     DbcFieldType::UInt32 },
-    { "FacialHairID",    DbcFieldType::UInt32 },
+    { "DisplayRaceID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "displayrace" },
+    { "DisplaySexID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "displaysex" },
+    { "SkinID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "skin" },
+    { "FaceID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "face" },
+    { "HairStyleID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "hairstyle" },
+    { "HairColorID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "haircolor" },
+    { "FacialHairID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "facialhair" },
     { "NPCItemDisplay1", DbcFieldType::UInt32 },
     { "NPCItemDisplay2", DbcFieldType::UInt32 },
     { "NPCItemDisplay3", DbcFieldType::UInt32 },
@@ -23,7 +23,7 @@ static const DbcFieldDef creature_display_info_extra_fields[] = {
     { "NPCItemDisplay9", DbcFieldType::UInt32 },
     { "NPCItemDisplay10", DbcFieldType::UInt32 },
     { "NPCItemDisplay11", DbcFieldType::UInt32 },
-    { "Flags",           DbcFieldType::UInt32 },
+    { "Flags", DbcFieldType::UInt32, DbcSemantic::Bitmask },
     { "BakeName",        DbcFieldType::String },
 };
 

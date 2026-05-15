@@ -7,7 +7,7 @@ static const DbcFieldDef weapon_swing_sounds2_fields[] = {
     { "Id",          DbcFieldType::UInt32 },
     { "SwingType",   DbcFieldType::UInt32 },
     { "Crit",        DbcFieldType::UInt32 },
-    { "SoundID",     DbcFieldType::UInt32 },
+    { "SoundID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "soundentries" },
 };
 
 static const DbcSchema schema_weapon_swing_sounds2 = {

@@ -6,9 +6,9 @@
 static const DbcFieldDef skill_line_ability_fields[] = {
     { "Id",                  DbcFieldType::UInt32 },
     { "SkillLine",           DbcFieldType::UInt32 },
-    { "SpellID",             DbcFieldType::UInt32 },
-    { "RaceMask",            DbcFieldType::UInt32 },
-    { "ClassMask",           DbcFieldType::UInt32 },
+    { "SpellID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "spell" },
+    { "RaceMask", DbcFieldType::UInt32, DbcSemantic::Bitmask, "RaceMask" },
+    { "ClassMask", DbcFieldType::UInt32, DbcSemantic::Bitmask, "ClassMask" },
     { "ExcludeRace",         DbcFieldType::UInt32 },
     { "ExcludeClass",        DbcFieldType::UInt32 },
     { "MinSkillLineRank",    DbcFieldType::UInt32 },

@@ -6,7 +6,7 @@
 static const DbcFieldDef sound_provider_preferences_fields[] = {
     { "Id",              DbcFieldType::UInt32 },
     { "Description",     DbcFieldType::String },
-    { "Flags",           DbcFieldType::UInt32 },
+    { "Flags", DbcFieldType::UInt32, DbcSemantic::Bitmask },
     { "EAXEnvironmentSelection", DbcFieldType::UInt32 },
     { "EAXDecayTime",    DbcFieldType::Float  },
     { "EAX2EnvironmentSize", DbcFieldType::Float },

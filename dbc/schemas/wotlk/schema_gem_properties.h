@@ -5,7 +5,7 @@
 
 static const DbcFieldDef gem_properties_fields[] = {
     { "Id",             DbcFieldType::UInt32 },
-    { "EnchantID",      DbcFieldType::UInt32 },
+    { "EnchantID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "enchant" },
     { "MaxCountInventory", DbcFieldType::UInt32 },
     { "MaxCountItem",   DbcFieldType::UInt32 },
     { "Type",           DbcFieldType::UInt32 },

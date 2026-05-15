@@ -5,7 +5,7 @@
 
 static const DbcFieldDef spell_category_fields[] = {
     { "Id",    DbcFieldType::UInt32 },
-    { "Flags", DbcFieldType::UInt32 },
+    { "Flags", DbcFieldType::UInt32, DbcSemantic::Bitmask },
 };
 
 static const DbcSchema schema_spell_category = {

@@ -5,7 +5,7 @@
 
 static const DbcFieldDef area_trigger_fields[] = {
     { "Id",      DbcFieldType::UInt32 },
-    { "MapID",   DbcFieldType::UInt32 },
+    { "MapID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "map" },
     { "X",       DbcFieldType::Float  },
     { "Y",       DbcFieldType::Float  },
     { "Z",       DbcFieldType::Float  },

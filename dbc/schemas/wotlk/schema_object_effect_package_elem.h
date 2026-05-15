@@ -5,8 +5,8 @@
 
 static const DbcFieldDef object_effect_package_elem_fields[] = {
     { "Id",                    DbcFieldType::UInt32 },
-    { "ObjectEffectPackageID", DbcFieldType::UInt32 },
-    { "ObjectEffectGroupID",   DbcFieldType::UInt32 },
+    { "ObjectEffectPackageID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "objecteffectpackage" },
+    { "ObjectEffectGroupID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "objecteffectgroup" },
     { "StateType",             DbcFieldType::UInt32 },
 };
 

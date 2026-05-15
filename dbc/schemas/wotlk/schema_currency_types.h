@@ -5,7 +5,7 @@
 
 static const DbcFieldDef currency_types_fields[] = {
     { "Id",            DbcFieldType::UInt32 },
-    { "ItemID",        DbcFieldType::UInt32 },
+    { "ItemID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "item" },
     { "Category",      DbcFieldType::UInt32 },
     { "BitIndex",      DbcFieldType::UInt32 },
 };

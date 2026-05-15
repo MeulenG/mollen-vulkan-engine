@@ -5,9 +5,9 @@
 
 static const DbcFieldDef lfg_dungeon_expansion_fields[] = {
     { "Id",              DbcFieldType::UInt32 },
-    { "LFGDungeonID",    DbcFieldType::UInt32 },
+    { "LFGDungeonID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "lfgdungeon" },
     { "ExpansionLevel",  DbcFieldType::UInt32 },
-    { "RandomID",        DbcFieldType::UInt32 },
+    { "RandomID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "random" },
     { "HardLevelMin",    DbcFieldType::UInt32 },
     { "HardLevelMax",    DbcFieldType::UInt32 },
     { "TargetLevelMin",  DbcFieldType::UInt32 },

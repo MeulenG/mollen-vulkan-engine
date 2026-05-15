@@ -6,8 +6,8 @@
 static const DbcFieldDef light_params_fields[] = {
     { "Id",                 DbcFieldType::UInt32 },
     { "HighlightSky",       DbcFieldType::UInt32 },
-    { "LightSkyboxID",      DbcFieldType::UInt32 },
-    { "CloudTypeID",        DbcFieldType::UInt32 },
+    { "LightSkyboxID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "lightskybox" },
+    { "CloudTypeID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "cloudtype" },
     { "Glow",               DbcFieldType::Float  },
     { "WaterShallowAlpha",  DbcFieldType::Float  },
     { "WaterDeepAlpha",     DbcFieldType::Float  },

@@ -5,9 +5,9 @@
 
 static const DbcFieldDef dungeon_map_chunk_fields[] = {
     { "Id",             DbcFieldType::UInt32 },
-    { "MapID",          DbcFieldType::UInt32 },
-    { "WmoGroupID",     DbcFieldType::UInt32 },
-    { "DungeonMapID",   DbcFieldType::UInt32 },
+    { "MapID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "map" },
+    { "WmoGroupID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "wmogroup" },
+    { "DungeonMapID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "dungeonmap" },
     { "MinZ",           DbcFieldType::Float  },
 };
 

@@ -9,7 +9,7 @@ static const DbcFieldDef summon_properties_fields[] = {
     { "Faction",     DbcFieldType::UInt32 },
     { "Title",       DbcFieldType::UInt32 },
     { "Slot",        DbcFieldType::UInt32 },
-    { "Flags",       DbcFieldType::UInt32 },
+    { "Flags", DbcFieldType::UInt32, DbcSemantic::Bitmask },
 };
 
 static const DbcSchema schema_summon_properties = {

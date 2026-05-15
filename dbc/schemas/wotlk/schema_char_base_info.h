@@ -6,8 +6,8 @@
 // Record size: 2 bytes — no Id field, no padding
 // Each record is just a valid race+class combination
 static const DbcFieldDef char_base_info_fields[] = {
-    { "RaceID",    DbcFieldType::UInt8 },
-    { "ClassID",   DbcFieldType::UInt8 },
+    { "RaceID", DbcFieldType::UInt8, DbcSemantic::ForeignKey, "chrraces" },
+    { "ClassID", DbcFieldType::UInt8, DbcSemantic::ForeignKey, "chrclasses" },
 };
 
 static const DbcSchema schema_char_base_info = {

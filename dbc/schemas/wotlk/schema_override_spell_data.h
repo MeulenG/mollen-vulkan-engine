@@ -15,7 +15,7 @@ static const DbcFieldDef override_spell_data_fields[] = {
     { "SpellID8",  DbcFieldType::UInt32 },
     { "SpellID9",  DbcFieldType::UInt32 },
     { "SpellID10", DbcFieldType::UInt32 },
-    { "Flags",     DbcFieldType::UInt32 },
+    { "Flags", DbcFieldType::UInt32, DbcSemantic::Bitmask },
 };
 
 static const DbcSchema schema_override_spell_data = {

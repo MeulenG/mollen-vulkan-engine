@@ -17,7 +17,7 @@ static const DbcFieldDef faction_template_fields[] = {
     { "Friends2",      DbcFieldType::UInt32 },
     { "Friends3",      DbcFieldType::UInt32 },
     { "Friends4",      DbcFieldType::UInt32 },
-    { "Flags",         DbcFieldType::UInt32 },
+    { "Flags", DbcFieldType::UInt32, DbcSemantic::Bitmask, "FactionTemplateFlags" },
 };
 
 static const DbcSchema schema_faction_template = {

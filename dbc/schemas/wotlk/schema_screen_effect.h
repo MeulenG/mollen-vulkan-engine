@@ -11,9 +11,9 @@ static const DbcFieldDef screen_effect_fields[] = {
     { "Param2",            DbcFieldType::UInt32 },
     { "Param3",            DbcFieldType::UInt32 },
     { "Param4",            DbcFieldType::UInt32 },
-    { "LightParamsID",     DbcFieldType::UInt32 },
-    { "SoundAmbienceID",   DbcFieldType::UInt32 },
-    { "ZoneMusicID",       DbcFieldType::UInt32 },
+    { "LightParamsID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "lightparams" },
+    { "SoundAmbienceID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "soundambience" },
+    { "ZoneMusicID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "zonemusic" },
 };
 
 static const DbcSchema schema_screen_effect = {

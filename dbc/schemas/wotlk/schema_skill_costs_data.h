@@ -5,7 +5,7 @@
 
 static const DbcFieldDef skill_costs_data_fields[] = {
     { "Id",         DbcFieldType::UInt32 },
-    { "SkillCostID", DbcFieldType::UInt32 },
+    { "SkillCostID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "skillcost" },
     { "Cost1",      DbcFieldType::UInt32 },
     { "Cost2",      DbcFieldType::UInt32 },
     { "Cost3",      DbcFieldType::UInt32 },

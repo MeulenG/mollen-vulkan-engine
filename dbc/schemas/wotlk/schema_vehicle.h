@@ -5,7 +5,7 @@
 
 static const DbcFieldDef vehicle_fields[] = {
     { "Id",                    DbcFieldType::UInt32 },
-    { "Flags",                 DbcFieldType::UInt32 },
+    { "Flags", DbcFieldType::UInt32, DbcSemantic::Bitmask },
     { "TurnSpeed",             DbcFieldType::Float  },
     { "PitchSpeed",            DbcFieldType::Float  },
     { "PitchMin",              DbcFieldType::Float  },
@@ -40,7 +40,7 @@ static const DbcFieldDef vehicle_fields[] = {
     { "CameraYawOffset",      DbcFieldType::Float  },
     { "UiLocomotionType",     DbcFieldType::UInt32 },
     { "MsslTrgtImpactTexRadius", DbcFieldType::Float },
-    { "VehicleUIIndicatorID", DbcFieldType::UInt32 },
+    { "VehicleUIIndicatorID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "vehicleuiindicator" },
     { "PowerDisplayID1",      DbcFieldType::UInt32 },
     { "PowerDisplayID2",      DbcFieldType::UInt32 },
     { "PowerDisplayID3",      DbcFieldType::UInt32 },

@@ -5,12 +5,12 @@
 
 static const DbcFieldDef skill_race_class_info_fields[] = {
     { "Id",           DbcFieldType::UInt32 },
-    { "SkillID",      DbcFieldType::UInt32 },
-    { "RaceMask",     DbcFieldType::UInt32 },
-    { "ClassMask",    DbcFieldType::UInt32 },
-    { "Flags",        DbcFieldType::UInt32 },
+    { "SkillID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "skill" },
+    { "RaceMask", DbcFieldType::UInt32, DbcSemantic::Bitmask, "RaceMask" },
+    { "ClassMask", DbcFieldType::UInt32, DbcSemantic::Bitmask, "ClassMask" },
+    { "Flags", DbcFieldType::UInt32, DbcSemantic::Bitmask, "SkillRaceClassInfoFlags" },
     { "MinLevel",     DbcFieldType::UInt32 },
-    { "SkillTierID",  DbcFieldType::UInt32 },
+    { "SkillTierID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "skilltier" },
     { "SkillCostIndex", DbcFieldType::UInt32 },
 };
 

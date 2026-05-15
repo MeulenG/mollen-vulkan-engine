@@ -5,7 +5,7 @@
 
 static const DbcFieldDef world_map_continent_fields[] = {
     { "Id",              DbcFieldType::UInt32 },
-    { "MapID",           DbcFieldType::UInt32 },
+    { "MapID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "map" },
     { "LeftBoundary",    DbcFieldType::UInt32 },
     { "RightBoundary",   DbcFieldType::UInt32 },
     { "TopBoundary",     DbcFieldType::UInt32 },
@@ -17,7 +17,7 @@ static const DbcFieldDef world_map_continent_fields[] = {
     { "TaxiMinY",        DbcFieldType::Float  },
     { "TaxiMaxX",        DbcFieldType::Float  },
     { "TaxiMaxY",        DbcFieldType::Float  },
-    { "WorldMapID",      DbcFieldType::UInt32 },
+    { "WorldMapID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "worldmap" },
 };
 
 static const DbcSchema schema_world_map_continent = {

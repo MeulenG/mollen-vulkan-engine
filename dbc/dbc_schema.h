@@ -20,9 +20,29 @@ enum class DbcFieldType {
     Int16,
 };
 
+// Semantic annotation: what does this field MEAN, beyond its storage type?
+//
+// Editors and tools dispatch on this to render the right widget — checkbox
+// for Boolean, dropdown for Enum, picker for ForeignKey, etc. Storage and
+// SQL serialization are unaffected; this only governs presentation and
+// human-meaningful editing affordances.
+//
+// Default leaves behavior identical to a pre-annotation schema.
+enum class DbcSemantic {
+    Default = 0,        // numeric / string with no extra meaning
+    Boolean,            // 0/1 toggle (storage is still UInt32 typically)
+    Enum,               // integer code; hint = enum table name in the registry
+    ForeignKey,         // hint = lowercase target table name (e.g. "chrraces")
+    Color,              // RGBA8 packed into a UInt32
+    Bitmask,            // hint = flag table name in the registry
+    LocalizedString,    // member of a 16-locale string cluster
+};
+
 struct DbcFieldDef {
     const char* name;
     DbcFieldType type;
+    DbcSemantic semantic = DbcSemantic::Default;
+    const char* hint = nullptr;  // optional, meaning depends on `semantic`
 };
 
 struct DbcSchema {

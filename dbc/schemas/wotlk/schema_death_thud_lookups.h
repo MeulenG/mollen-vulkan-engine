@@ -6,8 +6,8 @@
 static const DbcFieldDef death_thud_lookups_fields[] = {
     { "Id",            DbcFieldType::UInt32 },
     { "SizeClass",     DbcFieldType::UInt32 },
-    { "TerrainTypeSoundID", DbcFieldType::UInt32 },
-    { "SoundEntryID",  DbcFieldType::UInt32 },
+    { "TerrainTypeSoundID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "terraintypesound" },
+    { "SoundEntryID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "soundentry" },
     { "SoundEntryIDWater", DbcFieldType::UInt32 },
 };
 

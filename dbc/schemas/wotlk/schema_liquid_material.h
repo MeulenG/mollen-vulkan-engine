@@ -6,7 +6,7 @@
 static const DbcFieldDef liquid_material_fields[] = {
     { "Id",       DbcFieldType::UInt32 },
     { "LVF",      DbcFieldType::UInt32 },
-    { "Flags",    DbcFieldType::UInt32 },
+    { "Flags", DbcFieldType::UInt32, DbcSemantic::Bitmask },
 };
 
 static const DbcSchema schema_liquid_material = {

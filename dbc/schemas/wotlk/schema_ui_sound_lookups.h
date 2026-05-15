@@ -5,7 +5,7 @@
 
 static const DbcFieldDef ui_sound_lookups_fields[] = {
     { "Id",             DbcFieldType::UInt32 },
-    { "SoundEntriesID", DbcFieldType::UInt32 },
+    { "SoundEntriesID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "soundentries" },
     { "Name",           DbcFieldType::String },
 };
 

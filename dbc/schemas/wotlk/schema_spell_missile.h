@@ -5,7 +5,7 @@
 
 static const DbcFieldDef spell_missile_fields[] = {
     { "Id",                   DbcFieldType::UInt32 },
-    { "Flags",                DbcFieldType::UInt32 },
+    { "Flags", DbcFieldType::UInt32, DbcSemantic::Bitmask },
     { "DefaultPitchMin",      DbcFieldType::Float  },
     { "DefaultPitchMax",      DbcFieldType::Float  },
     { "DefaultSpeedMin",      DbcFieldType::Float  },
