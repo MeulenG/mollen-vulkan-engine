@@ -1,11 +1,13 @@
 #include "dbc_browser_system.h"
 #include "dbc_naming.h"
 #include "schema_registry.h"
+#include "enum_registry.h"
 
 #include <imgui.h>
 
 #include <cstring>
 #include <cctype>
+#include <cstdio>
 #include <cstdlib>
 
 namespace mve {
@@ -42,6 +44,24 @@ float ColumnWidthForType(DbcFieldType type) {
     case DbcFieldType::Int16:                                 return  70.0f;
     }
     return 90.0f;
+}
+
+// Semantic-aware column width. Used for the editable PSQL table where
+// friendly widgets (combos, FK labels, "[3 set] 0x1A" buttons) need more
+// horizontal room than the raw integer they replace. File mode keeps the
+// narrower type-only widths since cells there are still raw values.
+float ColumnWidthForField(const DbcFieldDef& f) {
+    switch (f.semantic) {
+    case DbcSemantic::ForeignKey: return 200.0f;  // "Some Long Name (123)"
+    case DbcSemantic::Enum:       return 150.0f;  // "Held in Off-Hand"
+    case DbcSemantic::Bitmask:    return 130.0f;  // "[5 set] 0x1A2B"
+    case DbcSemantic::Color:      return 110.0f;  // swatch + small preview
+    case DbcSemantic::Boolean:    return  60.0f;  // checkbox only
+    case DbcSemantic::LocalizedString:
+    case DbcSemantic::Default:
+    default: break;
+    }
+    return ColumnWidthForType(f.type);
 }
 
 // If the last item drawn was clipped (rendered text wider than its cell),
@@ -388,7 +408,7 @@ void DbcBrowserSystem::DrawPsqlTable(DbcRegistry::Entry& entry,
         const auto& field = schema->fields[v.field_index];
         ImGui::TableSetupColumn(field.name,
                                 ImGuiTableColumnFlags_WidthFixed,
-                                ColumnWidthForType(field.type));
+                                ColumnWidthForField(field));
     }
     ImGui::TableSetupScrollFreeze(0, 1);
     ImGui::TableHeadersRow();
@@ -415,79 +435,376 @@ void DbcBrowserSystem::DrawPsqlTable(DbcRegistry::Entry& entry,
                     continue;
                 }
 
-                const std::string& val = db_row.values[v.db_column];
-                bool editing = (pm_edit.dbc == pm_selected &&
-                                pm_edit.row_id == row_id &&
-                                pm_edit.column == static_cast<int>(cv));
-
                 ImGui::PushID(row);
                 ImGui::PushID(static_cast<int>(cv));
-
-                if (editing) {
-                    ImGui::SetNextItemWidth(-FLT_MIN);
-                    if (ImGui::IsWindowAppearing() ||
-                        !ImGui::IsAnyItemActive()) {
-                        ImGui::SetKeyboardFocusHere();
-                    }
-                    bool committed = ImGui::InputText(
-                        "##edit", pm_edit.buffer, sizeof(pm_edit.buffer),
-                        ImGuiInputTextFlags_EnterReturnsTrue);
-                    bool escape = ImGui::IsItemDeactivated() &&
-                                  !ImGui::IsItemDeactivatedAfterEdit();
-
-                    if (committed) {
-                        // Send UPDATE.
-                        std::string col = v.col_name;
-                        bool ok = pm_db.UpdateCell(
-                            DbcTableName(pm_selected.c_str()),
-                            "id", row_id, col,
-                            pm_edit.buffer,
-                            schema->fields[v.field_index].type);
-                        if (ok) {
-                            // Refresh just this row, fall back to full refetch
-                            // if for some reason the row vanished.
-                            DbConnection::Row fresh;
-                            if (pm_db.FetchRow(
-                                    DbcTableName(pm_selected.c_str()),
-                                    "id", row_id, fresh) &&
-                                fresh.values.size() == table.rows[row].values.size()) {
-                                table.rows[row] = std::move(fresh);
-                            } else {
-                                InvalidateTable(pm_selected);
-                            }
-                            pm_edit.last_error.clear();
-                            pm_edit.column = -1;
-                        } else {
-                            pm_edit.last_error = pm_db.LastError();
-                        }
-                    } else if (escape) {
-                        pm_edit.column = -1;
-                        pm_edit.last_error.clear();
-                    }
-                } else {
-                    // Display mode. Right-click context menu would be nice
-                    // later; for now, click selects, double-click edits.
-                    bool clicked = ImGui::Selectable(
-                        val.empty() ? " " : val.c_str(),
-                        false,
-                        ImGuiSelectableFlags_AllowDoubleClick);
-                    TooltipIfHovered(val.c_str());
-                    if (clicked && ImGui::IsMouseDoubleClicked(0)) {
-                        pm_edit.dbc = pm_selected;
-                        pm_edit.row_id = row_id;
-                        pm_edit.column = static_cast<int>(cv);
-                        std::snprintf(pm_edit.buffer, sizeof(pm_edit.buffer),
-                                      "%s", val.c_str());
-                        pm_edit.last_error.clear();
-                    }
-                }
-
+                DrawPsqlCell(schema, v.field_index, table,
+                             row, static_cast<int>(row_id),
+                             v.db_column, static_cast<int>(cv));
                 ImGui::PopID();
                 ImGui::PopID();
             }
         }
     }
     ImGui::EndTable();
+}
+
+// ---- FK label cache ---------------------------------------------------------
+
+const std::string& DbcBrowserSystem::ResolveFkLabel(
+        const std::string& target_table, int64_t id) {
+
+    static const std::string kEmpty;
+
+    auto& cache = pm_fk_cache[target_table];
+    if (!cache.resolved) {
+        cache.resolved = true;  // mark first to avoid re-querying on failure
+
+        // Pull the whole target table once. For huge tables (Spell ~50k
+        // rows) this is a one-time cost paid lazily.
+        DbConnection::Table tbl;
+        if (pm_db.FetchTable(target_table, tbl)) {
+            // Pick the column that gives a human-readable label. Most DBC
+            // tables expose a localized name; some non-localized tables
+            // use a plain "name" column. Fall back to the second column
+            // by position if neither exists.
+            int label_col = -1;
+            const char* preferred[] = { "name_enus", "name_lang", "name" };
+            for (const char* p : preferred) {
+                for (size_t c = 0; c < tbl.columns.size(); c++) {
+                    if (tbl.columns[c] == p) {
+                        label_col = static_cast<int>(c);
+                        break;
+                    }
+                }
+                if (label_col >= 0) break;
+            }
+            int id_col_idx = -1;
+            for (size_t c = 0; c < tbl.columns.size(); c++) {
+                if (tbl.columns[c] == "id") {
+                    id_col_idx = static_cast<int>(c);
+                    break;
+                }
+            }
+            if (id_col_idx >= 0) {
+                for (const auto& r : tbl.rows) {
+                    if (id_col_idx >= static_cast<int>(r.values.size())) continue;
+                    int64_t key = std::strtoll(r.values[id_col_idx].c_str(),
+                                               nullptr, 10);
+                    std::string label;
+                    if (label_col >= 0 &&
+                        label_col < static_cast<int>(r.values.size())) {
+                        label = r.values[label_col];
+                    }
+                    cache.id_to_label[key] = std::move(label);
+                }
+            }
+        }
+    }
+
+    auto it = cache.id_to_label.find(id);
+    if (it == cache.id_to_label.end()) return kEmpty;
+    return it->second;
+}
+
+// ---- per-cell semantic dispatch --------------------------------------------
+
+void DbcBrowserSystem::DrawPsqlCell(const DbcSchema* schema,
+                                    int field_index,
+                                    DbConnection::Table& table,
+                                    int row, int row_id, int db_column,
+                                    int cv) {
+    const auto& field = schema->fields[field_index];
+    const std::string& val = table.rows[row].values[db_column];
+    const std::string sql_table = DbcTableName(pm_selected.c_str());
+    const std::string col_name = DbcColumnName(field.name);
+
+    auto commit = [&](const std::string& new_value) {
+        bool ok = pm_db.UpdateCell(sql_table, "id", row_id,
+                                    col_name, new_value, field.type);
+        if (ok) {
+            DbConnection::Row fresh;
+            if (pm_db.FetchRow(sql_table, "id", row_id, fresh) &&
+                fresh.values.size() == table.rows[row].values.size()) {
+                table.rows[row] = std::move(fresh);
+            } else {
+                InvalidateTable(pm_selected);
+            }
+            pm_edit.last_error.clear();
+        } else {
+            pm_edit.last_error = pm_db.LastError();
+        }
+    };
+
+    // The primary key column stays read-only — editing it would orphan
+    // every row that points at it, and we don't have cascading update
+    // support yet.
+    if (std::strcmp(field.name, "Id") == 0) {
+        ImGui::TextUnformatted(val.c_str());
+        TooltipIfHovered(val.c_str());
+        return;
+    }
+
+    switch (field.semantic) {
+
+    // ---- Boolean: checkbox -------------------------------------------------
+    case DbcSemantic::Boolean: {
+        bool b = (val == "1" || val == "true" || val == "t");
+        if (ImGui::Checkbox("##b", &b)) {
+            commit(b ? "1" : "0");
+        }
+        break;
+    }
+
+    // ---- Enum: combo from registry ----------------------------------------
+    case DbcSemantic::Enum: {
+        const DbcEnum* e = field.hint ? GetDbcEnum(field.hint) : nullptr;
+        if (!e) {
+            // Unknown enum target — fall through to default text editing.
+            goto default_cell;
+        }
+        int current = static_cast<int>(std::strtol(val.c_str(), nullptr, 10));
+        const char* preview = "(unknown)";
+        for (uint32_t i = 0; i < e->count; i++) {
+            if (e->values[i].value == current) { preview = e->values[i].label; break; }
+        }
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if (ImGui::BeginCombo("##enum", preview)) {
+            for (uint32_t i = 0; i < e->count; i++) {
+                bool selected = (e->values[i].value == current);
+                char buf[32];
+                std::snprintf(buf, sizeof(buf), "%d", e->values[i].value);
+                std::string item_label = e->values[i].label;
+                item_label += "  (";
+                item_label += buf;
+                item_label += ")";
+                if (ImGui::Selectable(item_label.c_str(), selected)) {
+                    if (e->values[i].value != current) {
+                        commit(buf);
+                    }
+                }
+            }
+            ImGui::EndCombo();
+        }
+        break;
+    }
+
+    // ---- Color: RGBA8 packed in uint32 ------------------------------------
+    case DbcSemantic::Color: {
+        uint32_t packed = static_cast<uint32_t>(
+            std::strtoul(val.c_str(), nullptr, 10));
+        // WoW packs colors as BGRA in the low-to-high byte order — i.e.
+        // the int's least-significant byte is Blue. Keep it consistent
+        // with how the client renders.
+        float rgba[4] = {
+            ((packed >>  0) & 0xFF) / 255.0f,
+            ((packed >>  8) & 0xFF) / 255.0f,
+            ((packed >> 16) & 0xFF) / 255.0f,
+            ((packed >> 24) & 0xFF) / 255.0f,
+        };
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if (ImGui::ColorEdit4("##color", rgba,
+                              ImGuiColorEditFlags_NoInputs |
+                              ImGuiColorEditFlags_AlphaBar)) {
+            uint32_t b = static_cast<uint32_t>(rgba[0] * 255.0f) & 0xFF;
+            uint32_t g = static_cast<uint32_t>(rgba[1] * 255.0f) & 0xFF;
+            uint32_t r = static_cast<uint32_t>(rgba[2] * 255.0f) & 0xFF;
+            uint32_t a = static_cast<uint32_t>(rgba[3] * 255.0f) & 0xFF;
+            uint32_t out = b | (g << 8) | (r << 16) | (a << 24);
+            char buf[32];
+            std::snprintf(buf, sizeof(buf), "%u", out);
+            commit(buf);
+        }
+        break;
+    }
+
+    // ---- Bitmask: button shows count + hex; popup has flag checkboxes -----
+    case DbcSemantic::Bitmask: {
+        uint32_t mask = static_cast<uint32_t>(
+            std::strtoul(val.c_str(), nullptr, 10));
+        const DbcEnum* e = field.hint ? GetDbcEnum(field.hint) : nullptr;
+
+        // Count set bits + format a compact label like "[3 set] 0x1A".
+        int set_count = 0;
+        uint32_t m = mask;
+        while (m) { set_count += (m & 1); m >>= 1; }
+        char label[64];
+        if (mask == 0) {
+            std::snprintf(label, sizeof(label), "(none)");
+        } else {
+            std::snprintf(label, sizeof(label), "[%d set] 0x%X", set_count, mask);
+        }
+        if (ImGui::Button(label, ImVec2(-FLT_MIN, 0))) {
+            ImGui::OpenPopup("##bitmask_popup");
+        }
+        if (ImGui::BeginPopup("##bitmask_popup")) {
+            uint32_t edited = mask;
+            if (e) {
+                // Named flag table — show one labelled checkbox per known flag.
+                for (uint32_t i = 0; i < e->count; i++) {
+                    uint32_t bit = static_cast<uint32_t>(e->values[i].value);
+                    bool on = (edited & bit) != 0;
+                    if (ImGui::Checkbox(e->values[i].label, &on)) {
+                        if (on) edited |= bit;
+                        else    edited &= ~bit;
+                    }
+                }
+            } else {
+                // No registered flag table. Default view is compact:
+                //   1. Hex input — direct edit for power users
+                //   2. Set-bits list — click to clear individual set bits
+                //   3. Collapsing "All 32 bits" — set previously-unset bits
+                //      without scrolling a 32-row checkbox grid every time.
+                char hex_buf[16];
+                std::snprintf(hex_buf, sizeof(hex_buf), "0x%X", edited);
+                ImGui::SetNextItemWidth(120);
+                if (ImGui::InputText("Hex", hex_buf, sizeof(hex_buf),
+                        ImGuiInputTextFlags_CharsHexadecimal |
+                        ImGuiInputTextFlags_EnterReturnsTrue)) {
+                    edited = static_cast<uint32_t>(
+                        std::strtoul(hex_buf, nullptr, 16));
+                }
+
+                ImGui::Separator();
+                ImGui::TextDisabled("Set bits");
+                bool any_set = false;
+                for (int b = 0; b < 32; b++) {
+                    uint32_t bit = 1u << b;
+                    if (!(edited & bit)) continue;
+                    any_set = true;
+                    bool on = true;
+                    char bn[32];
+                    std::snprintf(bn, sizeof(bn), "bit %d (0x%X)", b, bit);
+                    if (ImGui::Checkbox(bn, &on) && !on) {
+                        edited &= ~bit;
+                    }
+                }
+                if (!any_set) ImGui::TextDisabled("  (none)");
+
+                ImGui::Separator();
+                if (ImGui::CollapsingHeader("All 32 bits")) {
+                    for (int b = 0; b < 32; b++) {
+                        uint32_t bit = 1u << b;
+                        bool on = (edited & bit) != 0;
+                        char bn[32];
+                        std::snprintf(bn, sizeof(bn), "bit %d (0x%X)", b, bit);
+                        if (ImGui::Checkbox(bn, &on)) {
+                            if (on) edited |= bit;
+                            else    edited &= ~bit;
+                        }
+                    }
+                }
+            }
+            if (edited != mask) {
+                char buf[32];
+                std::snprintf(buf, sizeof(buf), "%u", edited);
+                commit(buf);
+            }
+            ImGui::EndPopup();
+        }
+        break;
+    }
+
+    // ---- Foreign key: "Label (id)" text, edit via plain InputText fallback
+    case DbcSemantic::ForeignKey: {
+        // The auto-tagger guesses target table names from field-name prefixes
+        // and is wrong for many fields (e.g. "VariationID" -> "variation"
+        // which doesn't exist). If the target isn't a real table in the DB,
+        // we fall through to plain integer rendering with NO misleading
+        // tooltip about a fictional FK.
+        if (!field.hint || !pm_db.TableExists(field.hint)) {
+            goto default_cell;
+        }
+        int64_t id_value = std::strtoll(val.c_str(), nullptr, 10);
+        std::string display;
+        if (id_value != 0) {
+            const std::string& label = ResolveFkLabel(field.hint, id_value);
+            if (!label.empty()) {
+                display = label + "  (" + val + ")";
+            }
+        }
+        if (display.empty()) display = val.empty() ? "0" : val;
+
+        bool editing = (pm_edit.dbc == pm_selected &&
+                        pm_edit.row_id == row_id &&
+                        pm_edit.column == cv);
+        if (editing) {
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (ImGui::IsWindowAppearing() || !ImGui::IsAnyItemActive()) {
+                ImGui::SetKeyboardFocusHere();
+            }
+            bool committed = ImGui::InputText("##edit", pm_edit.buffer,
+                sizeof(pm_edit.buffer),
+                ImGuiInputTextFlags_EnterReturnsTrue);
+            bool escape = ImGui::IsItemDeactivated() &&
+                          !ImGui::IsItemDeactivatedAfterEdit();
+            if (committed) {
+                commit(pm_edit.buffer);
+                pm_edit.column = -1;
+            } else if (escape) {
+                pm_edit.column = -1;
+            }
+        } else {
+            bool clicked = ImGui::Selectable(display.c_str(), false,
+                ImGuiSelectableFlags_AllowDoubleClick);
+            // Tooltip hints at where the FK points.
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+                ImGui::SetTooltip("%s\n→ table: %s",
+                                  display.c_str(),
+                                  field.hint ? field.hint : "(unknown)");
+            }
+            if (clicked && ImGui::IsMouseDoubleClicked(0)) {
+                pm_edit.dbc = pm_selected;
+                pm_edit.row_id = row_id;
+                pm_edit.column = cv;
+                std::snprintf(pm_edit.buffer, sizeof(pm_edit.buffer),
+                              "%s", val.c_str());
+                pm_edit.last_error.clear();
+            }
+        }
+        break;
+    }
+
+    // ---- Default + LocalizedString: existing double-click → InputText -----
+    case DbcSemantic::LocalizedString:
+    case DbcSemantic::Default:
+    default:
+    default_cell: {
+        bool editing = (pm_edit.dbc == pm_selected &&
+                        pm_edit.row_id == row_id &&
+                        pm_edit.column == cv);
+        if (editing) {
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (ImGui::IsWindowAppearing() || !ImGui::IsAnyItemActive()) {
+                ImGui::SetKeyboardFocusHere();
+            }
+            bool committed = ImGui::InputText("##edit", pm_edit.buffer,
+                sizeof(pm_edit.buffer),
+                ImGuiInputTextFlags_EnterReturnsTrue);
+            bool escape = ImGui::IsItemDeactivated() &&
+                          !ImGui::IsItemDeactivatedAfterEdit();
+            if (committed) {
+                commit(pm_edit.buffer);
+                pm_edit.column = -1;
+            } else if (escape) {
+                pm_edit.column = -1;
+            }
+        } else {
+            bool clicked = ImGui::Selectable(
+                val.empty() ? " " : val.c_str(), false,
+                ImGuiSelectableFlags_AllowDoubleClick);
+            TooltipIfHovered(val.c_str());
+            if (clicked && ImGui::IsMouseDoubleClicked(0)) {
+                pm_edit.dbc = pm_selected;
+                pm_edit.row_id = row_id;
+                pm_edit.column = cv;
+                std::snprintf(pm_edit.buffer, sizeof(pm_edit.buffer),
+                              "%s", val.c_str());
+                pm_edit.last_error.clear();
+            }
+        }
+        break;
+    }
+    }
 }
 
 void DbcBrowserSystem::DrawFileTable(DbcRegistry::Entry& entry) {
