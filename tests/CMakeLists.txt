@@ -1,6 +1,7 @@
 add_executable(dbc-tests
     test_db_config.cpp
     test_psql_connector.cpp
+    test_enum_registry.cpp
 )
 
 target_link_libraries(dbc-tests PRIVATE
