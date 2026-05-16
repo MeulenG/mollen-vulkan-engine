@@ -2,6 +2,7 @@
 #include "dbc_naming.h"
 #include "schema_registry.h"
 #include "enum_registry.h"
+#include "../core/icons_fork_awesome.h"
 
 #include <imgui.h>
 
@@ -240,7 +241,8 @@ void DbcBrowserSystem::DrawConnectionHeader() {
 
 void DbcBrowserSystem::DrawDbcList() {
     ImGui::SetNextItemWidth(-FLT_MIN);
-    ImGui::InputTextWithHint("##filter", "Filter (matches pretty or raw name)...",
+    ImGui::InputTextWithHint("##filter",
+                             ICON_FA_SEARCH "  Filter (matches pretty or raw name)...",
                              pm_filter, sizeof(pm_filter));
     ImGui::Separator();
 

@@ -1,4 +1,5 @@
 #include "imgui_context.h"
+#include "editor_style.h"
 
 #include <stdexcept>
 
@@ -45,11 +46,11 @@ void ImGuiContext::initImGui(Window& window, Device& device, vk::Format swapchai
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
-    ImGui::StyleColorsDark();
-    ImGuiStyle& style = ImGui::GetStyle();
-    style.WindowRounding = 4.0f;
-    style.FrameRounding = 2.0f;
-    style.GrabRounding = 2.0f;
+    // Apply editor theme + load Inter / Fork Awesome merged atlas. Both
+    // must run before ImGui_ImplVulkan_Init, which uploads the atlas to
+    // GPU memory and bakes the font texture.
+    editor_style::Apply(*ImGui::GetCurrentContext());
+    editor_style::LoadFonts(*io.Fonts);
 
     ImGui_ImplGlfw_InitForVulkan(window.GetGLFWWindow(), true);
 

@@ -25,6 +25,7 @@ add_library(mollen-engine STATIC
     animation/animator.cpp
     core/offscreen_pass.cpp
     core/imgui_context.cpp
+    core/editor_style.cpp
     formats/blp_loader.cpp
     formats/m2_loader.cpp
     db/db_connection.cpp
