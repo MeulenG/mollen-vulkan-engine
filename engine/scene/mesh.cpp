@@ -18,12 +18,16 @@ std::vector<vk::VertexInputAttributeDescription> Vertex::GetAttributeDescription
 }
 
 Mesh::Mesh(Device& device, const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices)
+    : Mesh(device, vertices.data(), sizeof(Vertex) * vertices.size(), indices) {}
+
+Mesh::Mesh(Device& device, const void* vertex_data, size_t vertex_bytes,
+           const std::vector<uint32_t>& indices)
     : index_count_{static_cast<uint32_t>(indices.size())} {
 
     vertex_buffer_ = std::make_unique<Buffer>(Buffer::CreateWithStaging(
         device,
-        vertices.data(),
-        sizeof(Vertex) * vertices.size(),
+        vertex_data,
+        vertex_bytes,
         vk::BufferUsageFlagBits::eVertexBuffer));
 
     index_buffer_ = std::make_unique<Buffer>(Buffer::CreateWithStaging(

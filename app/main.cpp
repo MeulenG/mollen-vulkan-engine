@@ -81,17 +81,22 @@ int main() {
                 std::cout << "Loaded ADT with " << tile.textures.size()
                           << " textures and 256 chunks\n";
 
-                auto terrain_mesh = mve::TerrainMesh::Build(device, tile);
+                // R2 step 4 transitional: build the terrain mesh with an
+                // empty tile-tex-to-slice mapping. The terrain pipeline
+                // lands later in R2 and reads the per-chunk metadata + alpha
+                // pixels; until then the model pipeline draws the mesh
+                // unsplatted. Result.mesh has the new TerrainVertex layout,
+                // which the model pipeline's vertex bindings don't match,
+                // so this transitional state is incomplete and only
+                // exists to get a clean build between steps.
+                std::vector<int> empty_slice_map(tile.textures.size(), -1);
+                auto terrain_build =
+                    mve::TerrainMesh::Build(device, tile, empty_slice_map);
 
-                // Wire an entity using the existing Transform + Mesh +
-                // Material component triple so the regular model pipeline
-                // draws it. R1 binds the default checkerboard texture as a
-                // placeholder; height-based vertex color does the heavy
-                // lifting visually.
                 auto* terrain_entity = scene.CreateEntity("Elwynn_32_48");
                 terrain_entity->AddComponent<mve::TransformComponent>();
                 auto* mesh_comp = terrain_entity->AddComponent<mve::MeshComponent>();
-                mesh_comp->pm_mesh = std::move(terrain_mesh);
+                mesh_comp->pm_mesh = std::move(terrain_build.mesh);
 
                 auto placeholder_tex = assets.GetDefaultTexture();
                 auto* mat = terrain_entity->AddComponent<mve::MaterialComponent>();
