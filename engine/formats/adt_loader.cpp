@@ -9,14 +9,21 @@ namespace mve {
 
 namespace {
 
-// See wdt_loader.cpp for the rationale on FourCC matching - WoW chunk IDs
-// are stored reversed on disk and a naive FourCC literal matches the
-// little-endian read.
+// Build a uint32 tag matching the on-disk byte order of a WoW chunk ID.
+//
+// WoW stores chunk IDs reversed (e.g. "MVER" appears as bytes 'R','E','V','M'
+// on disk). When we read those 4 bytes as a little-endian uint32 we get
+// 'R' in the LSB, 'M' in the MSB. To match, we build the same value out of
+// the C-string literal by putting s[3] (last char) in the LSB.
+//
+// Without the reverse, every chunk match returned false and the loader
+// reported 0 MCNK chunks parsed - which we just discovered while diagnosing
+// R1's "nothing renders" bug.
 constexpr uint32_t FourCC(const char* s) {
-    return (uint32_t)(uint8_t)s[0]
-         | ((uint32_t)(uint8_t)s[1] << 8)
-         | ((uint32_t)(uint8_t)s[2] << 16)
-         | ((uint32_t)(uint8_t)s[3] << 24);
+    return (uint32_t)(uint8_t)s[3]
+         | ((uint32_t)(uint8_t)s[2] << 8)
+         | ((uint32_t)(uint8_t)s[1] << 16)
+         | ((uint32_t)(uint8_t)s[0] << 24);
 }
 
 // Layout of the MCNK header for ADT v18. Only the fields R1 needs are

@@ -8,18 +8,14 @@ namespace mve {
 
 namespace {
 
-// Build a 4CC tag matching the on-disk byte order.
-//
-// WoW chunk IDs are stored reversed in the source (MVER appears as bytes
-// 'R','E','V','M' on disk). When we read 4 bytes from the file as a
-// little-endian uint32, 'R'-'E'-'V'-'M' produces (R<<24)|(E<<16)|(V<<8)|M
-// which is the same value FourCC("MVER") below computes. So matching just
-// works.
+// WoW chunk IDs are stored reversed on disk (e.g. "MVER" appears as bytes
+// 'R','E','V','M'). Read as little-endian uint32 that gives 'R' in LSB,
+// 'M' in MSB. To match, the FourCC builder puts s[3] in the LSB.
 constexpr uint32_t FourCC(const char* s) {
-    return (uint32_t)(uint8_t)s[0]
-         | ((uint32_t)(uint8_t)s[1] << 8)
-         | ((uint32_t)(uint8_t)s[2] << 16)
-         | ((uint32_t)(uint8_t)s[3] << 24);
+    return (uint32_t)(uint8_t)s[3]
+         | ((uint32_t)(uint8_t)s[2] << 8)
+         | ((uint32_t)(uint8_t)s[1] << 16)
+         | ((uint32_t)(uint8_t)s[0] << 24);
 }
 
 } // namespace

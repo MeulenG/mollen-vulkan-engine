@@ -74,7 +74,14 @@ int main() {
         {
             std::string adt_path = std::string(MVE_ASSET_DIR)
                 + "/World/Maps/Azeroth/Azeroth_32_48.adt";
-            mve::AdtTile tile{};
+
+            // AdtTile is ~5 MB now that each AdtChunk carries its four
+            // 4096-byte alpha maps + normals. Default Windows thread
+            // stacks are 1 MB, so stack-allocating it crashes with
+            // STATUS_STACK_OVERFLOW (0xC00000FD) before main even gets
+            // to ParseMcnk. Heap allocation keeps the same access pattern.
+            auto tile_ptr = std::make_unique<mve::AdtTile>();
+            mve::AdtTile& tile = *tile_ptr;
             if (!mve::AdtLoader::LoadFile(adt_path, tile)) {
                 std::cerr << "Failed to load ADT: " << adt_path << "\n";
                 return EXIT_FAILURE;
