@@ -4,13 +4,13 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef dungeon_map_fields[] = {
-    { "Id",            DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
     { "MapID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "map" },
-    { "FloorIndex",    DbcFieldType::UInt32 },
-    { "MinX",          DbcFieldType::Float  },
-    { "MaxX",          DbcFieldType::Float  },
-    { "MinY",          DbcFieldType::Float  },
-    { "MaxY",          DbcFieldType::Float  },
+    { "FloorIndex", DbcFieldType::UInt32 },
+    { "MinX", DbcFieldType::Float },
+    { "MaxX", DbcFieldType::Float },
+    { "MinY", DbcFieldType::Float },
+    { "MaxY", DbcFieldType::Float },
     { "ParentWorldMapID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "parentworldmap" },
 };
 

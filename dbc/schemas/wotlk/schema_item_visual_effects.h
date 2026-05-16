@@ -4,7 +4,7 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef item_visual_effects_fields[] = {
-    { "Id",    DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
     { "Model", DbcFieldType::String },
 };
 

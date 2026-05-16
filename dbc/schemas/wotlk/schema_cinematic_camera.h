@@ -4,12 +4,12 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef cinematic_camera_fields[] = {
-    { "Id",          DbcFieldType::UInt32 },
-    { "Model",       DbcFieldType::String },
-    { "SoundID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "soundentries" },
-    { "OriginX",     DbcFieldType::Float  },
-    { "OriginY",     DbcFieldType::Float  },
-    { "OriginZ",     DbcFieldType::Float  },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "Model", DbcFieldType::String },
+    { "SoundID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "soundentries", "Visuals" },
+    { "OriginX", DbcFieldType::Float },
+    { "OriginY", DbcFieldType::Float },
+    { "OriginZ", DbcFieldType::Float },
     { "OriginFacing", DbcFieldType::Float },
 };
 

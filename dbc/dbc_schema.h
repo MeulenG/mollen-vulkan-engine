@@ -43,6 +43,17 @@ struct DbcFieldDef {
     DbcFieldType type;
     DbcSemantic semantic = DbcSemantic::Default;
     const char* hint = nullptr;  // optional, meaning depends on `semantic`
+
+    // UI grouping. Editors render a section toggle bar above the table; all
+    // fields with the same `category` collapse/expand together. Null means
+    // "no group" (rendered in the default catch-all section).
+    const char* category = nullptr;
+
+    // If true the editor hides this column by default. User can re-enable
+    // via the right-click table header menu. Used for noisy / advanced
+    // fields (Effect2/Effect3 satellites, MinFactionId, etc.) to keep the
+    // default Spell.dbc view from being 234 columns wide.
+    bool default_hidden = false;
 };
 
 struct DbcSchema {

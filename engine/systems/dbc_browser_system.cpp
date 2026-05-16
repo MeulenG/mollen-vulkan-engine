@@ -9,6 +9,7 @@
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
+#include <unordered_set>
 
 namespace mve {
 
@@ -340,6 +341,10 @@ void DbcBrowserSystem::DrawRecordTable() {
 
     ImGui::Separator();
 
+    // Section toggle bar — only meaningful when the schema declares
+    // categories for its fields (post-Layer-2 schemas).
+    if (entry->schema) DrawSectionToggles(entry->schema);
+
     if (mode == SourceMode::Psql) {
         auto* tbl = GetCachedTable(pm_selected);
         if (!tbl) {
@@ -424,6 +429,10 @@ void DbcBrowserSystem::DrawPsqlTable(DbcRegistry::Entry& entry,
         const auto& field = schema->fields[f];
         if (IsPaddingField(field.name)) continue;
 
+        // Category filter (Layer 2). Uncategorized fields always pass through;
+        // categorized fields respect the section toggle state.
+        if (!IsCategoryVisible(field.category)) continue;
+
         // Drop non-primary locale members; the cluster lead carries them.
         if (field.semantic == DbcSemantic::LocalizedString && field.hint) {
             auto it = clusters.find(field.hint);
@@ -469,7 +478,8 @@ void DbcBrowserSystem::DrawPsqlTable(DbcRegistry::Entry& entry,
     constexpr ImGuiTableFlags kTableFlags =
         ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
         ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollX |
-        ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit;
+        ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit |
+        ImGuiTableFlags_Hideable;  // right-click header -> show/hide columns
 
     if (!ImGui::BeginTable("##psql_records", static_cast<int>(view.size()), kTableFlags)) {
         return;
@@ -477,9 +487,9 @@ void DbcBrowserSystem::DrawPsqlTable(DbcRegistry::Entry& entry,
 
     for (const auto& v : view) {
         const auto& field = schema->fields[v.field_index];
-        ImGui::TableSetupColumn(field.name,
-                                ImGuiTableColumnFlags_WidthFixed,
-                                ColumnWidthForField(field));
+        ImGuiTableColumnFlags flags = ImGuiTableColumnFlags_WidthFixed;
+        if (field.default_hidden) flags |= ImGuiTableColumnFlags_DefaultHide;
+        ImGui::TableSetupColumn(field.name, flags, ColumnWidthForField(field));
     }
     ImGui::TableSetupScrollFreeze(0, 1);
     ImGui::TableHeadersRow();
@@ -559,6 +569,57 @@ void DbcBrowserSystem::DrawPsqlTable(DbcRegistry::Entry& entry,
     ImGui::EndTable();
 
     DrawLocaleEditPopup(table);
+}
+
+// ---- Section toggles (Layer 2) ----------------------------------------------
+
+void DbcBrowserSystem::DrawSectionToggles(const DbcSchema* schema) {
+    // Collect distinct categories in field order so the toggle bar has a
+    // stable visual sequence (Identity first, Advanced last).
+    std::vector<const char*> categories;
+    std::unordered_set<std::string> seen;
+    for (uint32_t f = 0; f < schema->field_count; f++) {
+        const char* c = schema->fields[f].category;
+        if (!c || !*c) continue;
+        if (seen.insert(c).second) categories.push_back(c);
+    }
+    if (categories.empty()) return;
+
+    // First-time init for this DBC: default every category to visible.
+    auto& visible = pm_section_visible[pm_selected];
+    for (const char* c : categories) {
+        if (visible.find(c) == visible.end()) visible[c] = true;
+    }
+
+    ImGui::TextDisabled("Sections:");
+    ImGui::SameLine();
+    for (size_t i = 0; i < categories.size(); i++) {
+        if (i > 0) ImGui::SameLine();
+        bool v = visible[categories[i]];
+        if (ImGui::Checkbox(categories[i], &v)) {
+            visible[categories[i]] = v;
+        }
+    }
+    // Show / hide all shortcuts
+    ImGui::SameLine();
+    ImGui::Dummy(ImVec2(12, 0));
+    ImGui::SameLine();
+    if (ImGui::SmallButton("All")) {
+        for (const char* c : categories) visible[c] = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("None")) {
+        for (const char* c : categories) visible[c] = false;
+    }
+}
+
+bool DbcBrowserSystem::IsCategoryVisible(const char* category) const {
+    if (!category || !*category) return true;  // uncategorized = always visible
+    auto dbc_it = pm_section_visible.find(pm_selected);
+    if (dbc_it == pm_section_visible.end()) return true;
+    auto cat_it = dbc_it->second.find(category);
+    if (cat_it == dbc_it->second.end()) return true;
+    return cat_it->second;
 }
 
 // ---- Locale cluster editor --------------------------------------------------
@@ -1053,7 +1114,8 @@ void DbcBrowserSystem::DrawFileTable(DbcRegistry::Entry& entry) {
     constexpr ImGuiTableFlags kTableFlags =
         ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
         ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollX |
-        ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit;
+        ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit |
+        ImGuiTableFlags_Hideable;  // right-click header -> show/hide columns
 
     if (!ImGui::BeginTable("##file_records", static_cast<int>(col_count), kTableFlags)) {
         return;

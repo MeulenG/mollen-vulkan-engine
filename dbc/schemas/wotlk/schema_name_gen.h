@@ -4,8 +4,8 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef name_gen_fields[] = {
-    { "Id",       DbcFieldType::UInt32 },
-    { "Name",     DbcFieldType::String },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "Name", DbcFieldType::String, DbcSemantic::Default, nullptr, "Identity" },
     { "RaceID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "chrraces" },
     { "Sex", DbcFieldType::UInt32, DbcSemantic::Enum, "Sex" },
 };

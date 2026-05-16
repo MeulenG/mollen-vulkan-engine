@@ -4,16 +4,16 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef area_trigger_fields[] = {
-    { "Id",      DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
     { "MapID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "map" },
-    { "X",       DbcFieldType::Float  },
-    { "Y",       DbcFieldType::Float  },
-    { "Z",       DbcFieldType::Float  },
-    { "Radius",  DbcFieldType::Float  },
+    { "X", DbcFieldType::Float },
+    { "Y", DbcFieldType::Float },
+    { "Z", DbcFieldType::Float },
+    { "Radius", DbcFieldType::Float },
     { "BoxLength", DbcFieldType::Float },
-    { "BoxWidth", DbcFieldType::Float  },
+    { "BoxWidth", DbcFieldType::Float },
     { "BoxHeight", DbcFieldType::Float },
-    { "BoxYaw",  DbcFieldType::Float  },
+    { "BoxYaw", DbcFieldType::Float },
 };
 
 static const DbcSchema schema_area_trigger = {

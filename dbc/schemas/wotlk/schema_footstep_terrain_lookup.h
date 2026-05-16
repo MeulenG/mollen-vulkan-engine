@@ -4,11 +4,11 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef footstep_terrain_lookup_fields[] = {
-    { "Id",                  DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
     { "CreatureFootstepID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "creaturefootstep" },
-    { "TerrainSoundID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "terrainsound" },
-    { "SoundID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "soundentries" },
-    { "SoundIDSplash",       DbcFieldType::UInt32 },
+    { "TerrainSoundID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "terrainsound", "Visuals" },
+    { "SoundID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "soundentries", "Visuals" },
+    { "SoundIDSplash", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Visuals" },
 };
 
 static const DbcSchema schema_footstep_terrain_lookup = {

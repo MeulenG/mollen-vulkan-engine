@@ -4,9 +4,9 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef names_reserved_fields[] = {
-    { "Id",         DbcFieldType::UInt32 },
-    { "Name",       DbcFieldType::String },
-    { "Language",   DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "Name", DbcFieldType::String, DbcSemantic::Default, nullptr, "Identity" },
+    { "Language", DbcFieldType::UInt32 },
 };
 
 static const DbcSchema schema_names_reserved = {

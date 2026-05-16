@@ -92,6 +92,20 @@ private:
 
     EditState pm_edit;
 
+    // ---- Section visibility (Layer 2: categories) ----
+    //
+    // Per-DBC, per-category visibility map. Built lazily on first render of
+    // a DBC; categories absent from the inner map default to visible. We
+    // store per-DBC so toggling categories on Spell doesn't affect Item.
+    std::unordered_map<std::string, std::unordered_map<std::string, bool>>
+        pm_section_visible;
+
+    // Draws the section toggle checkbox bar for the currently-selected DBC's
+    // distinct categories. Returns the set of visible categories so the
+    // caller can filter the column view.
+    void DrawSectionToggles(const DbcSchema* schema);
+    bool IsCategoryVisible(const char* category) const;
+
     // ---- Locale cluster editing ----
     //
     // A DBC like ChrRaces has 16 separate `Name_enUS`, `Name_koKR`, ... columns

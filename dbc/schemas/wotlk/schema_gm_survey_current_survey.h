@@ -4,7 +4,7 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef gm_survey_current_survey_fields[] = {
-    { "Id",              DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
     { "GMSurveySurveyID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "gmsurveysurvey" },
 };
 

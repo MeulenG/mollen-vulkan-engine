@@ -4,8 +4,8 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef cfg_configs_fields[] = {
-    { "Id",          DbcFieldType::UInt32 },
-    { "RealmType",   DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "RealmType", DbcFieldType::UInt32 },
     { "PlayerKillingAllowed", DbcFieldType::UInt32 },
     { "Roleplaying", DbcFieldType::UInt32 },
 };

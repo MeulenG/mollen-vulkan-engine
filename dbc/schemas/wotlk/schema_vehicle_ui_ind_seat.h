@@ -4,11 +4,11 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef vehicle_ui_ind_seat_fields[] = {
-    { "Id",                     DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
     { "VehicleUIIndicatorID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "vehicleuiindicator" },
-    { "VirtualSeatIndex",       DbcFieldType::UInt32 },
-    { "XPos",                   DbcFieldType::Float  },
-    { "YPos",                   DbcFieldType::Float  },
+    { "VirtualSeatIndex", DbcFieldType::UInt32 },
+    { "XPos", DbcFieldType::Float },
+    { "YPos", DbcFieldType::Float },
 };
 
 static const DbcSchema schema_vehicle_ui_ind_seat = {
