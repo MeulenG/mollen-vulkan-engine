@@ -2,6 +2,8 @@
 #include "../scene/components/transform_component.h"
 #include "../scene/components/mesh_component.h"
 #include "../scene/components/material_component.h"
+#include "../scene/components/terrain_component.h"
+#include "../scene/terrain_mesh.h"
 
 #include <string>
 
@@ -27,11 +29,27 @@ void RenderSystem::Init() {
         .AddBinding(2, vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eVertex)
         .Build();
 
-    pm_descriptor_pool = std::make_unique<DescriptorPool>(pm_device, 100, std::vector<vk::DescriptorPoolSize>{
-        {vk::DescriptorType::eUniformBuffer, 100},
-        {vk::DescriptorType::eCombinedImageSampler, 100},
-        {vk::DescriptorType::eStorageBuffer, 100},
+    // Pool sized generously enough for R2 terrain + future doodad spawn
+    // in R4. Per-entity sets consume:
+    //   M2:      1 UBO + 1 sampler  + 1 storage (bones)
+    //   Terrain: 1 UBO + 2 samplers + 1 storage (chunk meta)
+    // 1024 entity sets covers ~900 doodads + terrain + camera with
+    // headroom for sub-meshes. Memory cost is sub-MB of driver state.
+    pm_descriptor_pool = std::make_unique<DescriptorPool>(pm_device, 1024, std::vector<vk::DescriptorPoolSize>{
+        {vk::DescriptorType::eUniformBuffer,        1024},
+        {vk::DescriptorType::eCombinedImageSampler, 2048},
+        {vk::DescriptorType::eStorageBuffer,        1024},
     });
+
+    // Terrain descriptor layout: UBO + chunk-meta SSBO (fragment) +
+    // diffuse 2D-array sampler + alpha 2D-array sampler. Both array
+    // samplers are read in the fragment stage only.
+    pm_terrain_descriptor_layout = DescriptorSetLayoutBuilder{pm_device}
+        .AddBinding(0, vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eFragment)
+        .AddBinding(1, vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eFragment)
+        .AddBinding(2, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
+        .AddBinding(3, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
+        .Build();
 
     // Scene UBO (shared across all entities)
     pm_scene_ubo = std::make_unique<Buffer>(
@@ -103,6 +121,27 @@ void RenderSystem::Init() {
     pm_ground_pipeline = std::make_unique<Pipeline>(
         pm_device, shader_dir + "/ground.vert.spv", shader_dir + "/ground.frag.spv",
         ground_config);
+
+    // Terrain pipeline. Shares the model pipeline's push-constant layout
+    // (mvp + model) since the per-fragment splat work happens off the
+    // SSBO + array textures bound via the terrain descriptor set.
+    vk::PushConstantRange terrain_push{vk::ShaderStageFlagBits::eVertex, 0, sizeof(PushConstants)};
+    vk::DescriptorSetLayout terrain_layouts[] = {*pm_terrain_descriptor_layout};
+    vk::PipelineLayoutCreateInfo terrain_layout_info{};
+    terrain_layout_info.setPushConstantRanges(terrain_push);
+    terrain_layout_info.setSetLayouts(terrain_layouts);
+    pm_terrain_pipeline_layout = pm_device.GetDevice().createPipelineLayout(terrain_layout_info);
+
+    auto terrain_config = PipelineConfig::DefaultConfig();
+    terrain_config.pipeline_layout         = *pm_terrain_pipeline_layout;
+    terrain_config.color_attachment_format = pm_offscreen.ColorFormat();
+    terrain_config.depth_attachment_format = pm_offscreen.DepthFormat();
+    terrain_config.binding_descriptions    = TerrainVertex::GetBindingDescriptions();
+    terrain_config.attribute_descriptions  = TerrainVertex::GetAttributeDescriptions();
+
+    pm_terrain_pipeline = std::make_unique<Pipeline>(
+        pm_device, shader_dir + "/terrain.vert.spv", shader_dir + "/terrain.frag.spv",
+        terrain_config);
 }
 
 void RenderSystem::UpdateSceneUBO() {
@@ -131,7 +170,34 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
         pm_ground_mesh.Draw(cmd);
     }
 
-    // Render all entities with mesh + transform + material
+    // Terrain entities. Drawn before model entities so the depth buffer
+    // has terrain depth written first; model entities (doodads in R4)
+    // then test against it. The two pipelines use different descriptor
+    // set layouts so we re-bind a fresh set per terrain entity.
+    pm_terrain_pipeline->Bind(cmd);
+    scene.Each<TransformComponent, MeshComponent, TerrainComponent>(
+        [&](Entity&, TransformComponent& transform, MeshComponent& mesh_comp, TerrainComponent& terrain) {
+            if (!mesh_comp.pm_visible || !mesh_comp.pm_mesh) return;
+            if (!*terrain.pm_descriptor_set) return;
+
+            cmd.bindDescriptorSets(
+                vk::PipelineBindPoint::eGraphics,
+                *pm_terrain_pipeline_layout, 0,
+                *terrain.pm_descriptor_set, nullptr);
+
+            glm::mat4 model = transform.ModelMatrix();
+            PushConstants push{};
+            push.pm_model = model;
+            push.pm_mvp = active_camera.GetProjectionMatrix() * active_camera.GetViewMatrix() * model;
+            cmd.pushConstants<PushConstants>(
+                *pm_terrain_pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, push);
+
+            mesh_comp.pm_mesh->Bind(cmd);
+            mesh_comp.pm_mesh->Draw(cmd);
+        });
+
+    // Render all entities with mesh + transform + material (M2 doodads
+    // etc.). Skips terrain entities because they lack MaterialComponent.
     pm_model_pipeline->Bind(cmd);
 
     scene.Each<TransformComponent, MeshComponent, MaterialComponent>(

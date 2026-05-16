@@ -9,6 +9,7 @@
 #include "scene/components/transform_component.h"
 #include "scene/components/mesh_component.h"
 #include "scene/components/material_component.h"
+#include "scene/components/terrain_component.h"
 #include "scene/terrain_mesh.h"
 #include "resources/asset_manager.h"
 #include "resources/buffer.h"
@@ -81,54 +82,90 @@ int main() {
                 std::cout << "Loaded ADT with " << tile.textures.size()
                           << " textures and 256 chunks\n";
 
-                // R2 step 4 transitional: build the terrain mesh with an
-                // empty tile-tex-to-slice mapping. The terrain pipeline
-                // lands later in R2 and reads the per-chunk metadata + alpha
-                // pixels; until then the model pipeline draws the mesh
-                // unsplatted. Result.mesh has the new TerrainVertex layout,
-                // which the model pipeline's vertex bindings don't match,
-                // so this transitional state is incomplete and only
-                // exists to get a clean build between steps.
-                std::vector<int> empty_slice_map(tile.textures.size(), -1);
-                auto terrain_build =
-                    mve::TerrainMesh::Build(device, tile, empty_slice_map);
+                // Step 1: load the tile's diffuse BLPs into one 2D-array
+                // image. tile_tex_to_slice[i] tells the mesh builder
+                // which slice the i-th MTEX entry landed on, so it can
+                // bake per-chunk layer-slot indices into the chunk_meta
+                // SSBO. A -1 entry means the BLP failed to load, and
+                // the shader's slot=0xFFFFFFFF fallback substitutes.
+                auto tex_set = assets.LoadAdtTextures(tile);
+                if (!tex_set.diffuse) {
+                    std::cerr << "Failed to load any ADT diffuse textures - "
+                                 "terrain will render magenta\n";
+                }
 
+                // Step 2: build the terrain mesh. The result owns the
+                // GPU Mesh, the per-chunk SSBO data, and the per-chunk
+                // alpha pixel data we still need to upload to a 2D-array.
+                auto terrain_build = mve::TerrainMesh::Build(
+                    device, tile, tex_set.tile_tex_to_slice);
+
+                // Step 3: upload the 256 alpha-map slices to a 64x64 RGBA8
+                // 2D-array. One mip; no need for chained mips when the
+                // texture is sampled at constant resolution per chunk_uv.
+                auto alpha_array = std::make_shared<mve::TextureArray>(
+                    device, 64, 64, mve::kAdtChunksPerTile,
+                    vk::Format::eR8G8B8A8Unorm, 1);
+                for (int i = 0; i < mve::kAdtChunksPerTile; i++) {
+                    const uint8_t* slice = terrain_build.alpha_pixels.data()
+                                          + i * 64 * 64 * 4;
+                    alpha_array->UploadSlicePixels(
+                        static_cast<uint32_t>(i), 0, slice, 64 * 64 * 4);
+                }
+                alpha_array->FinalizeForSampling();
+
+                // Step 4: per-chunk metadata SSBO (256 * 16 bytes).
+                vk::DeviceSize meta_size =
+                    sizeof(mve::TerrainChunkMeta) * terrain_build.chunk_meta.size();
+                auto chunk_meta_buf = std::make_unique<mve::Buffer>(
+                    device, meta_size,
+                    vk::BufferUsageFlagBits::eStorageBuffer,
+                    vk::MemoryPropertyFlagBits::eHostVisible |
+                        vk::MemoryPropertyFlagBits::eHostCoherent);
+                chunk_meta_buf->Write(terrain_build.chunk_meta.data(), meta_size);
+
+                // Step 5: spawn entity. Transform is identity because
+                // the terrain mesh is already baked in world coords.
                 auto* terrain_entity = scene.CreateEntity("Elwynn_32_48");
                 terrain_entity->AddComponent<mve::TransformComponent>();
                 auto* mesh_comp = terrain_entity->AddComponent<mve::MeshComponent>();
                 mesh_comp->pm_mesh = std::move(terrain_build.mesh);
 
-                auto placeholder_tex = assets.GetDefaultTexture();
-                auto* mat = terrain_entity->AddComponent<mve::MaterialComponent>();
+                auto* terrain_comp =
+                    terrain_entity->AddComponent<mve::TerrainComponent>();
+                terrain_comp->pm_alpha_array = alpha_array;
+                terrain_comp->pm_chunk_meta_ssbo = std::move(chunk_meta_buf);
+                if (tex_set.diffuse) {
+                    terrain_comp->pm_diffuse_array =
+                        std::shared_ptr<mve::TextureArray>(tex_set.diffuse.release());
+                }
 
-                vk::DeviceSize bone_buffer_size = mve::Skeleton::MAX_BONES * sizeof(glm::mat4);
-                mat->pm_bone_buffer = std::make_unique<mve::Buffer>(
-                    device, bone_buffer_size,
-                    vk::BufferUsageFlagBits::eStorageBuffer,
-                    vk::MemoryPropertyFlagBits::eHostVisible |
-                        vk::MemoryPropertyFlagBits::eHostCoherent);
-                std::vector<glm::mat4> identity(mve::Skeleton::MAX_BONES, glm::mat4{1.0f});
-                mat->pm_bone_buffer->Write(identity.data(), bone_buffer_size);
+                // Step 6: descriptor set with the four bindings the
+                // terrain pipeline consumes.
+                terrain_comp->pm_descriptor_set =
+                    render_system.GetDescriptorPool().AllocateSet(
+                        render_system.TerrainDescriptorLayout());
 
-                // Move the raii descriptor set into the component so its
-                // lifetime is tied to the terrain entity. Same pattern as
-                // AssetManager::LoadM2IntoScene.
-                mat->pm_descriptor_set = render_system.GetDescriptorPool()
-                    .AllocateSet(render_system.DescriptorLayout());
                 vk::DescriptorBufferInfo ubo_info{
-                    *render_system.SceneUBOBuffer().GetBuffer(), 0, sizeof(float) * 8};
-                auto tex_info = placeholder_tex->DescriptorInfo();
-                vk::DescriptorBufferInfo bone_info{
-                    *mat->pm_bone_buffer->GetBuffer(), 0, bone_buffer_size};
-                mve::DescriptorWriter{}
-                    .WriteBuffer(0, ubo_info)
-                    .WriteImage(1, tex_info)
-                    .WriteBuffer(2, bone_info, vk::DescriptorType::eStorageBuffer)
-                    .Apply(device.GetDevice(), mat->pm_descriptor_set);
+                    *render_system.SceneUBOBuffer().GetBuffer(), 0, sizeof(mve::SceneUBO)};
+                vk::DescriptorBufferInfo meta_info{
+                    *terrain_comp->pm_chunk_meta_ssbo->GetBuffer(), 0, meta_size};
+                auto alpha_info = terrain_comp->pm_alpha_array->DescriptorInfo();
 
-                mve::SubmeshMaterial sub_mat;
-                sub_mat.pm_texture = placeholder_tex;
-                mat->pm_submesh_materials.push_back(sub_mat);
+                mve::DescriptorWriter writer{};
+                writer.WriteBuffer(0, ubo_info);
+                writer.WriteBuffer(1, meta_info, vk::DescriptorType::eStorageBuffer);
+                if (terrain_comp->pm_diffuse_array) {
+                    auto diffuse_info = terrain_comp->pm_diffuse_array->DescriptorInfo();
+                    writer.WriteImage(2, diffuse_info);
+                } else {
+                    // No diffuse: bind the alpha array slice 0 just to satisfy
+                    // the layout. The shader's all-slots-unused branch will
+                    // paint magenta everywhere.
+                    writer.WriteImage(2, alpha_info);
+                }
+                writer.WriteImage(3, alpha_info);
+                writer.Apply(device.GetDevice(), terrain_comp->pm_descriptor_set);
 
                 // Center the camera roughly on the tile. The tile spans
                 // ~533 yards. The terrain's vertex world-positions come
