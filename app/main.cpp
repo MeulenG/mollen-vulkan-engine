@@ -65,11 +65,18 @@ int main() {
         // chosen (32_48) covers the Northshire / Stormwind northern area.
         // This is the R1 milestone deliverable: a single ADT heightmap on
         // screen with the existing camera + lighting pipeline.
+        //
+        // Path resolution uses MVE_ASSET_DIR (compile-time absolute path to
+        // the repo's assets/ dir) so the binary works regardless of CWD.
+        // Without this, launching from VS debugger or build/app/Debug failed
+        // silently because the relative "assets/..." path didn't resolve.
         {
-            const char* adt_path = "assets/World/Maps/Azeroth/Azeroth_32_48.adt";
+            std::string adt_path = std::string(MVE_ASSET_DIR)
+                + "/World/Maps/Azeroth/Azeroth_32_48.adt";
             mve::AdtTile tile{};
             if (!mve::AdtLoader::LoadFile(adt_path, tile)) {
                 std::cerr << "Failed to load ADT: " << adt_path << "\n";
+                return EXIT_FAILURE;
             } else {
                 std::cout << "Loaded ADT with " << tile.textures.size()
                           << " textures and 256 chunks\n";
@@ -122,14 +129,33 @@ int main() {
                 // ~533 yards. The terrain's vertex world-positions come
                 // straight from the ADT (WoW coords), so the tile sits
                 // somewhere in world space dictated by its (x, y) index.
-                // We just orbit around the centroid of the rendered geometry.
-                glm::vec3 c0(tile.chunks[0].wow_y,
-                             tile.chunks[0].wow_z_base,
-                             tile.chunks[0].wow_x);
-                glm::vec3 c1(tile.chunks[255].wow_y,
-                             tile.chunks[255].wow_z_base,
-                             tile.chunks[255].wow_x);
-                glm::vec3 center = 0.5f * (c0 + c1);
+                //
+                // We average the WoW positions across all parsed chunks
+                // and convert to engine coords once. Using chunks[0] and
+                // chunks[255] alone is fragile: if either corner failed
+                // to parse, that entry is zero-initialized and the
+                // midpoint lands halfway to world origin (far from the
+                // tile, which sits at ~+/- 9000 yards in WoW absolute coords).
+                glm::dvec3 sum_wow{0.0};
+                int counted = 0;
+                for (const auto& ch : tile.chunks) {
+                    // A parsed chunk has at least one non-zero outer height
+                    // or non-zero base position. Pure-zero entries are
+                    // either failed parses or default-constructed.
+                    if (ch.wow_x != 0.0f || ch.wow_y != 0.0f ||
+                        ch.heights.y_outer[0] != 0.0f) {
+                        sum_wow.x += ch.wow_x;
+                        sum_wow.y += ch.wow_y;
+                        sum_wow.z += ch.wow_z_base;
+                        counted++;
+                    }
+                }
+                glm::vec3 center{0.0f, 0.5f, 0.0f};
+                if (counted > 0) {
+                    glm::dvec3 avg = sum_wow / double(counted);
+                    // WowToEngine: (wow_x, wow_y, wow_z) -> (wow_y, wow_z, wow_x)
+                    center = glm::vec3(avg.y, avg.z, avg.x);
+                }
                 cam->pm_camera.SetTarget(center);
                 cam->pm_camera.SetOrbit(800.0f, 0.5f, 0.6f);
             }

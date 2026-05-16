@@ -78,3 +78,10 @@ add_dependencies(mollen-engine compile-shaders)
 target_compile_definitions(mollen-engine PUBLIC
     MVE_SHADER_DIR="${SHADER_OUTPUT_DIR}"
 )
+
+# Absolute path to the assets/ directory at the repo root. Consumers
+# concatenate WoW-style relative paths (e.g. "World/Maps/Azeroth/...")
+# onto this so the executable can find its assets regardless of CWD.
+target_compile_definitions(mollen-engine PUBLIC
+    MVE_ASSET_DIR="${CMAKE_SOURCE_DIR}/assets"
+)
