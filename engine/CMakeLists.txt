@@ -7,6 +7,7 @@ add_library(mollen-engine STATIC
     resources/buffer.cpp
     resources/descriptor.cpp
     resources/image.cpp
+    resources/texture_array.cpp
     resources/asset_manager.cpp
     systems/render_system.cpp
     systems/animation_system.cpp
