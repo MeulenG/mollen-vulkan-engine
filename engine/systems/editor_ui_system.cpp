@@ -9,10 +9,10 @@ EditorUISystem::EditorUISystem(Window& window, ImGuiContext& imgui_ctx, Offscree
     : pm_window{window}, pm_imgui_ctx{imgui_ctx}, pm_offscreen{offscreen} {}
 
 void EditorUISystem::Update(Scene& scene, RenderSystem& render_system, float delta_time) {
-    drawViewport(scene, delta_time);
-    drawProperties(scene, render_system);
-    drawModelInfo(scene);
-    drawSceneHierarchy(scene);
+    DrawViewport(scene, delta_time);
+    DrawProperties(scene, render_system);
+    DrawModelInfo(scene);
+    DrawSceneHierarchy(scene);
 }
 
 void EditorUISystem::DrawViewport(Scene& scene, float delta_time) {

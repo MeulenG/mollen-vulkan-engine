@@ -6,7 +6,17 @@
 #include "scene/scene.h"
 #include "scene/components/camera_component.h"
 #include "scene/components/m2_info_component.h"
+#include "scene/components/transform_component.h"
+#include "scene/components/mesh_component.h"
+#include "scene/components/material_component.h"
+#include "scene/terrain_mesh.h"
 #include "resources/asset_manager.h"
+#include "resources/buffer.h"
+#include "resources/descriptor.h"
+#include "resources/image.h"
+#include "animation/skeleton.h"
+#include "formats/wdt_loader.h"
+#include "formats/adt_types.h"
 #include "systems/render_system.h"
 #include "systems/animation_system.h"
 #include "systems/editor_ui_system.h"
@@ -16,6 +26,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 
 int main() {
     try {
@@ -50,13 +61,77 @@ int main() {
         cam->pm_camera.SetOrbit(8.0f, 0.5f, 0.3f);
         cam->pm_camera.SetTarget({0.0f, 0.5f, 0.0f});
 
-        // Load model
-        if (auto* bear = assets.LoadM2IntoScene("assets/Creature/bear/Bear.M2", scene)) {
-            if (auto* info = bear->GetComponent<mve::M2InfoComponent>()) {
-                float height = info->pm_bbox_max.z - info->pm_bbox_min.z;
-                float extent = glm::length(info->pm_bbox_max - info->pm_bbox_min);
-                cam->pm_camera.SetTarget({0.0f, height * 0.4f, 0.0f});
-                cam->pm_camera.SetOrbit(extent * 1.8f, 0.5f, 0.2f);
+        // Load an Elwynn Forest ADT tile and render it as terrain. The tile
+        // chosen (32_48) covers the Northshire / Stormwind northern area.
+        // This is the R1 milestone deliverable: a single ADT heightmap on
+        // screen with the existing camera + lighting pipeline.
+        {
+            const char* adt_path = "assets/World/Maps/Azeroth/Azeroth_32_48.adt";
+            mve::AdtTile tile{};
+            if (!mve::AdtLoader::LoadFile(adt_path, tile)) {
+                std::cerr << "Failed to load ADT: " << adt_path << "\n";
+            } else {
+                std::cout << "Loaded ADT with " << tile.textures.size()
+                          << " textures and 256 chunks\n";
+
+                auto terrain_mesh = mve::TerrainMesh::Build(device, tile);
+
+                // Wire an entity using the existing Transform + Mesh +
+                // Material component triple so the regular model pipeline
+                // draws it. R1 binds the default checkerboard texture as a
+                // placeholder; height-based vertex color does the heavy
+                // lifting visually.
+                auto* terrain_entity = scene.CreateEntity("Elwynn_32_48");
+                terrain_entity->AddComponent<mve::TransformComponent>();
+                auto* mesh_comp = terrain_entity->AddComponent<mve::MeshComponent>();
+                mesh_comp->pm_mesh = std::move(terrain_mesh);
+
+                auto placeholder_tex = assets.GetDefaultTexture();
+                auto* mat = terrain_entity->AddComponent<mve::MaterialComponent>();
+
+                vk::DeviceSize bone_buffer_size = mve::Skeleton::MAX_BONES * sizeof(glm::mat4);
+                mat->pm_bone_buffer = std::make_unique<mve::Buffer>(
+                    device, bone_buffer_size,
+                    vk::BufferUsageFlagBits::eStorageBuffer,
+                    vk::MemoryPropertyFlagBits::eHostVisible |
+                        vk::MemoryPropertyFlagBits::eHostCoherent);
+                std::vector<glm::mat4> identity(mve::Skeleton::MAX_BONES, glm::mat4{1.0f});
+                mat->pm_bone_buffer->Write(identity.data(), bone_buffer_size);
+
+                // Move the raii descriptor set into the component so its
+                // lifetime is tied to the terrain entity. Same pattern as
+                // AssetManager::LoadM2IntoScene.
+                mat->pm_descriptor_set = render_system.GetDescriptorPool()
+                    .AllocateSet(render_system.DescriptorLayout());
+                vk::DescriptorBufferInfo ubo_info{
+                    *render_system.SceneUBOBuffer().GetBuffer(), 0, sizeof(float) * 8};
+                auto tex_info = placeholder_tex->DescriptorInfo();
+                vk::DescriptorBufferInfo bone_info{
+                    *mat->pm_bone_buffer->GetBuffer(), 0, bone_buffer_size};
+                mve::DescriptorWriter{}
+                    .WriteBuffer(0, ubo_info)
+                    .WriteImage(1, tex_info)
+                    .WriteBuffer(2, bone_info, vk::DescriptorType::eStorageBuffer)
+                    .Apply(device.GetDevice(), mat->pm_descriptor_set);
+
+                mve::SubmeshMaterial sub_mat;
+                sub_mat.pm_texture = placeholder_tex;
+                mat->pm_submesh_materials.push_back(sub_mat);
+
+                // Center the camera roughly on the tile. The tile spans
+                // ~533 yards. The terrain's vertex world-positions come
+                // straight from the ADT (WoW coords), so the tile sits
+                // somewhere in world space dictated by its (x, y) index.
+                // We just orbit around the centroid of the rendered geometry.
+                glm::vec3 c0(tile.chunks[0].wow_y,
+                             tile.chunks[0].wow_z_base,
+                             tile.chunks[0].wow_x);
+                glm::vec3 c1(tile.chunks[255].wow_y,
+                             tile.chunks[255].wow_z_base,
+                             tile.chunks[255].wow_x);
+                glm::vec3 center = 0.5f * (c0 + c1);
+                cam->pm_camera.SetTarget(center);
+                cam->pm_camera.SetOrbit(800.0f, 0.5f, 0.6f);
             }
         }
 

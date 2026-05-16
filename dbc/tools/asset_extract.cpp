@@ -94,12 +94,14 @@ static bool MatchesFilter(const std::string& file_path,
                            bool all_creatures) {
     std::string lower = ToLower(NormalizePath(file_path));
 
-    // File type filter: only M2, skin, and BLP files
+    // File type filter: model, skin, BLP, plus terrain files (ADT/WDT/WMO).
     bool is_model = EndsWith(lower, ".m2") || EndsWith(lower, ".mdx");
     bool is_skin = EndsWith(lower, ".skin");
     bool is_blp = EndsWith(lower, ".blp");
+    bool is_terrain = EndsWith(lower, ".adt") || EndsWith(lower, ".wdt") ||
+                      EndsWith(lower, ".wmo");
 
-    if (!is_model && !is_skin && !is_blp) return false;
+    if (!is_model && !is_skin && !is_blp && !is_terrain) return false;
 
     // Specific creature filter
     if (!creature_name.empty()) {
