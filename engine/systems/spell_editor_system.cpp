@@ -158,6 +158,47 @@ void SpellEditorSystem::CacheColumnIndices() {
     c.effect_die_sides_3      = col("EffectDieSides3");
     c.effect_amplitude_3      = col("EffectAmplitude3");
     c.effect_radius_index_3   = col("EffectRadiusIndex3");
+
+    // Attribute bitmasks — 8 columns.
+    c.attributes_attr[0] = col("Attributes");
+    c.attributes_attr[1] = col("AttributesEx");
+    c.attributes_attr[2] = col("AttributesEx2");
+    c.attributes_attr[3] = col("AttributesEx3");
+    c.attributes_attr[4] = col("AttributesEx4");
+    c.attributes_attr[5] = col("AttributesEx5");
+    c.attributes_attr[6] = col("AttributesEx6");
+    c.attributes_attr[7] = col("AttributesEx7");
+
+    // Reagents — 8 (item id, count) pairs.
+    c.reagent[0]       = col("Reagent1");
+    c.reagent[1]       = col("Reagent2");
+    c.reagent[2]       = col("Reagent3");
+    c.reagent[3]       = col("Reagent4");
+    c.reagent[4]       = col("Reagent5");
+    c.reagent[5]       = col("Reagent6");
+    c.reagent[6]       = col("Reagent7");
+    c.reagent[7]       = col("Reagent8");
+    c.reagent_count[0] = col("ReagentCount1");
+    c.reagent_count[1] = col("ReagentCount2");
+    c.reagent_count[2] = col("ReagentCount3");
+    c.reagent_count[3] = col("ReagentCount4");
+    c.reagent_count[4] = col("ReagentCount5");
+    c.reagent_count[5] = col("ReagentCount6");
+    c.reagent_count[6] = col("ReagentCount7");
+    c.reagent_count[7] = col("ReagentCount8");
+
+    c.category = col("Category");
+
+    // Build category -> rows reverse-index now that column indices are known.
+    pm_category_to_rows.clear();
+    if (c.category >= 0) {
+        for (size_t i = 0; i < pm_spells.rows.size(); i++) {
+            int64_t cat = GetCellInt(i, c.category);
+            if (cat > 0) {
+                pm_category_to_rows[cat].push_back(static_cast<int>(i));
+            }
+        }
+    }
 }
 
 // ---- FK lookup tables ------------------------------------------------------
@@ -586,7 +627,12 @@ void SpellEditorSystem::DrawDetail() {
     DrawIdentitySection(spell_id, row_idx);
     DrawDescriptionSection(spell_id, row_idx);
     DrawCostCastSection(spell_id, row_idx);
-    DrawEffect1Section(spell_id, row_idx);
+    DrawEffectSection(0, spell_id, row_idx);
+    DrawEffectSection(1, spell_id, row_idx);
+    DrawEffectSection(2, spell_id, row_idx);
+    DrawAttributesSection(row_idx);
+    DrawReagentsSection(row_idx);
+    DrawCooldownDetailsSection(row_idx);
 }
 
 // ---- Per-section drawing ----------------------------------------------------
@@ -795,16 +841,34 @@ void SpellEditorSystem::DrawCostCastSection(int64_t spell_id, size_t row_idx) {
     ImGui::EndTable();
 }
 
-void SpellEditorSystem::DrawEffect1Section(int64_t spell_id, size_t row_idx) {
-    if (!ImGui::CollapsingHeader("Effect 1", ImGuiTreeNodeFlags_DefaultOpen)) return;
-    if (!ImGui::BeginTable("##effect1", 2,
-                           ImGuiTableFlags_SizingFixedFit |
-                           ImGuiTableFlags_BordersInnerH)) return;
-    ImGui::TableSetupColumn("##l", ImGuiTableColumnFlags_WidthFixed, 200);
-    ImGui::TableSetupColumn("##v", ImGuiTableColumnFlags_WidthStretch);
+// Generic effect-section renderer. slot ∈ [0, 2] picks the column indices.
+// Effect 1 is always rendered open; 2 and 3 collapse when their type=0 (empty).
+void SpellEditorSystem::DrawEffectSection(int slot, int64_t spell_id, size_t row_idx) {
+    // Effect column packs per slot.
+    int eff_cols[3]  = { pm_cols.effect_1, pm_cols.effect_2, pm_cols.effect_3 };
+    int base_cols[3] = { pm_cols.effect_base_points_1,
+                         pm_cols.effect_base_points_2,
+                         pm_cols.effect_base_points_3 };
+    int die_cols[3]  = { pm_cols.effect_die_sides_1,
+                         pm_cols.effect_die_sides_2,
+                         pm_cols.effect_die_sides_3 };
+    int amp_cols[3]  = { pm_cols.effect_amplitude_1,
+                         pm_cols.effect_amplitude_2,
+                         pm_cols.effect_amplitude_3 };
+    int rad_cols[3]  = { pm_cols.effect_radius_index_1,
+                         pm_cols.effect_radius_index_2,
+                         pm_cols.effect_radius_index_3 };
 
-    // Effect type — resolve via SpellEffects enum.
-    int64_t eff_type = GetCellInt(row_idx, pm_cols.effect_1);
+    int eff_col   = eff_cols[slot];
+    int base_col  = base_cols[slot];
+    int die_col   = die_cols[slot];
+    int amp_col   = amp_cols[slot];
+    int rad_col   = rad_cols[slot];
+    if (eff_col < 0) return;
+
+    int64_t eff_type = GetCellInt(row_idx, eff_col);
+
+    // Compose a section label that includes the effect's resolved name.
     const DbcEnum* eff_enum = GetDbcEnum("SpellEffects");
     std::string eff_label;
     if (eff_enum) {
@@ -815,23 +879,62 @@ void SpellEditorSystem::DrawEffect1Section(int64_t spell_id, size_t row_idx) {
             }
         }
     }
-    char eff_str[96];
+    char header[96];
+    if (slot == 0) {
+        // Slot 1 is always present (most spells have at least one effect)
+        if (eff_label.empty()) std::snprintf(header, sizeof(header), "Effect 1");
+        else std::snprintf(header, sizeof(header), "Effect 1 — %s", eff_label.c_str());
+    } else {
+        if (eff_type == 0) {
+            std::snprintf(header, sizeof(header), "Effect %d  (empty)", slot + 1);
+        } else if (eff_label.empty()) {
+            std::snprintf(header, sizeof(header), "Effect %d  — #%lld",
+                          slot + 1, static_cast<long long>(eff_type));
+        } else {
+            std::snprintf(header, sizeof(header), "Effect %d  — %s",
+                          slot + 1, eff_label.c_str());
+        }
+    }
+
+    ImGuiTreeNodeFlags flags =
+        (slot == 0) ? ImGuiTreeNodeFlags_DefaultOpen : ImGuiTreeNodeFlags_None;
+    // Don't show empty slots expanded by default
+    if (slot != 0 && eff_type == 0) {
+        ImGui::PushID(slot);
+        ImGui::CollapsingHeader(header, flags);
+        ImGui::PopID();
+        return;
+    }
+
+    ImGui::PushID(slot);
+    if (!ImGui::CollapsingHeader(header, flags)) { ImGui::PopID(); return; }
+
+    char table_id[16];
+    std::snprintf(table_id, sizeof(table_id), "##eff%d", slot);
+    if (!ImGui::BeginTable(table_id, 2,
+                           ImGuiTableFlags_SizingFixedFit |
+                           ImGuiTableFlags_BordersInnerH)) {
+        ImGui::PopID();
+        return;
+    }
+    ImGui::TableSetupColumn("##l", ImGuiTableColumnFlags_WidthFixed, 200);
+    ImGui::TableSetupColumn("##v", ImGuiTableColumnFlags_WidthStretch);
+
+    char type_str[96];
     if (!eff_label.empty()) {
-        std::snprintf(eff_str, sizeof(eff_str), "%s  (#%lld)",
+        std::snprintf(type_str, sizeof(type_str), "%s  (#%lld)",
                       eff_label.c_str(), static_cast<long long>(eff_type));
     } else {
-        std::snprintf(eff_str, sizeof(eff_str), "#%lld",
+        std::snprintf(type_str, sizeof(type_str), "#%lld",
                       static_cast<long long>(eff_type));
     }
-    DrawResolvedField("Type", eff_str);
+    DrawResolvedField("Type", type_str);
 
-    DrawTextField("Base points", pm_cols.effect_base_points_1,
-                  spell_id, row_idx, DbcFieldType::Int32);
-    DrawTextField("Die sides",   pm_cols.effect_die_sides_1,
-                  spell_id, row_idx, DbcFieldType::Int32);
+    DrawTextField("Base points", base_col, spell_id, row_idx, DbcFieldType::Int32);
+    DrawTextField("Die sides",   die_col,  spell_id, row_idx, DbcFieldType::Int32);
 
-    int64_t base = GetCellInt(row_idx, pm_cols.effect_base_points_1);
-    int64_t die  = GetCellInt(row_idx, pm_cols.effect_die_sides_1);
+    int64_t base = GetCellInt(row_idx, base_col);
+    int64_t die  = GetCellInt(row_idx, die_col);
     if (die > 0) {
         char buf[64];
         std::snprintf(buf, sizeof(buf), "%lld to %lld",
@@ -840,18 +943,190 @@ void SpellEditorSystem::DrawEffect1Section(int64_t spell_id, size_t row_idx) {
         DrawResolvedField("Damage range", buf);
     }
 
-    int64_t amp = GetCellInt(row_idx, pm_cols.effect_amplitude_1);
+    int64_t amp = GetCellInt(row_idx, amp_col);
     if (amp > 0) {
-        DrawTextField("Tick period (ms)", pm_cols.effect_amplitude_1,
-                      spell_id, row_idx, DbcFieldType::UInt32);
+        DrawTextField("Tick period (ms)", amp_col, spell_id, row_idx, DbcFieldType::UInt32);
         char buf[32];
         std::snprintf(buf, sizeof(buf), "%.1f sec", amp / 1000.0f);
         DrawResolvedField("  Resolved", buf);
     }
 
-    int64_t radius_idx = GetCellInt(row_idx, pm_cols.effect_radius_index_1);
+    int64_t radius_idx = GetCellInt(row_idx, rad_col);
     if (radius_idx > 0) {
         DrawResolvedField("Radius", ResolveRadius(radius_idx));
+    }
+
+    ImGui::EndTable();
+    ImGui::PopID();
+}
+
+// ---- Attributes section -----------------------------------------------------
+//
+// 8 bitmask columns (Attributes + AttributesEx + AttributesEx2..7). For each
+// non-zero column we list the human-readable set-bit names using the
+// matching SpellAttrN enum. Read-only display in v1 — editing happens via
+// the regular DBC Browser cell.
+void SpellEditorSystem::DrawAttributesSection(size_t row_idx) {
+    // Skip the section entirely when nothing is set across all 8 columns.
+    bool any_set = false;
+    for (int i = 0; i < 8; i++) {
+        if (pm_cols.attributes_attr[i] >= 0 &&
+            GetCellInt(row_idx, pm_cols.attributes_attr[i]) != 0) {
+            any_set = true; break;
+        }
+    }
+    if (!any_set) return;
+
+    if (!ImGui::CollapsingHeader("Attributes")) return;
+
+    const char* col_labels[8] = {
+        "Attributes",   "AttributesEx",  "AttributesEx2", "AttributesEx3",
+        "AttributesEx4", "AttributesEx5", "AttributesEx6", "AttributesEx7"
+    };
+    const char* enum_names[8] = {
+        "SpellAttr0", "SpellAttr1", "SpellAttr2", "SpellAttr3",
+        "SpellAttr4", "SpellAttr5", "SpellAttr6", "SpellAttr7"
+    };
+
+    if (!ImGui::BeginTable("##attrs", 2,
+                           ImGuiTableFlags_SizingFixedFit |
+                           ImGuiTableFlags_BordersInnerH)) return;
+    ImGui::TableSetupColumn("##l", ImGuiTableColumnFlags_WidthFixed, 140);
+    ImGui::TableSetupColumn("##v", ImGuiTableColumnFlags_WidthStretch);
+
+    for (int i = 0; i < 8; i++) {
+        int col = pm_cols.attributes_attr[i];
+        if (col < 0) continue;
+        uint32_t mask = static_cast<uint32_t>(GetCellInt(row_idx, col));
+        if (mask == 0) continue;
+
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextDisabled("%s", col_labels[i]);
+        ImGui::TableSetColumnIndex(1);
+
+        // Render comma-separated set bit names with hex value.
+        const DbcEnum* e = GetDbcEnum(enum_names[i]);
+        std::ostringstream out;
+        if (e) {
+            bool first = true;
+            for (uint32_t b = 0; b < e->count; b++) {
+                uint32_t bit = static_cast<uint32_t>(e->values[b].value);
+                if (mask & bit) {
+                    if (!first) out << ", ";
+                    out << e->values[b].label;
+                    first = false;
+                }
+            }
+            if (first) out << "(unknown bits)";
+        } else {
+            out << "(no enum)";
+        }
+        char hex[16];
+        std::snprintf(hex, sizeof(hex), "0x%08X", mask);
+        ImGui::TextWrapped("%s", out.str().c_str());
+        ImGui::TextDisabled("    %s", hex);
+    }
+
+    ImGui::EndTable();
+}
+
+// ---- Reagents section -------------------------------------------------------
+//
+// Up to 8 (item_id, count) pairs. v1 shows item ID + count only; item names
+// require integrating with the server-side item_template table which is
+// outside the DBC database. Will resolve in a follow-up.
+void SpellEditorSystem::DrawReagentsSection(size_t row_idx) {
+    bool any = false;
+    for (int i = 0; i < 8; i++) {
+        if (pm_cols.reagent[i] >= 0 &&
+            GetCellInt(row_idx, pm_cols.reagent[i]) != 0) {
+            any = true; break;
+        }
+    }
+    if (!any) return;
+
+    if (!ImGui::CollapsingHeader("Reagents")) return;
+    if (!ImGui::BeginTable("##reagents", 2,
+                           ImGuiTableFlags_SizingFixedFit |
+                           ImGuiTableFlags_BordersInnerH)) return;
+    ImGui::TableSetupColumn("##l", ImGuiTableColumnFlags_WidthFixed, 160);
+    ImGui::TableSetupColumn("##v", ImGuiTableColumnFlags_WidthStretch);
+
+    for (int i = 0; i < 8; i++) {
+        int icol = pm_cols.reagent[i];
+        int ccol = pm_cols.reagent_count[i];
+        if (icol < 0) continue;
+        int64_t item_id = GetCellInt(row_idx, icol);
+        if (item_id == 0) continue;
+        int64_t count = (ccol >= 0) ? GetCellInt(row_idx, ccol) : 0;
+
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        char slot_label[24];
+        std::snprintf(slot_label, sizeof(slot_label), "Reagent %d", i + 1);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextDisabled("%s", slot_label);
+        ImGui::TableSetColumnIndex(1);
+        ImGui::Text("Item #%lld x %lld",
+                    static_cast<long long>(item_id),
+                    static_cast<long long>(count));
+    }
+
+    ImGui::TextDisabled("Item name lookup requires the item_template table — not "
+                        "in the DBC database. Coming in a follow-up.");
+
+    ImGui::EndTable();
+}
+
+// ---- Cooldown details section ----------------------------------------------
+//
+// Surfaces the spell's Category (cooldown grouping) and lists other spells
+// in the same category. Categories are pre-indexed at load time.
+void SpellEditorSystem::DrawCooldownDetailsSection(size_t row_idx) {
+    if (pm_cols.category < 0) return;
+    int64_t cat = GetCellInt(row_idx, pm_cols.category);
+    if (cat == 0) return;  // no category = no shared cooldown
+
+    if (!ImGui::CollapsingHeader("Cooldown details")) return;
+    if (!ImGui::BeginTable("##cdetails", 2,
+                           ImGuiTableFlags_SizingFixedFit |
+                           ImGuiTableFlags_BordersInnerH)) return;
+    ImGui::TableSetupColumn("##l", ImGuiTableColumnFlags_WidthFixed, 200);
+    ImGui::TableSetupColumn("##v", ImGuiTableColumnFlags_WidthStretch);
+
+    DrawResolvedField("Category", "#" + std::to_string(cat));
+
+    auto it = pm_category_to_rows.find(cat);
+    if (it != pm_category_to_rows.end()) {
+        const auto& rows = it->second;
+        int64_t self_id = GetCellInt(row_idx, pm_cols.id);
+
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::TextDisabled("Shares cooldown with");
+        ImGui::TableSetColumnIndex(1);
+
+        std::ostringstream names;
+        int shown = 0;
+        for (int r : rows) {
+            int64_t other_id = GetCellInt(static_cast<size_t>(r), pm_cols.id);
+            if (other_id == self_id) continue;
+            std::string name = GetCell(static_cast<size_t>(r), pm_cols.name);
+            if (name.empty()) continue;
+            if (shown > 0) names << ", ";
+            names << name;
+            if (++shown >= 20) {
+                names << ", +" << (static_cast<int>(rows.size()) - shown - 1) << " more";
+                break;
+            }
+        }
+        if (shown == 0) {
+            ImGui::TextDisabled("(no other spells share this category)");
+        } else {
+            ImGui::TextWrapped("%s", names.str().c_str());
+        }
     }
 
     ImGui::EndTable();

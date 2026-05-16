@@ -103,8 +103,23 @@ private:
         int effect_die_sides_3      = -1;
         int effect_amplitude_3      = -1;
         int effect_radius_index_3   = -1;
+
+        // Attributes — 8 bitmask columns total.
+        int attributes_attr[8] = { -1, -1, -1, -1, -1, -1, -1, -1 };
+
+        // Reagents — 8 slots of (item id, count).
+        int reagent[8]       = { -1, -1, -1, -1, -1, -1, -1, -1 };
+        int reagent_count[8] = { -1, -1, -1, -1, -1, -1, -1, -1 };
+
+        // Cooldown / category
+        int category = -1;
     };
     Cols pm_cols;
+
+    // ---- Cooldown category index ----
+    // category_id -> list of row indices in pm_spells that share it. Built
+    // once at load time so the "shares cooldown with" lookup is O(1).
+    std::unordered_map<int64_t, std::vector<int>> pm_category_to_rows;
 
     // ---- FK lookup caches ----
     // Each maps the row's id to a small struct of resolved values. Loaded
@@ -138,7 +153,11 @@ private:
     void DrawIdentitySection(int64_t spell_id, size_t row_idx);
     void DrawDescriptionSection(int64_t spell_id, size_t row_idx);
     void DrawCostCastSection(int64_t spell_id, size_t row_idx);
-    void DrawEffect1Section(int64_t spell_id, size_t row_idx);
+    // Generic effect renderer: slot = 0 / 1 / 2 corresponds to Effect 1/2/3.
+    void DrawEffectSection(int slot, int64_t spell_id, size_t row_idx);
+    void DrawAttributesSection(size_t row_idx);
+    void DrawReagentsSection(size_t row_idx);
+    void DrawCooldownDetailsSection(size_t row_idx);
 
     // Helper used by DrawDetail's per-row label/InputText editor pattern.
     // Returns true if a commit happened.
