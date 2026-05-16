@@ -3,6 +3,7 @@
 
 #include "../resources/dbc_registry.h"
 #include "../db/db_connection.h"
+#include "dbc_form_system.h"
 
 #include <string>
 #include <unordered_map>
@@ -26,6 +27,10 @@ namespace mve {
 class DbcBrowserSystem {
 public:
     DbcBrowserSystem(DbcRegistry& registry, DbConnection& db);
+
+    // Optional: when set, the browser shows an "Open in form" button for
+    // hovered/selected rows that hands off to the form editor.
+    void SetFormSystem(DbcFormSystem* form) { pm_form = form; }
 
     void Update();
 
@@ -71,6 +76,7 @@ private:
 
     DbcRegistry& pm_registry;
     DbConnection& pm_db;
+    DbcFormSystem* pm_form = nullptr;
 
     std::string pm_selected;
     char pm_filter[64] = {0};
