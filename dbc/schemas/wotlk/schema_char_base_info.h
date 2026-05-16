@@ -3,7 +3,7 @@
 
 #include "dbc_schema.h"
 
-// Record size: 2 bytes — no Id field, no padding
+// Record size: 2 bytes - no Id field, no padding
 // Each record is just a valid race+class combination
 static const DbcFieldDef char_base_info_fields[] = {
     { "RaceID", DbcFieldType::UInt8, DbcSemantic::ForeignKey, "chrraces" },

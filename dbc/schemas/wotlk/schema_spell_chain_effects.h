@@ -3,7 +3,7 @@
 
 #include "dbc_schema.h"
 
-// Record size: 180 bytes (0xB4) — all 4-byte aligned fields
+// Record size: 180 bytes (0xB4) - all 4-byte aligned fields
 // Not actually packed, but included for completeness
 static const DbcFieldDef spell_chain_effects_fields[] = {
     { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },

@@ -16,7 +16,7 @@ ImGuiContext::~ImGuiContext() {
 }
 
 void ImGuiContext::initImGui(Window& window, Device& device, vk::Format swapchain_format) {
-    // ImGui's descriptor pool — covers all binding types ImGui internally uses.
+    // ImGui's descriptor pool - covers all binding types ImGui internally uses.
     // The `eFreeDescriptorSet` flag is required because ImGui frees descriptor
     // sets (e.g., when textures are unregistered).
     std::vector<vk::DescriptorPoolSize> pool_sizes = {

@@ -28,7 +28,7 @@ void EditorUISystem::DrawViewport(Scene& scene, float delta_time) {
             // is no longer referenced by any in-flight frame and we can free
             // it. Without this we leak one ImGui descriptor per resize, and
             // ImGui's 100-set pool exhausts after a minute or two of dragging
-            // — AddTexture then returns uninitialized memory (0xcc...).
+            // - AddTexture then returns uninitialized memory (0xcc...).
             pm_imgui_ctx.UnregisterTexture(pm_viewport_tex);
             pm_viewport_tex = ImTextureID_Invalid;
 

@@ -4,7 +4,7 @@
 #include "dbc_enum.h"
 
 // Magic damage school index for Spell.dbc. The school MASK (a bitmask
-// version of these) is a separate bitmask table — see enum_spell_school_mask.h
+// version of these) is a separate bitmask table - see enum_spell_school_mask.h
 // when that lands.
 static const DbcEnumValue spell_school_values[] = {
     { 0, "Physical" },

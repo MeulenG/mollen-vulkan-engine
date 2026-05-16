@@ -21,7 +21,7 @@ namespace mve {
 //   - re-read a single row         (FetchRow)
 //   - update one cell              (UpdateCell)
 //
-// All methods are safe to call when not connected — they fail and write a
+// All methods are safe to call when not connected - they fail and write a
 // human-readable reason into LastError().
 //
 // String values are the universal currency: every cell is rendered as text in
@@ -31,7 +31,7 @@ class DbConnection {
 public:
     struct Row {
         // One entry per column, in the same order as Table::columns.
-        // NULLs become empty strings — DBC schemas don't use NULL.
+        // NULLs become empty strings - DBC schemas don't use NULL.
         std::vector<std::string> values;
     };
 
@@ -85,7 +85,7 @@ public:
                     DbcFieldType type);
 
 private:
-    // Owned connector — pImpl-style so the header doesn't include pqxx.
+    // Owned connector - pImpl-style so the header doesn't include pqxx.
     psql_connector* pm_conn = nullptr;
     bool pm_connected = false;
 

@@ -234,7 +234,7 @@ void DbcBrowserSystem::DrawConnectionHeader() {
     } else {
         ImGui::TextColored(ImVec4(0.9f, 0.6f, 0.4f, 1), "[disconnected]");
         ImGui::SameLine();
-        ImGui::TextDisabled("file mode (read-only) — %s",
+        ImGui::TextDisabled("file mode (read-only) - %s",
                             pm_db.LastError().empty() ? "" : pm_db.LastError().c_str());
     }
 }
@@ -248,7 +248,7 @@ void DbcBrowserSystem::DrawDbcList() {
 
     for (const auto& name : pm_registry.AvailableNames()) {
         std::string pretty = DbcPrettyName(name.c_str());
-        // Filter applies to both forms — typing "creature" finds
+        // Filter applies to both forms - typing "creature" finds
         // "Creature Display Info" and the raw "CreatureDisplayInfo".
         if (!MatchesFilter(name, pm_filter) &&
             !MatchesFilter(pretty, pm_filter)) continue;
@@ -315,7 +315,7 @@ void DbcBrowserSystem::DrawRecordTable() {
     std::string pretty = DbcPrettyName(pm_selected.c_str());
     std::string sql_table = DbcTableName(pm_selected.c_str());
 
-    ImGui::PushFont(nullptr);  // (no big font yet — placeholder for future styling)
+    ImGui::PushFont(nullptr);  // (no big font yet - placeholder for future styling)
     ImGui::TextUnformatted(pretty.c_str());
     ImGui::PopFont();
 
@@ -343,7 +343,7 @@ void DbcBrowserSystem::DrawRecordTable() {
 
     ImGui::Separator();
 
-    // Section toggle bar — only meaningful when the schema declares
+    // Section toggle bar - only meaningful when the schema declares
     // categories for its fields (post-Layer-2 schemas).
     if (entry->schema) DrawSectionToggles(entry->schema);
 
@@ -388,7 +388,7 @@ void DbcBrowserSystem::DrawPsqlTable(DbcRegistry::Entry& entry,
         int db_column;          // index into table.columns; -1 if missing
         std::string col_name;   // snake_case
 
-        // Locale cluster info — only set on the lead view of a cluster.
+        // Locale cluster info - only set on the lead view of a cluster.
         bool is_locale_lead = false;
         std::vector<int> locale_field_indices;   // schema indices of all members
         std::vector<int> locale_db_columns;      // matching db column indices
@@ -692,7 +692,7 @@ void DbcBrowserSystem::DrawLocaleEditPopup(DbConnection::Table& table) {
                 },
                 &buf);
 
-            // Commit when the user clicks elsewhere or tabs out — the
+            // Commit when the user clicks elsewhere or tabs out - the
             // standard ImGui pattern for non-Enter-finished edits.
             if (ImGui::IsItemDeactivatedAfterEdit()) {
                 std::string current = buf.c_str();  // strip trailing NULs
@@ -711,7 +711,7 @@ void DbcBrowserSystem::DrawLocaleEditPopup(DbConnection::Table& table) {
                     if (pm_db.FetchRow(DbcTableName(pm_selected.c_str()),
                                        "id", pm_locale_edit.row_id, fresh)) {
                         for (size_t r = 0; r < table.rows.size(); r++) {
-                            // Match by id — we can't trust positional row index after refresh.
+                            // Match by id - we can't trust positional row index after refresh.
                             // Cheap given the table is in memory.
                             int64_t this_row_id = 0;
                             if (!table.rows[r].values.empty()) {
@@ -829,7 +829,7 @@ void DbcBrowserSystem::DrawPsqlCell(const DbcSchema* schema,
         }
     };
 
-    // The primary key column stays read-only — editing it would orphan
+    // The primary key column stays read-only - editing it would orphan
     // every row that points at it, and we don't have cascading update
     // support yet.
     if (std::strcmp(field.name, "Id") == 0) {
@@ -853,7 +853,7 @@ void DbcBrowserSystem::DrawPsqlCell(const DbcSchema* schema,
     case DbcSemantic::Enum: {
         const DbcEnum* e = field.hint ? GetDbcEnum(field.hint) : nullptr;
         if (!e) {
-            // Unknown enum target — fall through to default text editing.
+            // Unknown enum target - fall through to default text editing.
             goto default_cell;
         }
         int current = static_cast<int>(std::strtol(val.c_str(), nullptr, 10));
@@ -886,7 +886,7 @@ void DbcBrowserSystem::DrawPsqlCell(const DbcSchema* schema,
     case DbcSemantic::Color: {
         uint32_t packed = static_cast<uint32_t>(
             std::strtoul(val.c_str(), nullptr, 10));
-        // WoW packs colors as BGRA in the low-to-high byte order — i.e.
+        // WoW packs colors as BGRA in the low-to-high byte order - i.e.
         // the int's least-significant byte is Blue. Keep it consistent
         // with how the client renders.
         float rgba[4] = {
@@ -933,7 +933,7 @@ void DbcBrowserSystem::DrawPsqlCell(const DbcSchema* schema,
         if (ImGui::BeginPopup("##bitmask_popup")) {
             uint32_t edited = mask;
             if (e) {
-                // Named flag table — show one labelled checkbox per known flag.
+                // Named flag table - show one labelled checkbox per known flag.
                 for (uint32_t i = 0; i < e->count; i++) {
                     uint32_t bit = static_cast<uint32_t>(e->values[i].value);
                     bool on = (edited & bit) != 0;
@@ -944,9 +944,9 @@ void DbcBrowserSystem::DrawPsqlCell(const DbcSchema* schema,
                 }
             } else {
                 // No registered flag table. Default view is compact:
-                //   1. Hex input — direct edit for power users
-                //   2. Set-bits list — click to clear individual set bits
-                //   3. Collapsing "All 32 bits" — set previously-unset bits
+                //   1. Hex input - direct edit for power users
+                //   2. Set-bits list - click to clear individual set bits
+                //   3. Collapsing "All 32 bits" - set previously-unset bits
                 //      without scrolling a 32-row checkbox grid every time.
                 char hex_buf[16];
                 std::snprintf(hex_buf, sizeof(hex_buf), "0x%X", edited);

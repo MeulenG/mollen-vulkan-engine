@@ -78,7 +78,7 @@ struct M2Header {
 
 static_assert(sizeof(M2Header) == 304, "M2Header must be 304 bytes (0x130)");
 
-// M2 vertex — 48 bytes per vertex
+// M2 vertex - 48 bytes per vertex
 struct M2Vertex {
     C3Vector position;         // 3 floats = 12 bytes
     uint8_t  bone_weights[4];  // 4 bytes, values 0-255, sum should be 255
@@ -89,14 +89,14 @@ struct M2Vertex {
 
 static_assert(sizeof(M2Vertex) == 48, "M2Vertex must be 48 bytes");
 
-// M2 texture definition — references a BLP texture file
+// M2 texture definition - references a BLP texture file
 struct M2Texture {
     uint32_t type;             // 0 = file texture, others = procedural
     uint32_t flags;            // 1 = wrap_x, 2 = wrap_y
     M2Array<char> filename;    // path to BLP file (e.g., "Textures\\Creature\\Bear\\BearSkin.blp")
 };
 
-// M2 render flags — controls blend mode, two-sided, depth, etc.
+// M2 render flags - controls blend mode, two-sided, depth, etc.
 struct M2Material {
     uint16_t flags;            // 1=unlit, 2=unfogged, 4=two_sided, 8=depth_test, 16=depth_write
     uint16_t blend_mode;       // 0=opaque, 1=alpha_key, 2=alpha, 3=no_alpha_add, 4=add, 5=mod, 6=mod2x

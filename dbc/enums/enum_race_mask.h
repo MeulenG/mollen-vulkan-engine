@@ -4,7 +4,7 @@
 #include "dbc_enum.h"
 
 // Bitmask of playable races. Used by Spell.dbc, Talent.dbc, etc. for
-// race-restriction logic. WotLK 3.3.5a — bit 8 (256) is unused, bit 9 (512)
+// race-restriction logic. WotLK 3.3.5a - bit 8 (256) is unused, bit 9 (512)
 // is BloodElf, bit 10 (1024) is Draenei.
 static const DbcEnumValue race_mask_values[] = {
     {    1, "Human"      },

@@ -110,7 +110,7 @@ bool DbConnection::FetchTable(const std::string& table, Table& out) {
     try {
         pqxx::work txn{pm_conn->GetConnection()};
 
-        // Quote the identifier ourselves — pqxx exec_params doesn't bind
+        // Quote the identifier ourselves - pqxx exec_params doesn't bind
         // identifiers, only values. Caller is responsible for passing a
         // table name that came from DbcTableName() (lowercase, no quotes).
         std::string sql = "SELECT * FROM \"" + table + "\"";

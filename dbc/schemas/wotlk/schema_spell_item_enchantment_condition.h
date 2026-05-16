@@ -3,7 +3,7 @@
 
 #include "dbc_schema.h"
 
-// Record size: 64 bytes — fully packed, NO padding between groups
+// Record size: 64 bytes - fully packed, NO padding between groups
 static const DbcFieldDef spell_item_enchantment_condition_fields[] = {
     { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
     { "LtOperandType1", DbcFieldType::UInt8 },

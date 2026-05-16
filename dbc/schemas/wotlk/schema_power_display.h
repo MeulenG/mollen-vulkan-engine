@@ -3,7 +3,7 @@
 
 #include "dbc_schema.h"
 
-// Record size: 15 bytes — no trailing padding
+// Record size: 15 bytes - no trailing padding
 static const DbcFieldDef power_display_fields[] = {
     { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
     { "ActualType", DbcFieldType::UInt32 },

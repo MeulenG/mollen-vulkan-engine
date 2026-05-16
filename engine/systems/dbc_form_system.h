@@ -10,7 +10,7 @@
 namespace mve {
 
 // One-row form editor for a DBC. Complementary to DbcBrowserSystem's table
-// view — the table is for browsing, this is for deep edit of a single row
+// view - the table is for browsing, this is for deep edit of a single row
 // with sections grouped by `DbcFieldDef::category` and one field per row.
 //
 // Open via DbcBrowserSystem's "Open in form" button. The form fetches the
@@ -19,7 +19,7 @@ namespace mve {
 //
 // v1 scope: render every field with a simple label + value editor that
 // commits on focus loss / Enter. Semantic-specific widgets (combos, color
-// pickers, etc.) are deferred to a polish pass — the form is already a
+// pickers, etc.) are deferred to a polish pass - the form is already a
 // major UX upgrade for Spell.dbc just by virtue of the section grouping.
 class DbcFormSystem {
 public:
@@ -39,7 +39,7 @@ private:
 
     // Draws one field-row inside a section. Renders the label and a value
     // editor sized to fit the form's right column. Returns true if the user
-    // committed an edit (caller usually doesn't care — Commit already ran).
+    // committed an edit (caller usually doesn't care - Commit already ran).
     bool DrawFieldRow(const DbcSchema* schema, uint32_t field_index);
 
     // Commits the cell via DbConnection and refreshes the cached row on success.

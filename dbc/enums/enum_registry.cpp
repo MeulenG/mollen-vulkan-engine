@@ -2,7 +2,7 @@
 
 #include <cstring>
 
-// One include per registered enum — adding a new enum is a two-line change:
+// One include per registered enum - adding a new enum is a two-line change:
 // add the include here and append the table to the array below.
 #include "enum_sex.h"
 #include "enum_item_quality.h"
@@ -109,7 +109,7 @@ constexpr uint32_t k_enum_count = sizeof(k_all_enums) / sizeof(k_all_enums[0]);
 
 const DbcEnum* GetDbcEnum(const char* name) {
     if (!name) return nullptr;
-    // Linear scan is fine — fewer than ~50 enums total expected, and lookups
+    // Linear scan is fine - fewer than ~50 enums total expected, and lookups
     // happen at UI render time per cell, not in a hot loop.
     for (uint32_t i = 0; i < k_enum_count; i++) {
         if (std::strcmp(k_all_enums[i]->name, name) == 0) {

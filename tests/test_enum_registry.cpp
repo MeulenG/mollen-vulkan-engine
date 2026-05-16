@@ -27,7 +27,7 @@ TEST_CASE("ItemQuality covers all 8 standard tiers", "[enum]") {
     const DbcEnum* q = GetDbcEnum("ItemQuality");
     REQUIRE(q != nullptr);
     REQUIRE(q->count == 8);
-    // Values must be 0..7 in order — the editor relies on this for combo
+    // Values must be 0..7 in order - the editor relies on this for combo
     // index → value mapping.
     for (uint32_t i = 0; i < q->count; i++) {
         CHECK(q->values[i].value == static_cast<int32_t>(i));
