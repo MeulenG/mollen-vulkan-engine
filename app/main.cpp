@@ -99,6 +99,14 @@ int main() {
         streamer.PreloadAround(cam_tx, cam_ty, 2,
                                 render_system.TerrainDescriptorLayout());
 
+        // R4.5: tile loading parks MDDF doodad placements into a
+        // per-M2-path pending list rather than spawning one entity per
+        // placement. Flush them now that the full 5x5 preload is done
+        // so each unique M2 becomes one instanced entity carrying all
+        // its placements across every tile that referenced it.
+        // Without this call the doodads never enter the scene.
+        assets.FlushDoodadInstances(scene);
+
         auto last_time = std::chrono::high_resolution_clock::now();
 
         while (!window.ShouldClose()) {
@@ -128,6 +136,10 @@ int main() {
             if (stream_cam) {
                 streamer.Update(stream_cam->GetPosition(),
                                 render_system.TerrainDescriptorLayout());
+                // New tiles parked doodad placements; materialize them
+                // into instanced entities. No-op when no new tiles
+                // loaded this frame.
+                assets.FlushDoodadInstances(scene);
             }
             scene.FlushDestroyed();
 

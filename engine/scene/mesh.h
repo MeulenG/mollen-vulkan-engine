@@ -52,6 +52,15 @@ public:
     void Bind(const vk::raii::CommandBuffer& command_buffer) const;
     void Draw(const vk::raii::CommandBuffer& command_buffer) const;
 
+    // Instanced draw - issues drawIndexed(idx_count, instance_count, 0,
+    // 0, 0). The shader reads per-instance data via gl_InstanceIndex.
+    // Used by the doodad path (R4.5): one mesh + one descriptor set +
+    // one draw call covers N placements of the same M2.
+    void DrawInstanced(const vk::raii::CommandBuffer& command_buffer,
+                       uint32_t instance_count) const;
+
+    uint32_t IndexCount() const { return index_count_; }
+
     static Mesh CreatePyramid(Device& device, glm::vec3 color = {0.8f, 0.8f, 0.8f});
     static Mesh CreateCube(Device& device, glm::vec3 color = {0.8f, 0.8f, 0.8f});
     static Mesh CreateGroundPlane(Device& device, float size = 20.0f);

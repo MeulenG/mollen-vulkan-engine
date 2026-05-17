@@ -8,6 +8,7 @@
 #include "../scene/components/m2_info_component.h"
 #include "../scene/components/terrain_component.h"
 #include "../scene/components/terrain_tile_component.h"
+#include "../scene/components/doodad_instance_component.h"
 #include "../scene/terrain_mesh.h"
 #include "../formats/blp_loader.h"
 #include "../formats/adt_types.h"
@@ -227,90 +228,66 @@ Entity* AssetManager::LoadM2IntoScene(
     auto* mesh_comp = entity->AddComponent<MeshComponent>();
     mesh_comp->pm_mesh = mesh;
 
-    // MaterialComponent. Two paths:
-    //   Legacy (single-arg LoadM2IntoScene): per-entity bone buffer
-    //     and descriptor set. Used by the spell editor's model preview
-    //     where bones get animated independently.
-    //   Doodad (explicit-TRS overload, is_legacy=false): shared bone
-    //     buffer + descriptor set cached per M2 path. Identity bones,
-    //     so animation breaks but pool usage drops from N entities
-    //     to N unique M2 paths.
+    // MaterialComponent + per-entity bone buffer + descriptor set.
+    // R4.5 collapses the previous two-path (legacy vs doodad) into one:
+    // doodads no longer pass through LoadM2IntoScene at all (they go
+    // through FlushDoodadInstances), so every call here is the legacy
+    // spell-editor preview path. Per-entity bone buffer is needed so
+    // skeletal animation in the preview can write its own matrices
+    // without trampling other entities.
     auto* mat = entity->AddComponent<MaterialComponent>();
 
     vk::DeviceSize bone_buffer_size = Skeleton::MAX_BONES * sizeof(glm::mat4);
 
-    if (is_legacy) {
-        // Per-entity buffer + set (legacy path)
-        mat->pm_bone_buffer = std::make_unique<Buffer>(
-            pm_device, bone_buffer_size,
+    mat->pm_bone_buffer = std::make_unique<Buffer>(
+        pm_device, bone_buffer_size,
+        vk::BufferUsageFlagBits::eStorageBuffer,
+        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+
+    std::vector<glm::mat4> identity(Skeleton::MAX_BONES, glm::mat4{1.0f});
+    mat->pm_bone_buffer->Write(identity.data(), bone_buffer_size);
+
+    mat->pm_descriptor_set = pm_descriptor_pool->AllocateSetRaw(*pm_descriptor_layout);
+
+    // Binding 3: 1-entry instance buffer with the identity matrix. The
+    // shader reads gl_InstanceIndex=0 and gets identity, so the math
+    // collapses to (mvp * identity * skin * pos) - same as pre-R4.5.
+    // Cached on the AssetManager because every legacy entity wants the
+    // exact same buffer.
+    if (!pm_identity_instance_buffer) {
+        vk::DeviceSize inst_size = sizeof(glm::mat4);
+        pm_identity_instance_buffer = std::make_unique<Buffer>(
+            pm_device, inst_size,
             vk::BufferUsageFlagBits::eStorageBuffer,
-            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-
-        std::vector<glm::mat4> identity(Skeleton::MAX_BONES, glm::mat4{1.0f});
-        mat->pm_bone_buffer->Write(identity.data(), bone_buffer_size);
-
-        mat->pm_descriptor_set = pm_descriptor_pool->AllocateSetRaw(*pm_descriptor_layout);
-
-        vk::DescriptorBufferInfo ubo_info{*pm_scene_ubo->GetBuffer(), 0, sizeof(float) * 8};
-        auto tex_info = texture->DescriptorInfo();
-        vk::DescriptorBufferInfo bone_info{*mat->pm_bone_buffer->GetBuffer(), 0, bone_buffer_size};
-
-        DescriptorWriter{}
-            .WriteBuffer(0, ubo_info)
-            .WriteImage(1, tex_info)
-            .WriteBuffer(2, bone_info, vk::DescriptorType::eStorageBuffer)
-            .Apply(pm_device.GetDevice(), mat->pm_descriptor_set);
-    } else {
-        // Doodad path: look up or create the cached shared material
-        // for this M2 path. mat->pm_bone_buffer stays null (the
-        // shared buffer lives in pm_shared_m2_material).
-        auto it = pm_shared_m2_material.find(m2_path);
-        std::shared_ptr<M2SharedMaterial> shared;
-        if (it != pm_shared_m2_material.end()) {
-            shared = it->second;
-        } else {
-            shared = std::make_shared<M2SharedMaterial>();
-            shared->pm_texture = texture;
-            shared->pm_bone_buffer = std::make_unique<Buffer>(
-                pm_device, bone_buffer_size,
-                vk::BufferUsageFlagBits::eStorageBuffer,
-                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-
-            std::vector<glm::mat4> identity(Skeleton::MAX_BONES, glm::mat4{1.0f});
-            shared->pm_bone_buffer->Write(identity.data(), bone_buffer_size);
-
-            shared->pm_descriptor_set =
-                pm_descriptor_pool->AllocateSetRaw(*pm_descriptor_layout);
-
-            vk::DescriptorBufferInfo ubo_info{
-                *pm_scene_ubo->GetBuffer(), 0, sizeof(float) * 8};
-            auto tex_info = texture->DescriptorInfo();
-            vk::DescriptorBufferInfo bone_info{
-                *shared->pm_bone_buffer->GetBuffer(), 0, bone_buffer_size};
-
-            DescriptorWriter{}
-                .WriteBuffer(0, ubo_info)
-                .WriteImage(1, tex_info)
-                .WriteBuffer(2, bone_info, vk::DescriptorType::eStorageBuffer)
-                .Apply(pm_device.GetDevice(), shared->pm_descriptor_set);
-
-            pm_shared_m2_material[m2_path] = shared;
-        }
-
-        // The entity references the shared resources but doesn't own
-        // them. mat->pm_bone_buffer is left null - the actual bone
-        // buffer is bound via the shared descriptor set.
-        mat->pm_descriptor_set = shared->pm_descriptor_set;
+            vk::MemoryPropertyFlagBits::eHostVisible |
+                vk::MemoryPropertyFlagBits::eHostCoherent);
+        glm::mat4 id_mat{1.0f};
+        pm_identity_instance_buffer->Write(&id_mat, inst_size);
     }
+
+    vk::DescriptorBufferInfo ubo_info{*pm_scene_ubo->GetBuffer(), 0, sizeof(float) * 8};
+    auto tex_info = texture->DescriptorInfo();
+    vk::DescriptorBufferInfo bone_info{
+        *mat->pm_bone_buffer->GetBuffer(), 0, bone_buffer_size};
+    vk::DescriptorBufferInfo inst_info{
+        *pm_identity_instance_buffer->GetBuffer(), 0, sizeof(glm::mat4)};
+
+    DescriptorWriter{}
+        .WriteBuffer(0, ubo_info)
+        .WriteImage(1, tex_info)
+        .WriteBuffer(2, bone_info, vk::DescriptorType::eStorageBuffer)
+        .WriteBuffer(3, inst_info, vk::DescriptorType::eStorageBuffer)
+        .Apply(pm_device.GetDevice(), mat->pm_descriptor_set);
 
     SubmeshMaterial sub_mat;
     sub_mat.pm_texture = texture;
     mat->pm_submesh_materials.push_back(sub_mat);
 
-    // SkeletonComponent only on the legacy path. Doodads share a bone
-    // buffer across instances, so any per-entity animation would
-    // corrupt the shared state. The legacy spell-editor preview
-    // needs per-entity animation and gets the full setup.
+    // SkeletonComponent only on the legacy single-arg path. The R4.5
+    // doodad instancing path doesn't go through here at all (see
+    // FlushDoodadInstances), but the multi-arg LoadM2IntoScene is still
+    // exposed for callers that want manual placement without skeletal
+    // animation (e.g. one-off props the editor may add interactively).
     if (is_legacy && model.skeleton.BoneCount() > 0) {
         auto* skel = entity->AddComponent<SkeletonComponent>();
         skel->pm_skeleton = &model.skeleton;
@@ -612,10 +589,30 @@ Entity* AssetManager::LoadAdtTileIntoScene(
         }
 
         std::string fs_path = ResolveWowAsset(wow_path);
+        // Also resolve .mdx -> .m2 here so the key in
+        // pm_pending_doodad_instances matches whatever path the M2
+        // loader will actually use. Without this, two MDDF paths that
+        // differ only by extension produce two map entries (and two
+        // identical mesh loads).
+        fs_path = ResolveM2Extension(fs_path);
 
-        // WoW MDDF position is { south, up, east }. Engine wants
-        // { east, up, south }. So engine = (pos_z, pos_y, pos_x).
-        glm::vec3 engine_pos(d.pos_z, d.pos_y, d.pos_x);
+        // MDDF stores positions in a different coordinate origin than
+        // MCNK. MCNK puts the world origin at the map center (tile 32,
+        // 32); MDDF puts it at the south-west corner of the 64x64 grid
+        // (so values are 0..17066). Convert MDDF -> MCNK first, then
+        // do the WoW->engine axis remap.
+        //
+        // The flip math: in MCNK coords, X is south-positive and Y is
+        // east-positive but both axes grow toward NEGATIVE values when
+        // you move toward higher tile indices (because tile 32 is at
+        // origin and indices grow with WoW negation). MDDF values count
+        // up from the SW corner the same direction, so the conversion
+        // is just (kAdtMaxCoord - mddf_value) on each horizontal axis.
+        float mcnk_x = kAdtMaxCoord - d.pos_x;   // south axis
+        float mcnk_y = kAdtMaxCoord - d.pos_z;   // east axis
+        float mcnk_z =                d.pos_y;   // up (unchanged)
+        // WoW -> engine: (east, up, south).
+        glm::vec3 engine_pos(mcnk_y, mcnk_z, mcnk_x);
 
         // WoW MDDF rotation is Euler degrees applied YXZ (yaw, pitch,
         // roll about the WoW axes). Build the quaternion in WoW frame
@@ -629,24 +626,247 @@ Entity* AssetManager::LoadAdtTileIntoScene(
         glm::quat q_final = q_axis * q_wow;
 
         glm::vec3 scale_vec(d.scale);
-        char name_buf[48];
-        std::snprintf(name_buf, sizeof(name_buf),
-                      "Doodad#%u", d.unique_id);
 
+        // Build the per-instance model matrix and park it in the
+        // pending list. The shader will multiply this against the
+        // skin-bind-pose position to land each vertex in world space.
+        //   M = T(engine_pos) * R(q_final) * S(scale)
+        glm::mat4 m = glm::translate(glm::mat4{1.0f}, engine_pos);
+        m = m * glm::mat4_cast(q_final);
+        m = glm::scale(m, scale_vec);
+
+        PendingDoodadInstance pending{};
+        pending.model_matrix = m;
+        pm_pending_doodad_instances[fs_path].push_back(pending);
         spawn_attempts++;
-        Entity* doodad = LoadM2IntoScene(
-            fs_path, scene, engine_pos, q_final, scale_vec, name_buf);
-        if (!doodad) spawn_failures++;
     }
-    if (spawn_attempts > 0) {
+    if (spawn_attempts > 0 || spawn_duplicates > 0 || spawn_failures > 0) {
         std::fprintf(stderr,
-            "Tile (%d, %d): %zu doodads, spawned %zu, missing %zu, dedup %zu\n",
+            "Tile (%d, %d): %zu doodads, queued %zu, missing %zu, dedup %zu\n",
             tile_x, tile_y, tile->doodads.size(),
-            spawn_attempts - spawn_failures,
-            spawn_failures, spawn_duplicates);
+            spawn_attempts, spawn_failures, spawn_duplicates);
     }
 
     return entity;
+}
+
+void AssetManager::FlushDoodadInstances(Scene& scene) {
+    if (!pm_descriptor_layout || !pm_descriptor_pool || !pm_scene_ubo) {
+        pm_pending_doodad_instances.clear();
+        return;
+    }
+    if (pm_pending_doodad_instances.empty()) return;
+
+    size_t new_instances = 0;
+    size_t new_entities  = 0;
+    size_t extended_entities = 0;
+
+    // Stable cmd-buffer fence: any rewrite of a descriptor set that's
+    // currently bound in an in-flight command buffer is a validation
+    // error and undefined behaviour. The streaming path flushes from
+    // the per-frame Update(), so we may be looking at a set that the
+    // previous frame just used. waitIdle here is the simplest correct
+    // sync barrier - flushes are rare (one per tile-set load), so the
+    // perf cost is negligible.
+    pm_device.GetDevice().waitIdle();
+
+    for (auto& [m2_path, placements] : pm_pending_doodad_instances) {
+        if (placements.empty()) continue;
+
+        // 1. Parse + cache the M2 model (skip path if file missing or
+        //    corrupt - the placement set for it just gets dropped).
+        auto cache_it = pm_m2_cache.find(m2_path);
+        std::shared_ptr<M2CacheEntry> cache_entry;
+        if (cache_it != pm_m2_cache.end()) {
+            cache_entry = cache_it->second;
+        } else {
+            if (!fs::exists(m2_path)) continue;
+            try {
+                cache_entry = std::make_shared<M2CacheEntry>();
+                cache_entry->model = M2Loader::LoadFile(m2_path);
+            } catch (...) {
+                continue;
+            }
+            pm_m2_cache[m2_path] = cache_entry;
+        }
+        auto& model = cache_entry->model;
+        if (model.vertices.empty()) continue;
+
+        // 2. Mesh (shared)
+        MeshHandle mesh;
+        auto mesh_it = pm_mesh_cache.find(m2_path);
+        if (mesh_it != pm_mesh_cache.end()) {
+            mesh = mesh_it->second;
+        } else {
+            mesh = std::make_shared<Mesh>(
+                pm_device, model.vertices, model.indices);
+            pm_mesh_cache[m2_path] = mesh;
+        }
+
+        // 3. Texture (first MAT slot in the M2; doodads have a single
+        //    diffuse and no per-submesh blending in v1).
+        TextureHandle texture;
+        std::string blp_path;
+        if (!model.texture_paths.empty() && !model.texture_paths[0].empty()) {
+            blp_path = "assets/" + model.texture_paths[0];
+        } else {
+            fs::path m2_dir = fs::path(m2_path).parent_path();
+            if (fs::exists(m2_dir)) {
+                for (auto& entry : fs::directory_iterator(m2_dir)) {
+                    auto ext = entry.path().extension().string();
+                    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+                    if (ext == ".blp" &&
+                        entry.path().stem().string().find("Skin")
+                            != std::string::npos) {
+                        blp_path = entry.path().string();
+                        break;
+                    }
+                }
+            }
+        }
+        if (!blp_path.empty()) {
+            auto tex_it = pm_texture_cache.find(blp_path);
+            if (tex_it != pm_texture_cache.end()) {
+                texture = tex_it->second;
+            } else if (fs::exists(blp_path)) {
+                try {
+                    auto blp = BlpLoader::LoadFile(blp_path);
+                    texture = std::make_shared<Image>(pm_device, blp);
+                    pm_texture_cache[blp_path] = texture;
+                } catch (...) {
+                    texture = GetDefaultTexture();
+                }
+            }
+        }
+        if (!texture) texture = GetDefaultTexture();
+
+        // 4. Per-path shared material (bone buffer + descriptor set).
+        //    Identity bone matrices - doodads are static in v1.
+        auto sh_it = pm_shared_m2_material.find(m2_path);
+        std::shared_ptr<M2SharedMaterial> shared;
+        if (sh_it != pm_shared_m2_material.end()) {
+            shared = sh_it->second;
+        } else {
+            shared = std::make_shared<M2SharedMaterial>();
+            shared->pm_texture = texture;
+
+            vk::DeviceSize bone_size =
+                Skeleton::MAX_BONES * sizeof(glm::mat4);
+            shared->pm_bone_buffer = std::make_unique<Buffer>(
+                pm_device, bone_size,
+                vk::BufferUsageFlagBits::eStorageBuffer,
+                vk::MemoryPropertyFlagBits::eHostVisible |
+                    vk::MemoryPropertyFlagBits::eHostCoherent);
+            std::vector<glm::mat4> bone_ids(
+                Skeleton::MAX_BONES, glm::mat4{1.0f});
+            shared->pm_bone_buffer->Write(bone_ids.data(), bone_size);
+
+            shared->pm_descriptor_set =
+                pm_descriptor_pool->AllocateSetRaw(*pm_descriptor_layout);
+            pm_shared_m2_material[m2_path] = shared;
+        }
+
+        // 5. Append the new placements to the persistent matrix list
+        //    for this path. Order matters - existing entities already
+        //    drew the first N matrices in this list; new placements go
+        //    at the end.
+        auto& all_matrices = pm_flushed_doodad_matrices[m2_path];
+        size_t prev_count = all_matrices.size();
+        all_matrices.reserve(prev_count + placements.size());
+        for (const auto& p : placements) {
+            all_matrices.push_back(p.model_matrix);
+        }
+        size_t total_count = all_matrices.size();
+        vk::DeviceSize total_bytes = total_count * sizeof(glm::mat4);
+
+        // 6. (Re-)allocate the instance SSBO. We always rebuild even
+        //    if just appending - the buffer's size is fixed at create
+        //    time, so growing requires a new allocation. Memory cost:
+        //    a 5000-instance buffer is 320 KB.
+        auto inst_buf = std::make_unique<Buffer>(
+            pm_device, total_bytes,
+            vk::BufferUsageFlagBits::eStorageBuffer,
+            vk::MemoryPropertyFlagBits::eHostVisible |
+                vk::MemoryPropertyFlagBits::eHostCoherent);
+        inst_buf->Write(all_matrices.data(), total_bytes);
+
+        // 7. (Re-)write descriptor set. Binding 3 must point at the new
+        //    instance buffer; bindings 0-2 stay logically the same but
+        //    we rewrite them too because the previous descriptor write
+        //    referenced the OLD instance buffer at binding 3 and the
+        //    spec wants a complete set. Cheap - 4 writes per unique M2.
+        vk::DescriptorBufferInfo ubo_info{
+            *pm_scene_ubo->GetBuffer(), 0, sizeof(float) * 8};
+        auto tex_info = texture->DescriptorInfo();
+        vk::DescriptorBufferInfo bone_info{
+            *shared->pm_bone_buffer->GetBuffer(), 0,
+            Skeleton::MAX_BONES * sizeof(glm::mat4)};
+        vk::DescriptorBufferInfo inst_info{
+            *inst_buf->GetBuffer(), 0, total_bytes};
+
+        DescriptorWriter{}
+            .WriteBuffer(0, ubo_info)
+            .WriteImage(1, tex_info)
+            .WriteBuffer(2, bone_info, vk::DescriptorType::eStorageBuffer)
+            .WriteBuffer(3, inst_info, vk::DescriptorType::eStorageBuffer)
+            .Apply(pm_device.GetDevice(), shared->pm_descriptor_set);
+
+        // 8. Materialize the entity. If one already exists for this
+        //    M2 path (later streamed-in tile added more placements),
+        //    update its DoodadInstanceComponent in place; otherwise
+        //    create a fresh entity.
+        Entity* entity = nullptr;
+        auto en_it = pm_doodad_entity_for_path.find(m2_path);
+        if (en_it != pm_doodad_entity_for_path.end()) {
+            entity = scene.FindEntity(en_it->second);
+        }
+
+        if (!entity) {
+            std::string entity_name = "DoodadGroup:";
+            size_t slash = m2_path.find_last_of("/\\");
+            entity_name += (slash != std::string::npos)
+                ? m2_path.substr(slash + 1) : m2_path;
+
+            entity = scene.CreateEntity(entity_name);
+            entity->AddComponent<TransformComponent>();
+            auto* mc = entity->AddComponent<MeshComponent>();
+            mc->pm_mesh = mesh;
+            entity->AddComponent<DoodadInstanceComponent>();
+
+            // M2InfoComponent (surfaces metadata to the editor panel)
+            auto* info = entity->AddComponent<M2InfoComponent>();
+            info->pm_model_name    = model.name;
+            info->pm_vertex_count  = static_cast<uint32_t>(model.vertices.size());
+            info->pm_index_count   = static_cast<uint32_t>(model.indices.size());
+            info->pm_bone_count    = model.skeleton.BoneCount();
+            info->pm_texture_paths = model.texture_paths;
+            info->pm_submeshes     = model.submeshes;
+            info->pm_bbox_min      = model.bbox_min;
+            info->pm_bbox_max      = model.bbox_max;
+            info->pm_ground_offset = -model.bbox_min.z;
+
+            pm_doodad_entity_for_path[m2_path] = entity->Id();
+            new_entities++;
+        } else {
+            extended_entities++;
+        }
+
+        auto* dic = entity->GetComponent<DoodadInstanceComponent>();
+        dic->pm_instance_buffer  = std::move(inst_buf);
+        dic->pm_descriptor_set   = shared->pm_descriptor_set;
+        dic->pm_instance_count   = static_cast<uint32_t>(total_count);
+
+        new_instances += placements.size();
+    }
+
+    pm_pending_doodad_instances.clear();
+
+    if (new_instances > 0) {
+        std::fprintf(stderr,
+            "FlushDoodadInstances: +%zu instances (new entities %zu, "
+            "extended %zu)\n",
+            new_instances, new_entities, extended_entities);
+    }
 }
 
 } // namespace mve

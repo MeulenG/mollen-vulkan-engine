@@ -65,9 +65,29 @@ public:
     // Returns nullptr if the .adt file doesn't exist or fails to parse.
     // The mesh is cached by "adt:<x>_<y>" so re-loading a tile shares
     // GPU memory; BLPs are cached per-path inside LoadAdtTextures.
+    //
+    // R4.5: doodad MDDF entries are NOT spawned per-placement. Instead
+    // the tile loader accumulates them into pm_pending_doodad_instances
+    // (keyed by M2 path) and the caller must invoke FlushDoodadInstances
+    // once after all desired tiles are loaded. This collapses ~4650
+    // draw calls into ~50 (one per unique M2 path) for a 5x5 preload.
     Entity* LoadAdtTileIntoScene(
         int tile_x, int tile_y, Scene& scene,
         const vk::raii::DescriptorSetLayout& terrain_layout);
+
+    // Materialize pending doodad placements (accumulated by
+    // LoadAdtTileIntoScene) into one entity per unique M2 path. Each
+    // entity gets MeshComponent + DoodadInstanceComponent and is drawn
+    // via vkCmdDrawIndexed(idx_count, instance_count, ...).
+    //
+    // Safe to call multiple times - it only consumes whatever is
+    // pending and clears it. Typical flow:
+    //   for tile in (tx, ty) ... LoadAdtTileIntoScene(...)
+    //   FlushDoodadInstances(scene)
+    //
+    // The pending list is shared across tiles so cross-tile dedup works
+    // (pm_spawned_doodad_ids tracks unique_ids).
+    void FlushDoodadInstances(Scene& scene);
 
     // Load the diffuse BLP textures referenced by an ADT tile's MTEX
     // list into a 2D-array image. Each unique BLP gets one slice.
@@ -109,13 +129,15 @@ private:
     std::unordered_map<std::string, TextureHandle> pm_texture_cache;
     TextureHandle pm_default_texture;
 
-    // Per-M2-path cached descriptor set. Used by doodads: instead of
-    // each placement getting its own (mat, descriptor set, bone
-    // buffer) triple, instances of the same M2 path share one. Cuts
-    // pool consumption from ~4650 sets (one per placement) to ~50
-    // (one per unique M2). Bone buffer is the identity matrix - fine
-    // for static doodads (rocks, fences, signposts), wrong for
-    // animated ones, but the editor's v1 acceptance is static-only.
+    // Per-M2-path cached descriptor set + shared bone buffer. Used by
+    // both the legacy single-arg LoadM2IntoScene (one-off previews) and
+    // the doodad path. R4.5 also caches a single shared identity-instance
+    // buffer for the legacy path so binding 3 of the descriptor set is
+    // always populated even when there's no real instance data.
+    //
+    // Bone buffer is the identity matrix - fine for static doodads
+    // (rocks, fences, signposts), wrong for animated ones, but the
+    // editor's v1 acceptance is static-only.
     struct M2SharedMaterial {
         std::unique_ptr<Buffer> pm_bone_buffer;
         vk::DescriptorSet       pm_descriptor_set = VK_NULL_HANDLE;
@@ -124,12 +146,42 @@ private:
     std::unordered_map<std::string, std::shared_ptr<M2SharedMaterial>>
         pm_shared_m2_material;
 
+    // 1-entry "identity" instance buffer used by the legacy M2 path so
+    // binding 3 of the M2 descriptor set is always populated. Created
+    // lazily on first legacy LoadM2IntoScene call. The shader reads
+    // gl_InstanceIndex=0 -> identity matrix, so the legacy math collapses
+    // to the pre-R4.5 behaviour (push.mvp * identity * skinned_pos).
+    std::unique_ptr<Buffer> pm_identity_instance_buffer;
+
     // MDDF doodad unique_ids that have already been spawned across any
     // tile. Used to dedupe edge-shared doodads in the multi-tile R3
     // streamer: WoW places the same prop in multiple tiles' MDDF when
     // it sits near a tile boundary, so without dedup we'd render N
     // overlapping copies.
     std::unordered_set<uint32_t> pm_spawned_doodad_ids;
+
+    // Doodad placements parked by LoadAdtTileIntoScene, awaiting flush.
+    // Keyed by resolved M2 path so multiple tiles' placements of the
+    // same model coalesce into one entity at flush time. Each entry is
+    // a TRS already converted to engine space.
+    struct PendingDoodadInstance {
+        glm::mat4 model_matrix;
+    };
+    std::unordered_map<std::string, std::vector<PendingDoodadInstance>>
+        pm_pending_doodad_instances;
+
+    // ALL placements ever flushed for a given M2 path, in instance-buffer
+    // order. Used by FlushDoodadInstances to extend existing entities
+    // when new tiles stream in: we rebuild the SSBO with old + new so
+    // the existing entity's instance_count grows rather than the scene
+    // accumulating one entity per flush call.
+    //
+    // Doodads are never evicted in v1 - they live for the lifetime of
+    // the AssetManager. Tile eviction only frees terrain meshes/textures.
+    std::unordered_map<std::string, std::vector<glm::mat4>>
+        pm_flushed_doodad_matrices;
+    std::unordered_map<std::string, EntityId>
+        pm_doodad_entity_for_path;
 
     // Descriptor resources (set externally by RenderSystem or main)
     const vk::raii::DescriptorSetLayout* pm_descriptor_layout = nullptr;
