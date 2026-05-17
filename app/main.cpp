@@ -89,14 +89,14 @@ int main() {
         // (matches the target reference) shows trees + terrain at
         // proper density. User can switch via Tools menu.
         // Target the known ElwynnTreeCanopy04 placement at engine
-        // (-8059.6, 108, 983.0). Aim the look-at point at canopy mid
-        // (Y=115) and rotate around to find an angle where the tree
-        // sits roughly centered in frame instead of clipped against
-        // the screen edge. Orbit 30 yards = a normal "I'm a person
-        // walking near a tree" viewing distance.
-        glm::vec3 center{-8059.6f, 115.0f, 983.0f};
+        // (-8059.6, 108, 983.0). Aim look-at at canopy mid-height
+        // (Y=120). Orbit 22 yards keeps the tree filling a healthy
+        // chunk of the frame without clipping. pitch=0 means camera
+        // is level with the canopy center, so trunk + canopy span
+        // the full vertical extent symmetrically.
+        glm::vec3 center{-8059.6f, 120.0f, 983.0f};
         cam->pm_camera.SetTarget(center);
-        cam->pm_camera.SetOrbit(30.0f, 3.14f, 0.05f);
+        cam->pm_camera.SetOrbit(22.0f, 3.14f, 0.00f);
         cam->pm_camera.SetMode(mve::CameraMode::FlyFirstPerson);
 
         // Preload around wherever the camera actually sits (which may be
