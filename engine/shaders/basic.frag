@@ -31,30 +31,57 @@ layout(set = 0, binding = 1) uniform sampler2D tex_sampler;
 layout(location = 0) out vec4 out_color;
 
 void main() {
-    // Sample texture once - need the alpha channel for the cutout test
-    // below. Most WoW prop M2s (trees, fences, bushes) ship with a
-    // sub-mesh whose material is blend-mode 1 ("alpha-key"): the
-    // texture has leaf/branch silhouettes painted onto a transparent
-    // background, and the shader discards anything below ~50% alpha.
-    // Without the discard, every plane renders fully filled and a
-    // multi-plane tree mesh collapses into a solid pyramid shape.
+    // Alpha test for blend-mode-1 (AlphaKey) submeshes. The WoW client
+    // uses exactly 128/255 = 0.501960814 as its discard threshold
+    // (verbatim from WebWowViewerCpp commonM2Material.glsl). The
+    // previous 0.5 cutoff was 0.4% looser, just enough to keep a
+    // fringe of half-transparent texels around every leaf cluster
+    // which is what produced the jagged silhouettes.
     //
-    // We don't yet have per-submesh blend modes plumbed through, so
-    // this is unconditional. Opaque textures have alpha=1 everywhere
-    // and the discard never fires; alpha-keyed textures get a clean
-    // cutout. The 0.5 threshold matches the WoW client's convention.
+    // The discard is unconditional here because we don't yet plumb
+    // per-submesh blend_mode into the fragment stage. Opaque-mode
+    // textures have alpha=1 everywhere so the test never fires; a
+    // future per-blend-mode pipeline split will gate this on
+    // blend_mode == 1.
     vec4 tex = texture(tex_sampler, frag_uv);
-    if (tex.a < 0.5) discard;
+    if (tex.a < 0.501960814) discard;
 
-    // WoW client lighting model (M2 vertex shader, reverse-engineered
-    // from wowserhq Wrath-Shading): pure Lambert + colored ambient,
-    // no hemispherical / no specular. lightDir is stored "from sun
-    // to world" (i.e. points down for an overhead sun), so we negate
-    // to get L (the direction TO the sun) for the dot.
+    // Two-sided lighting. The M2 pipeline now runs with
+    // cullMode = eNone (see render_system.cpp comment) so the back
+    // face of every leaf plane is also rasterized. Without flipping
+    // N for back faces, that back face's normal still points "out"
+    // of the original quad winding (away from the camera), so
+    // NdotL = 0 on the side facing the viewer when the original
+    // quad was angled away from the sun. The visible result is a
+    // hard light/dark seam right down the middle of every crossed-
+    // plane canopy - the "cardboard cross" look.
+    //
+    // gl_FrontFacing is a GLSL built-in that's true when the
+    // primitive's winding matches the configured frontFace
+    // (eCounterClockwise here). When false, we're looking at the
+    // back side, so flip the normal to mirror the front-side
+    // lighting. This matches what WoW's M2 material flag 0x04
+    // "two-sided" causes the client to do.
     vec3 N = normalize(frag_normal);
+    if (!gl_FrontFacing) N = -N;
     vec3 L = normalize(-scene.light_dir);
     float NdotL = max(dot(N, L), 0.0);
-    vec3 lighting = scene.ambient_color + NdotL * scene.light_intensity * scene.direct_color;
+
+    // Half-Lambert wrap for foliage softness. Pure Lambert produces
+    // a hard light/dark split because NdotL clamps to 0 - anything
+    // facing > 90 deg from the sun is identically dark (ambient
+    // only). Real leaves are thin and translucent: light wraps
+    // around the shadow side, scattering through the leaf. The
+    // standard cheap approximation (Valve's Half-Life 2 character
+    // shading, Unreal foliage default) is:
+    //   wrap = NdotL * 0.5 + 0.5    // remaps [-1..1] to [0..1]
+    //   wrap = wrap * wrap          // re-bias toward shadow
+    // The square keeps a recognizable lit/shadow direction cue but
+    // softens the terminator so canopy crossing planes don't show
+    // as sharp banding.
+    float wrap = NdotL * 0.5 + 0.5;
+    wrap = wrap * wrap;
+    vec3 lighting = scene.ambient_color + wrap * scene.light_intensity * scene.direct_color;
     vec3 result = tex.rgb * frag_color * lighting;
 
     // WoW client fog (CShaderEffect::SetFogParams + vertex shader):

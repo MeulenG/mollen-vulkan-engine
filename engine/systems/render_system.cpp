@@ -209,6 +209,25 @@ void RenderSystem::Init() {
     model_config.depth_attachment_format = pm_offscreen.DepthFormat();
     model_config.binding_descriptions = Vertex::GetBindingDescriptions();
     model_config.attribute_descriptions = Vertex::GetAttributeDescriptions();
+    // Two-sided rendering for all M2 submeshes. WoW M2 leaf-plane
+    // submeshes carry a "two-sided" material flag (bit 0x04) so the
+    // canopy reads as a solid volume rather than a cardboard cross
+    // section. The DefaultConfig sets cullMode = eBack which kills
+    // the back face of every leaf plane and produces the harsh
+    // "shadow-side cardboard" look.
+    //
+    // The right architecture is per-submesh pipelines that read the
+    // flag bit and use eNone only when needed; for now disable
+    // culling for the whole M2 pipeline. Trunks/rocks would in
+    // theory benefit from back-face culling but the perf cost of
+    // not culling them is small (their back faces are fully
+    // occluded by their front faces, so back-face fragments will
+    // mostly fail the depth test and get discarded anyway).
+    //
+    // See basic.frag where we also flip the surface normal for
+    // gl_FrontFacing == false fragments so both sides receive
+    // proper Lambert lighting.
+    model_config.rasterization_info.cullMode = vk::CullModeFlagBits::eNone;
 
     pm_model_pipeline = std::make_unique<Pipeline>(
         pm_device, shader_dir + "/basic.vert.spv", shader_dir + "/basic.frag.spv",
