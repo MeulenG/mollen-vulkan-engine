@@ -24,6 +24,15 @@ void EditorUISystem::DrawViewport(Scene& scene, float delta_time) {
         uint32_t vp_h = static_cast<uint32_t>(viewport_size.y);
 
         if (vp_w != pm_offscreen.Width() || vp_h != pm_offscreen.Height()) {
+            // Free the old descriptor set BEFORE re-registering. ImGui's
+            // AddTexture allocates from a fixed-size internal pool; every
+            // resize that registers a new texture without freeing the old
+            // one leaks one slot. Once the pool fills up, AddTexture
+            // returns an uninitialized handle (0xcc... in debug) and the
+            // subsequent vkUpdateDescriptorSets fails.
+            pm_imgui_ctx.UnregisterTexture(pm_viewport_tex);
+            pm_viewport_tex = ImTextureID_Invalid;
+
             pm_offscreen.Resize(vp_w, vp_h);
             pm_viewport_tex = pm_imgui_ctx.RegisterTexture(
                 *pm_offscreen.GetSampler(), *pm_offscreen.ColorImageView());

@@ -26,6 +26,14 @@ public:
     ImTextureID RegisterTexture(vk::Sampler sampler, vk::ImageView view,
                                 vk::ImageLayout layout = vk::ImageLayout::eShaderReadOnlyOptimal);
 
+    // Release a previously-registered texture's descriptor set back to
+    // ImGui's pool. Mandatory before re-registering when the underlying
+    // image view changes (e.g. offscreen viewport resize). Without this,
+    // every resize leaks one descriptor set and eventually exhausts the
+    // pool, after which vkAllocateDescriptorSets returns
+    // OUT_OF_POOL_MEMORY and ImGui hands back an uninitialized handle.
+    void UnregisterTexture(ImTextureID id);
+
 private:
     void initImGui(Window& window, Device& device, vk::Format swapchain_format);
 
