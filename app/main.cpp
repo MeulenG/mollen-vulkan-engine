@@ -88,16 +88,15 @@ int main() {
         // bird's-eye made the editor read as a diorama. Ground level
         // (matches the target reference) shows trees + terrain at
         // proper density. User can switch via Tools menu.
-        // Mid-range camera matching the WoW client's typical "walking
-        // through Elwynn" view composition: ground-level eye height
-        // (~170 = ground + 1.7 yards), orbit radius 25 yards from the
-        // forest-floor target, slight upward pitch so the canopies
-        // and sky fill the upper half while the ground hugs the
-        // lower half. This is what the user's reference screenshot
-        // #2 (a wider Goldshire view) looks like.
-        glm::vec3 center{-8800.0f, 170.0f, -250.0f};
+        // Target the known ElwynnTreeCanopy04 placement at engine
+        // (-8059.6, 108, 983.0). Aim the look-at point at canopy mid
+        // (Y=115) and rotate around to find an angle where the tree
+        // sits roughly centered in frame instead of clipped against
+        // the screen edge. Orbit 30 yards = a normal "I'm a person
+        // walking near a tree" viewing distance.
+        glm::vec3 center{-8059.6f, 115.0f, 983.0f};
         cam->pm_camera.SetTarget(center);
-        cam->pm_camera.SetOrbit(25.0f, 4.0f, 0.15f);
+        cam->pm_camera.SetOrbit(30.0f, 3.14f, 0.05f);
         cam->pm_camera.SetMode(mve::CameraMode::FlyFirstPerson);
 
         // Preload around wherever the camera actually sits (which may be
