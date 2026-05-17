@@ -239,11 +239,10 @@ Entity* AssetManager::LoadM2IntoScene(
     std::vector<glm::mat4> identity(Skeleton::MAX_BONES, glm::mat4{1.0f});
     mat->pm_bone_buffer->Write(identity.data(), bone_buffer_size);
 
-    // Move the raii handle directly into the component so the descriptor
-    // set's lifetime is tied to the entity. Holding only the raw
-    // VkDescriptorSet (the old behavior) dangles once the local raii goes
-    // out of scope.
-    mat->pm_descriptor_set = pm_descriptor_pool->AllocateSet(*pm_descriptor_layout);
+    // Raw handle - see MaterialComponent header for why we avoid the
+    // raii destructor here. The pool's own destruction at shutdown
+    // reclaims this slot.
+    mat->pm_descriptor_set = pm_descriptor_pool->AllocateSetRaw(*pm_descriptor_layout);
 
     vk::DescriptorBufferInfo ubo_info{*pm_scene_ubo->GetBuffer(), 0, sizeof(float) * 8};
     auto tex_info = texture->DescriptorInfo();
@@ -509,7 +508,7 @@ Entity* AssetManager::LoadAdtTileIntoScene(
     }
 
     terrain_comp->pm_descriptor_set =
-        pm_descriptor_pool->AllocateSet(terrain_layout);
+        pm_descriptor_pool->AllocateSetRaw(terrain_layout);
 
     vk::DescriptorBufferInfo ubo_info{
         *pm_scene_ubo->GetBuffer(), 0, sizeof(float) * 8};

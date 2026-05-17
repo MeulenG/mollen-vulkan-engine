@@ -189,12 +189,12 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
     scene.Each<TransformComponent, MeshComponent, TerrainComponent>(
         [&](Entity&, TransformComponent& transform, MeshComponent& mesh_comp, TerrainComponent& terrain) {
             if (!mesh_comp.pm_visible || !mesh_comp.pm_mesh) return;
-            if (!*terrain.pm_descriptor_set) return;
+            if (!terrain.pm_descriptor_set) return;
 
             cmd.bindDescriptorSets(
                 vk::PipelineBindPoint::eGraphics,
                 *pm_terrain_pipeline_layout, 0,
-                *terrain.pm_descriptor_set, nullptr);
+                terrain.pm_descriptor_set, nullptr);
 
             glm::mat4 model = transform.ModelMatrix();
             PushConstants push{};
@@ -218,7 +218,7 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
             cmd.bindDescriptorSets(
                 vk::PipelineBindPoint::eGraphics,
                 *pm_model_pipeline_layout, 0,
-                *mat.pm_descriptor_set, nullptr);
+                mat.pm_descriptor_set, nullptr);
 
             glm::mat4 model = transform.ModelMatrix();
             PushConstants push{};

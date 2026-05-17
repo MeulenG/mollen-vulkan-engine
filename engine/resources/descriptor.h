@@ -39,7 +39,17 @@ public:
     DescriptorPool(const DescriptorPool&) = delete;
     DescriptorPool& operator=(const DescriptorPool&) = delete;
 
+    // Allocate a descriptor set as a raii object (frees back to the
+    // pool when destroyed). Use this when you need automatic cleanup
+    // and you control the lifetime carefully (e.g. a long-lived
+    // resource that you know won't outlive the pool).
     vk::raii::DescriptorSet AllocateSet(const vk::raii::DescriptorSetLayout& layout);
+
+    // Allocate a raw handle. The pool tracks the allocation but the
+    // caller is responsible for freeing it (or just lets the pool's
+    // own destruction reclaim it). Used for entity descriptor sets
+    // where the raii destruction path has caused trouble.
+    vk::DescriptorSet AllocateSetRaw(const vk::raii::DescriptorSetLayout& layout);
 
 private:
     Device& device_;
@@ -62,6 +72,7 @@ public:
         vk::DescriptorType type = vk::DescriptorType::eCombinedImageSampler);
 
     void Apply(const vk::raii::Device& device, const vk::raii::DescriptorSet& set);
+    void Apply(const vk::raii::Device& device, vk::DescriptorSet set);
 
 private:
     std::vector<vk::WriteDescriptorSet> writes_;
