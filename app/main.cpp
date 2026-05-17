@@ -88,20 +88,16 @@ int main() {
         // bird's-eye made the editor read as a diorama. Ground level
         // (matches the target reference) shows trees + terrain at
         // proper density. User can switch via Tools menu.
-        // Camera placed inside the forest so trees fill the frame -
-        // the previous (40, 2.5, 0.05) orbit at a clearing-edge gave
-        // bigger-viewport runs an upward-looking-into-mountain shot
-        // with the trees clipped below the visible frame.
-        //
-        // SetOrbit(radius=60, yaw=4.0, pitch=-0.1):
-        //   radius 60 places the camera 60 yards from the target,
-        //   pitch -0.1 angles the look slightly downward (into the
-        //   canopies rather than skyward), yaw 4.0 swings the view
-        //   toward a denser tree group in the Northshire tile based
-        //   on visual inspection of earlier captures.
-        glm::vec3 center{-8800.0f, 200.0f, -250.0f};
+        // Mid-range camera matching the WoW client's typical "walking
+        // through Elwynn" view composition: ground-level eye height
+        // (~170 = ground + 1.7 yards), orbit radius 25 yards from the
+        // forest-floor target, slight upward pitch so the canopies
+        // and sky fill the upper half while the ground hugs the
+        // lower half. This is what the user's reference screenshot
+        // #2 (a wider Goldshire view) looks like.
+        glm::vec3 center{-8800.0f, 170.0f, -250.0f};
         cam->pm_camera.SetTarget(center);
-        cam->pm_camera.SetOrbit(60.0f, 4.0f, -0.10f);
+        cam->pm_camera.SetOrbit(25.0f, 4.0f, 0.15f);
         cam->pm_camera.SetMode(mve::CameraMode::FlyFirstPerson);
 
         // Preload around wherever the camera actually sits (which may be
