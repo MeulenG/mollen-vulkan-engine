@@ -70,25 +70,38 @@ RenderSystem::RenderSystem(Device& device, OffscreenPass& offscreen)
     : pm_device{device}, pm_offscreen{offscreen},
       pm_ground_mesh{Mesh::CreateGroundPlane(device, 30.0f)} {
 
-    // Sun and ambient tuned to match Elwynn's "warm afternoon" mood
-    // (target ref). Pure-white directional light at full intensity
-    // washes out the M2 textures' baked variation and makes the scene
-    // feel synthetic. Slight yellow tint + ~0.8x intensity + lower
-    // ambient brings out the trees' contrast and the terrain's MCCV
-    // tints without underexposing shadowed areas.
-    pm_scene_data.pm_light_dir = glm::normalize(glm::vec3{0.5f, 1.0f, 0.3f});
-    pm_scene_data.pm_ambient = 0.35f;
-    pm_scene_data.pm_light_color = glm::vec3{1.0f, 0.96f, 0.86f};
-    pm_scene_data.pm_light_intensity = 0.75f;
-    // Fog tuned to match the 3000-yard far plane. Geometry inside
-    // fog_start is unfogged; the exp^2 ramp covers [start, end] with
-    // ~94% fog at end. fog_start = 1500 keeps the camera's immediate
-    // ~500-yard radius crisp at orbit 1500, then the haze kicks in
-    // for distance cues. A warm pastel tint mixes nicely with the
-    // warm-afternoon sun set below.
-    pm_scene_data.pm_fog_color = glm::vec3{0.70f, 0.75f, 0.78f};
-    pm_scene_data.pm_fog_start = 1500.0f;
-    pm_scene_data.pm_fog_end   = 2900.0f;
+    // Sun and ambient tuned to match Elwynn's "overcast afternoon"
+    // mood (target Goldshire ref shows rainy/cloudy weather). Low sun
+    // intensity + high ambient mimics diffuse overcast lighting where
+    // there's no strong sun direction. Slight cool tint (towards grey-
+    // blue) matches the storm color temperature.
+    // Sun lower in the sky (more horizontal Z component) for stronger
+    // shadowing on tree canopies. A near-vertical sun (0,1,0) lit
+    // everything from above and made the foliage read as a flat green
+    // mass; tilting toward (0.35, 0.7, 0.6) puts the dot(N, L) peak on
+    // canopy tops + facing planes, giving WoW's characteristic
+    // half-lit / half-shadowed leaves look without breaking the
+    // overcast mood.
+    pm_scene_data.pm_light_dir = glm::normalize(glm::vec3{0.35f, 0.70f, 0.60f});
+    // Ambient was 0.55, intensity 0.55 (flat overcast). Pulling ambient
+    // down to 0.42 and intensity up to 0.70 keeps overall brightness
+    // similar but increases shadow contrast. With dot(N,L) ranging
+    // [0..1] across a leaf cluster, perceived brightness now spans
+    // [0.42 (shadow side)..1.12 (lit side)] instead of [0.55..1.10] -
+    // a measurable contrast lift on every surface.
+    pm_scene_data.pm_ambient = 0.42f;
+    pm_scene_data.pm_light_color = glm::vec3{0.95f, 0.93f, 0.85f};
+    pm_scene_data.pm_light_intensity = 0.70f;
+    // Fog: anchored exp^2. With fog_start = 200 yards the immediate
+    // foreground (trees, grass) stays unfogged and reads with proper
+    // colour, then the ramp covers [200, 800]: half-way is ~390 yards
+    // (51% fog), and 800 yards is ~94% fog. That gives the camera a
+    // crisp 200-yard "pocket of clear" before haze takes over, which
+    // matches how a real foggy/overcast afternoon falls off. Earlier
+    // fog_start = 80 looked atmospheric but bleached the foreground.
+    pm_scene_data.pm_fog_color = glm::vec3{0.46f, 0.49f, 0.52f};
+    pm_scene_data.pm_fog_start = 200.0f;
+    pm_scene_data.pm_fog_end   = 800.0f;
     pm_scene_data.pm_camera_pos = glm::vec3{0.0f};
 }
 
@@ -165,8 +178,14 @@ void RenderSystem::Init() {
         pm_device, shader_dir + "/basic.vert.spv", shader_dir + "/basic.frag.spv",
         model_config);
 
-    // Background pipeline (fullscreen gradient, no vertex input, no depth)
-    pm_bg_pipeline_layout = pm_device.GetDevice().createPipelineLayout({});
+    // Background pipeline (fullscreen gradient, no vertex input, no depth).
+    // Takes a fog-color push constant so the sky tint stays in sync
+    // with the scene fog tint.
+    vk::PushConstantRange bg_push_range{
+        vk::ShaderStageFlagBits::eFragment, 0, sizeof(glm::vec4)};
+    vk::PipelineLayoutCreateInfo bg_layout_info{};
+    bg_layout_info.setPushConstantRanges(bg_push_range);
+    pm_bg_pipeline_layout = pm_device.GetDevice().createPipelineLayout(bg_layout_info);
 
     auto bg_config = PipelineConfig::DefaultConfig();
     bg_config.pipeline_layout = *pm_bg_pipeline_layout;
@@ -259,8 +278,12 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
     // still contributes a visible (if faded) pixel.
     constexpr float kDoodadCullDistance = 2600.0f;
 
-    // Background gradient
+    // Background gradient. fog_color drives the sky tint so distant
+    // fogged geometry blends seamlessly into the sky.
     pm_bg_pipeline->Bind(cmd);
+    glm::vec4 bg_push{pm_scene_data.pm_fog_color, 0.0f};
+    cmd.pushConstants<glm::vec4>(
+        *pm_bg_pipeline_layout, vk::ShaderStageFlagBits::eFragment, 0, bg_push);
     cmd.draw(3, 1, 0, 0);
 
     // Ground plane

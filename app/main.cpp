@@ -83,10 +83,15 @@ int main() {
         // from the file would be slightly more accurate, but the file
         // load happens DURING the preload below - so we use the analytic
         // tile center to bootstrap.
-        glm::vec3 center{-8800.0f, 170.0f, -250.0f};
+        //
+        // Default camera is ground-level FPS now - the orbit-1500
+        // bird's-eye made the editor read as a diorama. Ground level
+        // (matches the target reference) shows trees + terrain at
+        // proper density. User can switch via Tools menu.
+        glm::vec3 center{-8800.0f, 200.0f, -250.0f};
         cam->pm_camera.SetTarget(center);
-        // Bigger orbit so the full 3x3 (1600 yards across) fits in view.
-        cam->pm_camera.SetOrbit(1500.0f, 0.5f, 0.5f);
+        cam->pm_camera.SetOrbit(40.0f, 2.5f, 0.05f);
+        cam->pm_camera.SetMode(mve::CameraMode::FlyFirstPerson);
 
         // Preload around wherever the camera actually sits (which may be
         // a neighboring tile because of the orbit offset). Radius 2 (5x5)
