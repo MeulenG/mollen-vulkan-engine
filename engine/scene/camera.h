@@ -25,6 +25,8 @@ public:
     glm::mat4 GetProjectionMatrix() const { return projection_; }
 
     glm::vec3 GetPosition() const;
+    glm::vec3 GetTarget() const { return target_; }
+    float Distance() const { return distance_; }
 
 private:
     void updatePosition();

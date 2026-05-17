@@ -58,13 +58,23 @@ void EditorUISystem::DrawViewport(Scene& scene, float delta_time) {
             double dx = mx - pm_last_x, dy = my - pm_last_y;
             pm_last_x = mx; pm_last_y = my;
 
+            // Scale Pan/Zoom by orbit distance so movement-per-pixel
+            // feels constant across zoom levels. At distance 8 (M2 model
+            // scale), pan = 8 * 0.001 = 0.008 yards/pixel - close to the
+            // old hardcoded 0.005. At distance 1500 (terrain), pan = 1.5
+            // yards/pixel - cross the viewport in ~700 px instead of
+            // 200,000. Rotate is angular and doesn't need scaling.
+            float dist       = active_cam->Distance();
+            float pan_speed  = dist * 0.001f;
+            float zoom_speed = dist * 0.05f;
+
             if (ImGui::IsMouseDown(ImGuiMouseButton_Left))
                 active_cam->Rotate(float(-dx) * 0.005f, float(dy) * 0.005f);
             if (ImGui::IsMouseDown(ImGuiMouseButton_Middle))
-                active_cam->Pan(float(-dx) * 0.005f, float(dy) * 0.005f);
+                active_cam->Pan(float(-dx) * pan_speed, float(dy) * pan_speed);
 
             float scroll = pm_window.GetScrollDelta();
-            if (scroll != 0.0f) active_cam->Zoom(scroll * 0.3f);
+            if (scroll != 0.0f) active_cam->Zoom(scroll * zoom_speed);
         } else {
             double mx, my;
             pm_window.GetCursorPos(mx, my);

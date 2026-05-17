@@ -129,6 +129,20 @@ void TerrainStreamer::Update(const glm::vec3& camera_pos_engine,
                 to_destroy.push_back(e.Id());
             }
         });
+
+    // Before destroying entities, drain any in-flight command buffers
+    // that might still be sampling the descriptor sets we're about to
+    // free. AssetManager's pool was created with eFreeDescriptorSet so
+    // the free call itself is legal; the constraint is that the GPU
+    // must be done with the set first.
+    //
+    // waitIdle is a heavy hammer for what's typically a 1-tile crossing
+    // event - if eviction becomes more frequent we'll want a real
+    // per-frame retirement queue, but for v1 the latency is acceptable
+    // and the alternative is the validation error the user just saw.
+    if (!to_destroy.empty()) {
+        pm_assets.GetDevice().GetDevice().waitIdle();
+    }
     for (uint32_t id : to_destroy) {
         pm_scene.DestroyEntity(id);
     }

@@ -70,6 +70,12 @@ public:
     TextureHandle GetTexture(const std::string& key) const;
     TextureHandle GetDefaultTexture();
 
+    // Exposed for callers that need to synchronize with the GPU before
+    // freeing resources (e.g. TerrainStreamer eviction must waitIdle
+    // before destroying a tile entity whose descriptor set might still
+    // be referenced by an in-flight command buffer).
+    Device& GetDevice() { return pm_device; }
+
 private:
     Device& pm_device;
 
