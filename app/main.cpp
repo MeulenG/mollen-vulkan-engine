@@ -88,13 +88,13 @@ int main() {
         // bird's-eye made the editor read as a diorama. Ground level
         // (matches the target reference) shows trees + terrain at
         // proper density. User can switch via Tools menu.
-        // Pull back to ~70 yards from the canopy-tree cluster so
-        // multiple trees frame the view at once - matches the user's
-        // reference "looking down a path through trees" composition.
-        // Ground-eye height (Y=112) so trunks anchor the frame.
-        glm::vec3 center{-8059.6f, 112.0f, 983.0f};
+        // Ground-eye looking up at the canopy. target Y=120 is
+        // canopy mid; radius 35; pitch -0.3 gives camera_y ~= 109.6
+        // (ground level) with the look-vector tilted 17deg upward.
+        // This is the "player standing under a tree" framing.
+        glm::vec3 center{-8059.6f, 120.0f, 983.0f};
         cam->pm_camera.SetTarget(center);
-        cam->pm_camera.SetOrbit(70.0f, 3.14f, -0.05f);
+        cam->pm_camera.SetOrbit(35.0f, 3.14f, -0.30f);
         cam->pm_camera.SetMode(mve::CameraMode::FlyFirstPerson);
 
         // Preload around wherever the camera actually sits (which may be
