@@ -53,7 +53,7 @@ int main() {
             render_system.SceneUBOBuffer());
 
         mve::AnimationSystem animation_system;
-        mve::EditorUISystem editor_ui{window, imgui_ctx, *offscreen};
+        mve::EditorUISystem editor_ui{window, imgui_ctx, *offscreen, device};
 
         // Editor camera
         auto* cam_entity = scene.CreateEntity("EditorCamera");

@@ -2,17 +2,23 @@
 #include "../scene/components/camera_component.h"
 #include "../scene/components/skeleton_component.h"
 #include "../scene/components/m2_info_component.h"
+#include "../scene/components/terrain_component.h"
+#include "../scene/components/terrain_tile_component.h"
+#include "../scene/components/mesh_component.h"
 
 namespace mve {
 
-EditorUISystem::EditorUISystem(Window& window, ImGuiContext& imgui_ctx, OffscreenPass& offscreen)
-    : pm_window{window}, pm_imgui_ctx{imgui_ctx}, pm_offscreen{offscreen} {}
+EditorUISystem::EditorUISystem(Window& window, ImGuiContext& imgui_ctx,
+                                OffscreenPass& offscreen, Device& device)
+    : pm_window{window}, pm_imgui_ctx{imgui_ctx},
+      pm_offscreen{offscreen}, pm_device{device} {}
 
 void EditorUISystem::Update(Scene& scene, RenderSystem& render_system, float delta_time) {
     DrawViewport(scene, delta_time);
     DrawProperties(scene, render_system);
     DrawModelInfo(scene);
     DrawSceneHierarchy(scene);
+    DrawStats(scene, delta_time);
 }
 
 void EditorUISystem::DrawViewport(Scene& scene, float delta_time) {
@@ -24,12 +30,23 @@ void EditorUISystem::DrawViewport(Scene& scene, float delta_time) {
         uint32_t vp_h = static_cast<uint32_t>(viewport_size.y);
 
         if (vp_w != pm_offscreen.Width() || vp_h != pm_offscreen.Height()) {
+            // The previous frame's command buffer is still in flight at
+            // this point - it has the OLD viewport descriptor set bound
+            // and is sampling the OLD OffscreenPass color image. Freeing
+            // either before the GPU finishes is a free-while-in-use bug
+            // that surfaces as 'Invalid VkDescriptorPool' or random
+            // crashes during interactive panel drags.
+            //
+            // waitIdle here is the heavy hammer; the panel-drag is
+            // already an interactive (slow) event so the stall is
+            // imperceptible. A per-frame deferred-retirement queue is
+            // the optimization for later.
+            pm_device.GetDevice().waitIdle();
+
             // Free the old descriptor set BEFORE re-registering. ImGui's
             // AddTexture allocates from a fixed-size internal pool; every
             // resize that registers a new texture without freeing the old
-            // one leaks one slot. Once the pool fills up, AddTexture
-            // returns an uninitialized handle (0xcc... in debug) and the
-            // subsequent vkUpdateDescriptorSets fails.
+            // one leaks one slot.
             pm_imgui_ctx.UnregisterTexture(pm_viewport_tex);
             pm_viewport_tex = ImTextureID_Invalid;
 
@@ -179,6 +196,58 @@ void EditorUISystem::DrawSceneHierarchy(Scene& scene) {
         }
     }
 
+    ImGui::End();
+}
+
+void EditorUISystem::DrawStats(Scene& scene, float delta_time) {
+    // Update rolling FPS window. delta_time can hit zero on the first
+    // frame; clamp to a microsecond to avoid div-by-zero.
+    pm_dt_history[pm_dt_head] = glm::max(delta_time, 1.0e-6f);
+    pm_dt_head = (pm_dt_head + 1) % kFpsWindow;
+    if (pm_dt_count < kFpsWindow) pm_dt_count++;
+
+    float sum = 0.0f;
+    for (int i = 0; i < pm_dt_count; i++) sum += pm_dt_history[i];
+    float avg_dt = (pm_dt_count > 0) ? sum / pm_dt_count : 0.0f;
+    float avg_fps = (avg_dt > 0.0f) ? 1.0f / avg_dt : 0.0f;
+
+    // Count entities by type. One pass per category - cheap because
+    // entity count peaks at ~5000 in R4 and the inner check is a
+    // single hash-map lookup per entity.
+    int n_terrain = 0;
+    int n_doodads = 0;
+    int n_total   = static_cast<int>(scene.Entities().size());
+    scene.Each<TerrainTileComponent>(
+        [&](Entity&, TerrainTileComponent&) { n_terrain++; });
+    scene.Each<MeshComponent>(
+        [&](Entity& e, MeshComponent&) {
+            // A doodad has Mesh + Material (the M2 pipeline) but no
+            // TerrainTile. That distinguishes it from terrain entities
+            // and from the editor camera (which has no Mesh).
+            if (!e.HasComponent<TerrainTileComponent>() &&
+                !e.HasComponent<TerrainComponent>()) {
+                n_doodads++;
+            }
+        });
+
+    // Estimate draw calls + triangles. Terrain tiles are 1 draw each at
+    // ~65k tris. Doodads are 1 draw each at ~500 tris average (rough -
+    // the editor's m2-info panel has exact counts when one is selected).
+    int draw_calls = n_terrain + n_doodads;
+    int est_tris = n_terrain * 65536 + n_doodads * 500;
+
+    ImGui::Begin("Stats");
+    ImGui::Text("FPS: %.1f", avg_fps);
+    ImGui::Text("Frame: %.2f ms", avg_dt * 1000.0f);
+    ImGui::Separator();
+    ImGui::Text("Entities: %d", n_total);
+    ImGui::Text("  Terrain tiles: %d", n_terrain);
+    ImGui::Text("  Doodads:       %d", n_doodads);
+    ImGui::Separator();
+    ImGui::Text("Draw calls:   %d", draw_calls);
+    ImGui::Text("Tris (est):   %.1f M", est_tris / 1.0e6f);
+    ImGui::Separator();
+    ImGui::TextDisabled("Build Release for ~10x perf");
     ImGui::End();
 }
 
