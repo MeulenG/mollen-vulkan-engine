@@ -88,32 +88,13 @@ int main() {
         // bird's-eye made the editor read as a diorama. Ground level
         // (matches the target reference) shows trees + terrain at
         // proper density. User can switch via Tools menu.
-        // Camera framing tuned to match the WoW client's "walking
-        // through Elwynn" composition (cf. user reference shots).
-        // The previous (22y orbit, target Y=120) put the camera at
-        // canopy height literally between two adjacent trees, which
-        // clipped both trunks below frame and showed only the
-        // canopies' undersides - the "broccoli mass" appearance.
-        //
-        // The new setup:
-        //   target  Y = 112: aim look-at at the trunk-canopy
-        //                    junction, so trunk fills the lower
-        //                    third and canopy fills the upper two
-        //                    thirds (natural tree composition).
-        //   orbit r = 45 yd: back the camera off enough that one
-        //                    whole tree fits in frame as a subject
-        //                    rather than two trees flanking the
-        //                    camera. 45 yards is roughly how far
-        //                    away the tree in reference #1 was
-        //                    based on apparent angular size.
-        //   pitch -0.08:     camera slightly BELOW the look-at, so
-        //                    the canopy reads as towering above an
-        //                    eye-level observer (this is what
-        //                    reference #1 captures - looking up at
-        //                    a big tree).
+        // Pull back to ~70 yards from the canopy-tree cluster so
+        // multiple trees frame the view at once - matches the user's
+        // reference "looking down a path through trees" composition.
+        // Ground-eye height (Y=112) so trunks anchor the frame.
         glm::vec3 center{-8059.6f, 112.0f, 983.0f};
         cam->pm_camera.SetTarget(center);
-        cam->pm_camera.SetOrbit(45.0f, 3.14f, -0.08f);
+        cam->pm_camera.SetOrbit(70.0f, 3.14f, -0.05f);
         cam->pm_camera.SetMode(mve::CameraMode::FlyFirstPerson);
 
         // Preload around wherever the camera actually sits (which may be
