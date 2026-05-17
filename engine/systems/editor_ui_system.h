@@ -96,6 +96,10 @@ private:
     // status bar at the bottom can read them without a second pass.
     int pm_cam_tile_x = -1;
     int pm_cam_tile_y = -1;
+
+    // F12 screenshot counter. Bumped per capture so we keep a history
+    // under screenshots/ (in addition to overwriting screenshots/latest.png).
+    int pm_screenshot_counter = 0;
 };
 
 } // namespace mve

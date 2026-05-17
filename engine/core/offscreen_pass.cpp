@@ -1,6 +1,17 @@
 #include "offscreen_pass.h"
 
+#include "../resources/buffer.h"
+
+// stb_image_write provides PNG/JPG/BMP/TGA encoders as a single header.
+// Define STB_IMAGE_WRITE_IMPLEMENTATION exactly once across the whole
+// translation unit graph - this is that spot.
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "../third_party/stb_image_write.h"
+
+#include <cstdio>
+#include <cstring>
 #include <stdexcept>
+#include <vector>
 
 namespace mve {
 
@@ -20,8 +31,12 @@ void OffscreenPass::createResources() {
     color_info.arrayLayers = 1;
     color_info.samples = vk::SampleCountFlagBits::e1;
     color_info.tiling = vk::ImageTiling::eOptimal;
-    // COLOR_ATTACHMENT: we render to it. SAMPLED: ImGui reads it as a texture.
-    color_info.usage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled;
+    // COLOR_ATTACHMENT: we render to it. SAMPLED: ImGui reads it as a
+    // texture. TRANSFER_SRC: SaveColorToPng copies the bytes out for
+    // PNG dumps via vkCmdCopyImageToBuffer.
+    color_info.usage = vk::ImageUsageFlagBits::eColorAttachment
+                     | vk::ImageUsageFlagBits::eSampled
+                     | vk::ImageUsageFlagBits::eTransferSrc;
 
     color_image_ = device_.GetDevice().createImage(color_info);
     auto color_reqs = color_image_.getMemoryRequirements();
@@ -172,6 +187,113 @@ void OffscreenPass::transitionImage(const vk::raii::CommandBuffer& cmd, vk::Imag
     vk::DependencyInfo dep_info{};
     dep_info.setImageMemoryBarriers(barrier);
     cmd.pipelineBarrier2(dep_info);
+}
+
+bool OffscreenPass::SaveColorToPng(const std::string& path) {
+    // 1. Allocate a host-visible staging buffer sized for one packed
+    //    RGBA8 image of the offscreen color attachment's dimensions.
+    //    Image is in B8G8R8A8_SRGB on the typical swapchain; the byte
+    //    layout in memory is { B, G, R, A } per pixel.
+    const vk::DeviceSize bytes_per_pixel = 4;
+    const vk::DeviceSize image_bytes =
+        static_cast<vk::DeviceSize>(width_) * height_ * bytes_per_pixel;
+
+    Buffer staging{device_, image_bytes,
+        vk::BufferUsageFlagBits::eTransferDst,
+        vk::MemoryPropertyFlagBits::eHostVisible |
+        vk::MemoryPropertyFlagBits::eHostCoherent};
+
+    // 2. Record + submit a one-shot command buffer that:
+    //    a. Transitions color image from ShaderReadOnly -> TransferSrc
+    //    b. Copies the whole image to the staging buffer
+    //    c. Transitions back to ShaderReadOnly so the next frame's
+    //       ImGui sampling still works
+    auto cmd = device_.BeginSingleTimeCommands();
+
+    // a. Layout: ShaderReadOnly -> TransferSrcOptimal
+    {
+        vk::ImageMemoryBarrier2 barrier{};
+        barrier.oldLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+        barrier.newLayout = vk::ImageLayout::eTransferSrcOptimal;
+        barrier.srcQueueFamilyIndex = vk::QueueFamilyIgnored;
+        barrier.dstQueueFamilyIndex = vk::QueueFamilyIgnored;
+        barrier.image = *color_image_;
+        barrier.subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
+        barrier.srcStageMask  = vk::PipelineStageFlagBits2::eFragmentShader;
+        barrier.srcAccessMask = vk::AccessFlagBits2::eShaderRead;
+        barrier.dstStageMask  = vk::PipelineStageFlagBits2::eTransfer;
+        barrier.dstAccessMask = vk::AccessFlagBits2::eTransferRead;
+        vk::DependencyInfo dep_info{};
+        dep_info.setImageMemoryBarriers(barrier);
+        cmd.pipelineBarrier2(dep_info);
+    }
+
+    // b. Copy color image -> staging buffer (tightly packed, no row pitch padding)
+    {
+        vk::BufferImageCopy region{};
+        region.bufferOffset = 0;
+        region.bufferRowLength = 0;        // 0 = tightly packed = width
+        region.bufferImageHeight = 0;      // 0 = tightly packed = height
+        region.imageSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1};
+        region.imageOffset = vk::Offset3D{0, 0, 0};
+        region.imageExtent = vk::Extent3D{width_, height_, 1};
+        cmd.copyImageToBuffer(*color_image_,
+                              vk::ImageLayout::eTransferSrcOptimal,
+                              *staging.GetBuffer(),
+                              region);
+    }
+
+    // c. Layout: TransferSrcOptimal -> ShaderReadOnlyOptimal
+    {
+        vk::ImageMemoryBarrier2 barrier{};
+        barrier.oldLayout = vk::ImageLayout::eTransferSrcOptimal;
+        barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+        barrier.srcQueueFamilyIndex = vk::QueueFamilyIgnored;
+        barrier.dstQueueFamilyIndex = vk::QueueFamilyIgnored;
+        barrier.image = *color_image_;
+        barrier.subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
+        barrier.srcStageMask  = vk::PipelineStageFlagBits2::eTransfer;
+        barrier.srcAccessMask = vk::AccessFlagBits2::eTransferRead;
+        barrier.dstStageMask  = vk::PipelineStageFlagBits2::eFragmentShader;
+        barrier.dstAccessMask = vk::AccessFlagBits2::eShaderRead;
+        vk::DependencyInfo dep_info{};
+        dep_info.setImageMemoryBarriers(barrier);
+        cmd.pipelineBarrier2(dep_info);
+    }
+
+    device_.EndSingleTimeCommands(std::move(cmd));
+
+    // 3. Read the bytes back. BGRA on disk for B8G8R8A8 formats; swap
+    //    bytes 0 and 2 per pixel so stb_image_write writes RGBA.
+    std::vector<uint8_t> pixels(image_bytes);
+    void* mapped = staging.Map();
+    std::memcpy(pixels.data(), mapped, image_bytes);
+    staging.Unmap();
+
+    for (vk::DeviceSize i = 0; i + 4 <= image_bytes; i += 4) {
+        std::swap(pixels[i + 0], pixels[i + 2]);   // B <-> R
+        // alpha (i + 3) and green (i + 1) stay put
+    }
+
+    // 4. Write PNG. stride_in_bytes = width * 4 because we copied tightly.
+    int ok = stbi_write_png(
+        path.c_str(),
+        static_cast<int>(width_),
+        static_cast<int>(height_),
+        4,
+        pixels.data(),
+        static_cast<int>(width_ * 4));
+
+    if (!ok) {
+        std::fprintf(stderr,
+            "OffscreenPass::SaveColorToPng failed to write %s\n",
+            path.c_str());
+        return false;
+    }
+    std::fprintf(stderr,
+        "Saved screenshot: %s (%ux%u)\n",
+        path.c_str(), width_, height_);
+    return true;
 }
 
 } // namespace mve

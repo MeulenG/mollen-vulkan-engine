@@ -377,3 +377,7 @@ db_config.toml
 # Assets and docs
 assets/
 docs/
+
+# Screenshots dumped by the engine's F12 / flag-file capture.
+# Local-only; the directory is created at runtime if needed.
+screenshots/
