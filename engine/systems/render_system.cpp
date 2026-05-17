@@ -7,8 +7,10 @@
 #include "../scene/components/doodad_instance_component.h"
 #include "../scene/terrain_mesh.h"
 
+#include <algorithm>
 #include <array>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -203,35 +205,105 @@ void RenderSystem::Init() {
     model_layout_info.setSetLayouts(layouts);
     pm_model_pipeline_layout = pm_device.GetDevice().createPipelineLayout(model_layout_info);
 
-    auto model_config = PipelineConfig::DefaultConfig();
-    model_config.pipeline_layout = *pm_model_pipeline_layout;
-    model_config.color_attachment_format = pm_offscreen.ColorFormat();
-    model_config.depth_attachment_format = pm_offscreen.DepthFormat();
-    model_config.binding_descriptions = Vertex::GetBindingDescriptions();
-    model_config.attribute_descriptions = Vertex::GetAttributeDescriptions();
-    // Two-sided rendering for all M2 submeshes. WoW M2 leaf-plane
-    // submeshes carry a "two-sided" material flag (bit 0x04) so the
-    // canopy reads as a solid volume rather than a cardboard cross
-    // section. The DefaultConfig sets cullMode = eBack which kills
-    // the back face of every leaf plane and produces the harsh
-    // "shadow-side cardboard" look.
-    //
-    // The right architecture is per-submesh pipelines that read the
-    // flag bit and use eNone only when needed; for now disable
-    // culling for the whole M2 pipeline. Trunks/rocks would in
-    // theory benefit from back-face culling but the perf cost of
-    // not culling them is small (their back faces are fully
-    // occluded by their front faces, so back-face fragments will
-    // mostly fail the depth test and get discarded anyway).
-    //
-    // See basic.frag where we also flip the surface normal for
-    // gl_FrontFacing == false fragments so both sides receive
-    // proper Lambert lighting.
-    model_config.rasterization_info.cullMode = vk::CullModeFlagBits::eNone;
+    // M2 pipeline variants: one per blend mode. The Vulkan pipeline
+    // state for each mode is set per wowserhq's Wrath-Blending table
+    // (reverse-engineered from the WoW client). All variants share:
+    //   - pipeline layout
+    //   - vertex input bindings (Vertex)
+    //   - cullMode = eNone (M2 leaf-plane material flag 0x04
+    //     two-sided semantics; trunks lose nothing from running
+    //     un-culled because their back faces are occluded by front
+    //     faces and fail the depth test anyway)
+    //   - depth-test enabled
+    // They differ in:
+    //   - fragment shader (opaque uses basic_opaque.frag without
+    //     discard; the rest use basic.frag with discard)
+    //   - depth-write (true for opaque/alpha-key, false for
+    //     translucent so back-to-front draws don't occlude each
+    //     other)
+    //   - color blend state (off for opaque/alpha-key, src-alpha
+    //     blend for mode 2, additive for mode 3)
+    auto common_config = PipelineConfig::DefaultConfig();
+    common_config.pipeline_layout = *pm_model_pipeline_layout;
+    common_config.color_attachment_format = pm_offscreen.ColorFormat();
+    common_config.depth_attachment_format = pm_offscreen.DepthFormat();
+    common_config.binding_descriptions = Vertex::GetBindingDescriptions();
+    common_config.attribute_descriptions = Vertex::GetAttributeDescriptions();
+    common_config.rasterization_info.cullMode = vk::CullModeFlagBits::eNone;
 
-    pm_model_pipeline = std::make_unique<Pipeline>(
-        pm_device, shader_dir + "/basic.vert.spv", shader_dir + "/basic.frag.spv",
-        model_config);
+    // Blend mode 0: Opaque. No alpha test, no blend, depth write on.
+    // Used by trunks, rocks, building parts.
+    {
+        auto cfg = common_config;
+        cfg.color_blend_attachment.blendEnable = vk::False;
+        cfg.depth_stencil_info.depthWriteEnable = vk::True;
+        pm_model_pipeline_opaque = std::make_unique<Pipeline>(
+            pm_device,
+            shader_dir + "/basic.vert.spv",
+            shader_dir + "/basic_opaque.frag.spv",
+            cfg);
+    }
+
+    // Blend mode 1: AlphaKey. Discard at 128/255 in shader, no
+    // blend, depth write on. Used by tree canopies, fences, alpha-
+    // cut foliage.
+    {
+        auto cfg = common_config;
+        cfg.color_blend_attachment.blendEnable = vk::False;
+        cfg.depth_stencil_info.depthWriteEnable = vk::True;
+        pm_model_pipeline_alpha_key = std::make_unique<Pipeline>(
+            pm_device,
+            shader_dir + "/basic.vert.spv",
+            shader_dir + "/basic.frag.spv",
+            cfg);
+    }
+
+    // Blend mode 2: Alpha. SrcAlpha / OneMinusSrcAlpha. Depth write
+    // off (translucents must accumulate). Used by smoke, particles,
+    // some glow halos.
+    {
+        auto cfg = common_config;
+        cfg.color_blend_attachment.blendEnable = vk::True;
+        cfg.color_blend_attachment.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha;
+        cfg.color_blend_attachment.dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
+        cfg.color_blend_attachment.colorBlendOp        = vk::BlendOp::eAdd;
+        cfg.color_blend_attachment.srcAlphaBlendFactor = vk::BlendFactor::eOne;
+        cfg.color_blend_attachment.dstAlphaBlendFactor = vk::BlendFactor::eZero;
+        cfg.color_blend_attachment.alphaBlendOp        = vk::BlendOp::eAdd;
+        cfg.depth_stencil_info.depthWriteEnable = vk::False;
+        // We reuse basic.frag here so the shader still does the
+        // discard at 128/255. For pure alpha blending that's a
+        // slight precision quirk (alpha just above threshold
+        // contributes faintly) but it's the WoW client behaviour
+        // for mode 2 submeshes that happen to have hard-edged
+        // alpha textures, and harmless for smooth-alpha textures.
+        pm_model_pipeline_alpha = std::make_unique<Pipeline>(
+            pm_device,
+            shader_dir + "/basic.vert.spv",
+            shader_dir + "/basic.frag.spv",
+            cfg);
+    }
+
+    // Blend mode 3: Add. SrcAlpha / One. Pure additive accumulation;
+    // useful for glow / magic effects / fairy sparkles. Depth write
+    // off; depth-test still on so geometry behind opaque occluders
+    // doesn't bleed through.
+    {
+        auto cfg = common_config;
+        cfg.color_blend_attachment.blendEnable = vk::True;
+        cfg.color_blend_attachment.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha;
+        cfg.color_blend_attachment.dstColorBlendFactor = vk::BlendFactor::eOne;
+        cfg.color_blend_attachment.colorBlendOp        = vk::BlendOp::eAdd;
+        cfg.color_blend_attachment.srcAlphaBlendFactor = vk::BlendFactor::eOne;
+        cfg.color_blend_attachment.dstAlphaBlendFactor = vk::BlendFactor::eOne;
+        cfg.color_blend_attachment.alphaBlendOp        = vk::BlendOp::eAdd;
+        cfg.depth_stencil_info.depthWriteEnable = vk::False;
+        pm_model_pipeline_add = std::make_unique<Pipeline>(
+            pm_device,
+            shader_dir + "/basic.vert.spv",
+            shader_dir + "/basic.frag.spv",
+            cfg);
+    }
 
     // Background pipeline (fullscreen gradient, no vertex input, no depth).
     // Takes the canonical Elwynn 6-band sky-cone colors as push
@@ -429,7 +501,13 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
     //   call per unique M2 path, instance_count = number of MDDF
     //   placements. push.mvp carries only view*proj because the
     //   per-placement model matrix lives in the SSBO at binding 3.
-    pm_model_pipeline->Bind(cmd);
+    //
+    // Pass A doesn't carry per-submesh blend modes yet (it's the legacy
+    // single-material preview path used by the spell editor), so it
+    // binds the alpha-key pipeline as a sensible default - that's the
+    // pre-blend-mode behaviour and won't visibly change anything for
+    // the editor preview meshes.
+    pm_model_pipeline_alpha_key->Bind(cmd);
 
     scene.Each<TransformComponent, MeshComponent, MaterialComponent>(
         [&](Entity& entity, TransformComponent& transform, MeshComponent& mesh_comp, MaterialComponent& mat) {
@@ -483,7 +561,7 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
             }
 
             // Push constants are the same for every submesh - only the
-            // bound descriptor set + index range change.
+            // bound pipeline, descriptor set, and index range change.
             PushConstants push{};
             push.pm_model = glm::mat4{1.0f};
             push.pm_mvp   = view_proj_for_cull;
@@ -491,8 +569,51 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
                 *pm_model_pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, push);
 
             mesh_comp.pm_mesh->Bind(cmd);
-            for (const auto& sub : inst.pm_submeshes) {
+
+            // Sort submeshes so opaque + alpha-key (depth-writing)
+            // draw first, then translucent (alpha / additive). Without
+            // this, a mode-2 leaf-glow overlay drawn before a mode-1
+            // canopy would have written depth and occluded the canopy
+            // it's meant to overlay; or the mode-1 canopy would have
+            // written depth that the mode-2 overlay then fails to
+            // pass. Since pm_submeshes is small (1-7 entries per
+            // tree), an in-place lambda sort is fine.
+            //
+            // Within each blend bucket we keep the original M2 batch
+            // order (which the artists set up for correct overlay
+            // stacking when modes match).
+            struct SubmeshDrawOrder {
+                int priority;        // 0 = opaque/alpha-key, 1 = translucent
+                size_t original_idx; // stable tiebreak
+            };
+            std::vector<SubmeshDrawOrder> order;
+            order.reserve(inst.pm_submeshes.size());
+            for (size_t i = 0; i < inst.pm_submeshes.size(); ++i) {
+                uint16_t bm = inst.pm_submeshes[i].pm_blend_mode;
+                int prio = (bm == 0 || bm == 1) ? 0 : 1;
+                order.push_back({prio, i});
+            }
+            std::sort(order.begin(), order.end(),
+                [](const SubmeshDrawOrder& a, const SubmeshDrawOrder& b) {
+                    if (a.priority != b.priority) return a.priority < b.priority;
+                    return a.original_idx < b.original_idx;
+                });
+
+            for (const auto& ord : order) {
+                const auto& sub = inst.pm_submeshes[ord.original_idx];
                 if (!sub.pm_descriptor_set || sub.pm_index_count == 0) continue;
+
+                // Pick + bind the pipeline whose blend / depth state
+                // matches this submesh's blend_mode. Binding the same
+                // pipeline back-to-back is essentially free on most
+                // drivers; the explicit bind keeps the logic obvious.
+                Pipeline* pipe = GetModelPipelineForBlendMode(sub.pm_blend_mode);
+                pipe->Bind(cmd);
+                // Push constants survive a pipeline rebind as long as
+                // both pipelines use the same pipeline layout (they
+                // do - pm_model_pipeline_layout is shared across all
+                // variants). So we don't need to re-push.
+
                 cmd.bindDescriptorSets(
                     vk::PipelineBindPoint::eGraphics,
                     *pm_model_pipeline_layout, 0,

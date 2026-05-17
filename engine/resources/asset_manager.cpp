@@ -816,8 +816,9 @@ void AssetManager::FlushDoodadInstances(Scene& scene) {
                 ssm.pm_index_start = sub.index_start;
                 ssm.pm_index_count = sub.index_count;
                 if (sub.material_index < model.materials.size()) {
-                    ssm.pm_blend_mode =
-                        model.materials[sub.material_index].blend_mode;
+                    const auto& mat = model.materials[sub.material_index];
+                    ssm.pm_blend_mode   = mat.blend_mode;
+                    ssm.pm_render_flags = mat.flags;
                 }
                 ssm.pm_descriptor_set =
                     pm_descriptor_pool->AllocateSetRaw(*pm_descriptor_layout);
@@ -930,6 +931,8 @@ void AssetManager::FlushDoodadInstances(Scene& scene) {
             ds.pm_descriptor_set = ssm.pm_descriptor_set;
             ds.pm_index_start    = ssm.pm_index_start;
             ds.pm_index_count    = ssm.pm_index_count;
+            ds.pm_blend_mode     = ssm.pm_blend_mode;
+            ds.pm_render_flags   = ssm.pm_render_flags;
             dic->pm_submeshes.push_back(ds);
         }
 

@@ -142,7 +142,8 @@ private:
         vk::DescriptorSet pm_descriptor_set = VK_NULL_HANDLE;
         uint32_t          pm_index_start = 0;
         uint32_t          pm_index_count = 0;
-        uint16_t          pm_blend_mode  = 0;   // 0=opaque, 1=alpha key
+        uint16_t          pm_blend_mode  = 0;   // 0=opaque, 1=alpha key, 2=alpha
+        uint16_t          pm_render_flags = 0;  // bit 0x04 = two-sided, etc.
     };
     struct M2SharedMaterial {
         std::unique_ptr<Buffer>      pm_bone_buffer;

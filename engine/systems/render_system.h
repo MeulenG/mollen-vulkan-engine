@@ -91,12 +91,42 @@ private:
     Device& pm_device;
     OffscreenPass& pm_offscreen;
 
-    std::unique_ptr<Pipeline> pm_model_pipeline;
+    // Per-blend-mode M2 pipeline variants. WoW M2 materials carry a
+    // blend_mode field (0..7) that determines opacity, blending, and
+    // depth state. Different submeshes within the SAME M2 (e.g. a
+    // tree's opaque trunk + alpha-key canopy) need different state.
+    //
+    // Layout: 4 variants cover the common cases; mode 4-7 (Mod /
+    // Mod2x / ModAdd / InvSrcAlphaAdd) fall back to the alpha-blend
+    // pipeline for now since they're rare on doodads (mostly used
+    // by particle emitters which we don't render yet).
+    std::unique_ptr<Pipeline> pm_model_pipeline_opaque;     // blend 0
+    std::unique_ptr<Pipeline> pm_model_pipeline_alpha_key;  // blend 1
+    std::unique_ptr<Pipeline> pm_model_pipeline_alpha;      // blend 2
+    std::unique_ptr<Pipeline> pm_model_pipeline_add;        // blend 3
     std::unique_ptr<Pipeline> pm_bg_pipeline;
     std::unique_ptr<Pipeline> pm_ground_pipeline;
     std::unique_ptr<Pipeline> pm_terrain_pipeline;
 
+    // Single layout shared by all 4 model-pipeline variants - they
+    // differ only in shader+blend-state, not in descriptor layout.
     vk::raii::PipelineLayout pm_model_pipeline_layout = nullptr;
+
+    // Helper: pick the pipeline for a given M2 blend_mode.
+    Pipeline* GetModelPipelineForBlendMode(uint16_t blend_mode) const {
+        switch (blend_mode) {
+            case 0:  return pm_model_pipeline_opaque.get();
+            case 1:  return pm_model_pipeline_alpha_key.get();
+            case 2:  return pm_model_pipeline_alpha.get();
+            case 3:  return pm_model_pipeline_add.get();
+            // Mod / Mod2x / ModAdd / InvSrcAlphaAdd fall back to
+            // alpha-blend since their blend states are similar
+            // enough for a v1 approximation. A future change can
+            // add dedicated pipelines if those modes show up
+            // visibly on doodads.
+            default: return pm_model_pipeline_alpha.get();
+        }
+    }
     vk::raii::PipelineLayout pm_bg_pipeline_layout = nullptr;
     vk::raii::PipelineLayout pm_ground_pipeline_layout = nullptr;
     vk::raii::PipelineLayout pm_terrain_pipeline_layout = nullptr;
