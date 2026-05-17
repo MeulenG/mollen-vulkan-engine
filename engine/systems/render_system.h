@@ -15,11 +15,26 @@
 
 namespace mve {
 
+// Scene-wide uniforms. Bound at binding 0 of both the M2 and terrain
+// descriptor layouts; both fragment shaders read it.
+//
+// std140 layout: vec3 fields take a full 16-byte slot due to alignas(16).
+// The trailing float on each line fits in the same slot's pad. Total
+// size = 4 * 16 = 64 bytes.
+//
+// Fog: linear depth-based fog. Pixel color blends toward pm_fog_color
+// over the [fog_start, fog_end] camera-distance range. End is set to
+// match the far plane (3000) by default so far-clipped geometry fades
+// to fog color instead of cutting hard against the sky.
 struct SceneUBO {
     alignas(16) glm::vec3 pm_light_dir;
     float pm_ambient;
     alignas(16) glm::vec3 pm_light_color;
     float pm_light_intensity;
+    alignas(16) glm::vec3 pm_fog_color;
+    float pm_fog_start;
+    alignas(16) glm::vec3 pm_camera_pos;
+    float pm_fog_end;
 };
 
 struct PushConstants {

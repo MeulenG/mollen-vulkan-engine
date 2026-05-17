@@ -10,6 +10,7 @@
 #include "../scene/components/terrain_tile_component.h"
 #include "../scene/components/doodad_instance_component.h"
 #include "../scene/terrain_mesh.h"
+#include "../systems/render_system.h"
 #include "../formats/blp_loader.h"
 #include "../formats/adt_types.h"
 #include "../animation/skeleton.h"
@@ -64,6 +65,49 @@ std::string ResolveM2Extension(const std::string& path) {
         if (fs::exists(m2)) return m2;
     }
     return path;
+}
+
+// Find a usable BLP texture for an M2 model. Tries (in order):
+//   1. Every entry in model.texture_paths that's non-empty, resolved
+//      via ResolveWowAsset.
+//   2. The M2's filename with .blp extension (e.g. OakTree.m2 -> OakTree.blp).
+//   3. Any *.blp in the M2's directory (alphabetical first match).
+//
+// Returns empty string if none of these resolve to an existing file.
+//
+// Why we need all three: WoW M2 textures have a `type` field. type 0
+// means "hardcoded path" (texture_paths[i] non-empty). Types 1+ are
+// "replaceable" textures (character skin, item, etc.) where the engine
+// is supposed to substitute. For doodads we don't have a substitution
+// system, so we fall back to the filename heuristic which works for
+// most prop M2s that ship with a single-texture-per-folder convention.
+std::string FindM2BlpPath(const std::string& m2_fs_path,
+                          const M2Model& model) {
+    // 1. Try texture_paths entries via MVE_ASSET_DIR
+    for (const auto& wow_path : model.texture_paths) {
+        if (wow_path.empty()) continue;
+        std::string fs_path = ResolveWowAsset(wow_path);
+        if (fs::exists(fs_path)) return fs_path;
+    }
+
+    // 2. Try the M2's filename stem with .blp extension
+    fs::path m2_path{m2_fs_path};
+    fs::path candidate = m2_path.parent_path() / (m2_path.stem().string() + ".blp");
+    if (fs::exists(candidate)) return candidate.string();
+
+    // 3. Walk the M2's directory and return the first .blp we find.
+    // Alphabetical order via directory_iterator + manual sort would be
+    // ideal but slow; for v1 we accept whatever iteration order returns.
+    fs::path m2_dir = m2_path.parent_path();
+    if (fs::exists(m2_dir)) {
+        for (auto& entry : fs::directory_iterator(m2_dir)) {
+            auto ext = entry.path().extension().string();
+            std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+            if (ext == ".blp") return entry.path().string();
+        }
+    }
+
+    return {};
 }
 
 } // namespace
@@ -154,31 +198,16 @@ Entity* AssetManager::LoadM2IntoScene(
         pm_mesh_cache[m2_path] = mesh;
     }
 
-    // Load texture
+    // Load texture via the multi-strategy helper - tries M2-declared
+    // paths first, then filename stem .blp, then any .blp in the dir.
     TextureHandle texture;
-    std::string blp_path;
-
-    if (!model.texture_paths.empty() && !model.texture_paths[0].empty()) {
-        blp_path = "assets/" + model.texture_paths[0];
-    } else {
-        fs::path m2_dir = fs::path(m2_path).parent_path();
-        if (fs::exists(m2_dir)) {
-            for (auto& entry : fs::directory_iterator(m2_dir)) {
-                auto ext = entry.path().extension().string();
-                std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-                if (ext == ".blp" && entry.path().stem().string().find("Skin") != std::string::npos) {
-                    blp_path = entry.path().string();
-                    break;
-                }
-            }
-        }
-    }
+    std::string blp_path = FindM2BlpPath(m2_path, model);
 
     if (!blp_path.empty()) {
         auto tex_it = pm_texture_cache.find(blp_path);
         if (tex_it != pm_texture_cache.end()) {
             texture = tex_it->second;
-        } else if (fs::exists(blp_path)) {
+        } else {
             try {
                 auto blp = BlpLoader::LoadFile(blp_path);
                 texture = std::make_shared<Image>(pm_device, blp);
@@ -265,7 +294,7 @@ Entity* AssetManager::LoadM2IntoScene(
         pm_identity_instance_buffer->Write(&id_mat, inst_size);
     }
 
-    vk::DescriptorBufferInfo ubo_info{*pm_scene_ubo->GetBuffer(), 0, sizeof(float) * 8};
+    vk::DescriptorBufferInfo ubo_info{*pm_scene_ubo->GetBuffer(), 0, sizeof(SceneUBO)};
     auto tex_info = texture->DescriptorInfo();
     vk::DescriptorBufferInfo bone_info{
         *mat->pm_bone_buffer->GetBuffer(), 0, bone_buffer_size};
@@ -540,7 +569,7 @@ Entity* AssetManager::LoadAdtTileIntoScene(
         pm_descriptor_pool->AllocateSetRaw(terrain_layout);
 
     vk::DescriptorBufferInfo ubo_info{
-        *pm_scene_ubo->GetBuffer(), 0, sizeof(float) * 8};
+        *pm_scene_ubo->GetBuffer(), 0, sizeof(SceneUBO)};
     vk::DescriptorBufferInfo meta_info{
         *terrain_comp->pm_chunk_meta_ssbo->GetBuffer(), 0, meta_size};
     auto alpha_info = terrain_comp->pm_alpha_array->DescriptorInfo();
@@ -703,32 +732,21 @@ void AssetManager::FlushDoodadInstances(Scene& scene) {
             pm_mesh_cache[m2_path] = mesh;
         }
 
-        // 3. Texture (first MAT slot in the M2; doodads have a single
-        //    diffuse and no per-submesh blending in v1).
+        // 3. Texture lookup via the multi-strategy helper. Tries M2's
+        //    declared texture_paths first (resolved through
+        //    MVE_ASSET_DIR), then the M2 stem with .blp, then any .blp
+        //    in the same directory. This is the fix for the
+        //    "checkerboard everywhere" issue - many WoW doodad M2s have
+        //    empty texture_paths[0] (replaceable types), and the old
+        //    code only fell back to "*Skin*.blp" which matches almost
+        //    no prop textures.
         TextureHandle texture;
-        std::string blp_path;
-        if (!model.texture_paths.empty() && !model.texture_paths[0].empty()) {
-            blp_path = "assets/" + model.texture_paths[0];
-        } else {
-            fs::path m2_dir = fs::path(m2_path).parent_path();
-            if (fs::exists(m2_dir)) {
-                for (auto& entry : fs::directory_iterator(m2_dir)) {
-                    auto ext = entry.path().extension().string();
-                    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-                    if (ext == ".blp" &&
-                        entry.path().stem().string().find("Skin")
-                            != std::string::npos) {
-                        blp_path = entry.path().string();
-                        break;
-                    }
-                }
-            }
-        }
+        std::string blp_path = FindM2BlpPath(m2_path, model);
         if (!blp_path.empty()) {
             auto tex_it = pm_texture_cache.find(blp_path);
             if (tex_it != pm_texture_cache.end()) {
                 texture = tex_it->second;
-            } else if (fs::exists(blp_path)) {
+            } else {
                 try {
                     auto blp = BlpLoader::LoadFile(blp_path);
                     texture = std::make_shared<Image>(pm_device, blp);
@@ -796,7 +814,7 @@ void AssetManager::FlushDoodadInstances(Scene& scene) {
         //    referenced the OLD instance buffer at binding 3 and the
         //    spec wants a complete set. Cheap - 4 writes per unique M2.
         vk::DescriptorBufferInfo ubo_info{
-            *pm_scene_ubo->GetBuffer(), 0, sizeof(float) * 8};
+            *pm_scene_ubo->GetBuffer(), 0, sizeof(SceneUBO)};
         auto tex_info = texture->DescriptorInfo();
         vk::DescriptorBufferInfo bone_info{
             *shared->pm_bone_buffer->GetBuffer(), 0,
@@ -855,6 +873,24 @@ void AssetManager::FlushDoodadInstances(Scene& scene) {
         dic->pm_instance_buffer  = std::move(inst_buf);
         dic->pm_descriptor_set   = shared->pm_descriptor_set;
         dic->pm_instance_count   = static_cast<uint32_t>(total_count);
+
+        // Coarse bounding sphere for the whole group. Center = average
+        // of all instance positions, radius = max distance from center
+        // plus the per-instance model bbox extent (so the test covers
+        // an oak tree's leaves, not just its root point).
+        glm::vec3 center{0.0f};
+        for (const auto& m : all_matrices) {
+            center += glm::vec3(m[3]);  // translation column
+        }
+        center /= static_cast<float>(all_matrices.size());
+        float radius_sq = 0.0f;
+        for (const auto& m : all_matrices) {
+            glm::vec3 p = glm::vec3(m[3]) - center;
+            radius_sq = glm::max(radius_sq, glm::dot(p, p));
+        }
+        float model_extent = glm::length(model.bbox_max - model.bbox_min);
+        dic->pm_bbox_center = center;
+        dic->pm_bbox_radius = std::sqrt(radius_sq) + model_extent;
 
         new_instances += placements.size();
     }

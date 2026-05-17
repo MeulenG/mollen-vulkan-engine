@@ -33,6 +33,10 @@ layout(set = 0, binding = 0) uniform SceneUBO {
     float ambient;
     vec3 light_color;
     float light_intensity;
+    vec3 fog_color;
+    float fog_start;
+    vec3 camera_pos;
+    float fog_end;
 } scene;
 
 // Per-chunk layer-slot lookup. Each chunk has 4 uints, one per layer,
@@ -104,6 +108,16 @@ void main() {
     vec3 L = normalize(scene.light_dir);
     float diffuse = max(dot(N, L), 0.0);
     vec3 lighting = scene.ambient + diffuse * scene.light_intensity * scene.light_color;
+    vec3 color = albedo * lighting;
 
-    out_color = vec4(albedo * lighting, 1.0);
+    // Same linear fog as basic.frag - distance from camera in world
+    // space, mix toward fog_color over [fog_start, fog_end]. Tiles at
+    // the edge of the 5x5 preload (~2700 yards from the camera) fade
+    // out instead of hard-clipping at the far plane.
+    float dist = length(frag_world_pos - scene.camera_pos);
+    float fog = clamp((dist - scene.fog_start) /
+                       (scene.fog_end - scene.fog_start), 0.0, 1.0);
+    color = mix(color, scene.fog_color, fog);
+
+    out_color = vec4(color, 1.0);
 }
