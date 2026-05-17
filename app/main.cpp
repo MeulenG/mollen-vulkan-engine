@@ -152,7 +152,24 @@ int main() {
             renderer.EndFrame(*cmd);
         }
 
+        // Shutdown sequence:
+        //
+        // 1. Wait for any in-flight command buffer that might still be
+        //    referencing entity descriptor sets.
+        // 2. Destroy every entity NOW, while RenderSystem (and its
+        //    DescriptorPool) is still alive. The vk::raii::DescriptorSet
+        //    members of TerrainComponent / MaterialComponent free
+        //    themselves back to the pool here.
+        // 3. The normal stack unwind then tears down render_system
+        //    (DescriptorPool dies with nothing left to free), then the
+        //    now-empty scene.
+        //
+        // Without (2), automatic destruction order has render_system
+        // dying before scene, and the descriptor-set destructors trip
+        // VUID-vkFreeDescriptorSets-descriptorPool-parameter when they
+        // try to free against the dead pool.
         device.GetDevice().waitIdle();
+        scene.Clear();
 
     } catch (const std::exception& e) {
         std::cerr << e.what() << '\n';

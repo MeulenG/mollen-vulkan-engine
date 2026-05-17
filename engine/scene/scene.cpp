@@ -32,6 +32,12 @@ void Scene::FlushDestroyed() {
     pm_pending_destroy.clear();
 }
 
+void Scene::Clear() {
+    pm_entities.clear();
+    pm_pending_destroy.clear();
+    pm_selected = NULL_ENTITY;
+}
+
 Entity* Scene::FindEntity(EntityId id) {
     for (auto& entity : pm_entities) {
         if (entity->Id() == id) return entity.get();
