@@ -30,12 +30,14 @@ vk::raii::DescriptorSetLayout DescriptorSetLayoutBuilder::Build() {
 DescriptorPool::DescriptorPool(
     Device& device,
     uint32_t max_sets,
-    const std::vector<vk::DescriptorPoolSize>& pool_sizes)
+    const std::vector<vk::DescriptorPoolSize>& pool_sizes,
+    vk::DescriptorPoolCreateFlags flags)
     : device_{device} {
 
     vk::DescriptorPoolCreateInfo pool_info{};
     pool_info.setPoolSizes(pool_sizes);
     pool_info.maxSets = max_sets;
+    pool_info.flags = flags;
 
     pool_ = device_.GetDevice().createDescriptorPool(pool_info);
 }

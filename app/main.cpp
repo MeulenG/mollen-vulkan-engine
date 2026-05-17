@@ -10,13 +10,13 @@
 #include "scene/components/mesh_component.h"
 #include "scene/components/material_component.h"
 #include "scene/components/terrain_component.h"
-#include "scene/terrain_mesh.h"
+#include "scene/components/terrain_tile_component.h"
+#include "scene/terrain_streamer.h"
 #include "resources/asset_manager.h"
 #include "resources/buffer.h"
 #include "resources/descriptor.h"
 #include "resources/image.h"
 #include "animation/skeleton.h"
-#include "formats/wdt_loader.h"
 #include "formats/adt_types.h"
 #include "systems/render_system.h"
 #include "systems/animation_system.h"
@@ -62,153 +62,42 @@ int main() {
         cam->pm_camera.SetOrbit(8.0f, 0.5f, 0.3f);
         cam->pm_camera.SetTarget({0.0f, 0.5f, 0.0f});
 
-        // Load an Elwynn Forest ADT tile and render it as terrain. The tile
-        // chosen (32_48) covers the Northshire / Stormwind northern area.
-        // This is the R1 milestone deliverable: a single ADT heightmap on
-        // screen with the existing camera + lighting pipeline.
+        // R3: stream multiple ADT tiles around a focus point. The
+        // streamer loads tiles in a (2r+1)x(2r+1) ring around the camera,
+        // gated by the WDT MAIN bitmap so we never try to open ocean tiles.
         //
-        // Path resolution uses MVE_ASSET_DIR (compile-time absolute path to
-        // the repo's assets/ dir) so the binary works regardless of CWD.
-        // Without this, launching from VS debugger or build/app/Debug failed
-        // silently because the relative "assets/..." path didn't resolve.
-        {
-            std::string adt_path = std::string(MVE_ASSET_DIR)
-                + "/World/Maps/Azeroth/Azeroth_32_48.adt";
-
-            // AdtTile is ~5 MB now that each AdtChunk carries its four
-            // 4096-byte alpha maps + normals. Default Windows thread
-            // stacks are 1 MB, so stack-allocating it crashes with
-            // STATUS_STACK_OVERFLOW (0xC00000FD) before main even gets
-            // to ParseMcnk. Heap allocation keeps the same access pattern.
-            auto tile_ptr = std::make_unique<mve::AdtTile>();
-            mve::AdtTile& tile = *tile_ptr;
-            if (!mve::AdtLoader::LoadFile(adt_path, tile)) {
-                std::cerr << "Failed to load ADT: " << adt_path << "\n";
-                return EXIT_FAILURE;
-            } else {
-                std::cout << "Loaded ADT with " << tile.textures.size()
-                          << " textures and 256 chunks\n";
-
-                // Step 1: load the tile's diffuse BLPs into one 2D-array
-                // image. tile_tex_to_slice[i] tells the mesh builder
-                // which slice the i-th MTEX entry landed on, so it can
-                // bake per-chunk layer-slot indices into the chunk_meta
-                // SSBO. A -1 entry means the BLP failed to load, and
-                // the shader's slot=0xFFFFFFFF fallback substitutes.
-                auto tex_set = assets.LoadAdtTextures(tile);
-                if (!tex_set.diffuse) {
-                    std::cerr << "Failed to load any ADT diffuse textures - "
-                                 "terrain will render magenta\n";
-                }
-
-                // Step 2: build the terrain mesh. The result owns the
-                // GPU Mesh, the per-chunk SSBO data, and the per-chunk
-                // alpha pixel data we still need to upload to a 2D-array.
-                auto terrain_build = mve::TerrainMesh::Build(
-                    device, tile, tex_set.tile_tex_to_slice);
-
-                // Step 3: upload the 256 alpha-map slices to a 64x64 RGBA8
-                // 2D-array. One mip; no need for chained mips when the
-                // texture is sampled at constant resolution per chunk_uv.
-                auto alpha_array = std::make_shared<mve::TextureArray>(
-                    device, 64, 64, mve::kAdtChunksPerTile,
-                    vk::Format::eR8G8B8A8Unorm, 1);
-                for (int i = 0; i < mve::kAdtChunksPerTile; i++) {
-                    const uint8_t* slice = terrain_build.alpha_pixels.data()
-                                          + i * 64 * 64 * 4;
-                    alpha_array->UploadSlicePixels(
-                        static_cast<uint32_t>(i), 0, slice, 64 * 64 * 4);
-                }
-                alpha_array->FinalizeForSampling();
-
-                // Step 4: per-chunk metadata SSBO (256 * 16 bytes).
-                vk::DeviceSize meta_size =
-                    sizeof(mve::TerrainChunkMeta) * terrain_build.chunk_meta.size();
-                auto chunk_meta_buf = std::make_unique<mve::Buffer>(
-                    device, meta_size,
-                    vk::BufferUsageFlagBits::eStorageBuffer,
-                    vk::MemoryPropertyFlagBits::eHostVisible |
-                        vk::MemoryPropertyFlagBits::eHostCoherent);
-                chunk_meta_buf->Write(terrain_build.chunk_meta.data(), meta_size);
-
-                // Step 5: spawn entity. Transform is identity because
-                // the terrain mesh is already baked in world coords.
-                auto* terrain_entity = scene.CreateEntity("Elwynn_32_48");
-                terrain_entity->AddComponent<mve::TransformComponent>();
-                auto* mesh_comp = terrain_entity->AddComponent<mve::MeshComponent>();
-                mesh_comp->pm_mesh = std::move(terrain_build.mesh);
-
-                auto* terrain_comp =
-                    terrain_entity->AddComponent<mve::TerrainComponent>();
-                terrain_comp->pm_alpha_array = alpha_array;
-                terrain_comp->pm_chunk_meta_ssbo = std::move(chunk_meta_buf);
-                if (tex_set.diffuse) {
-                    terrain_comp->pm_diffuse_array =
-                        std::shared_ptr<mve::TextureArray>(tex_set.diffuse.release());
-                }
-
-                // Step 6: descriptor set with the four bindings the
-                // terrain pipeline consumes.
-                terrain_comp->pm_descriptor_set =
-                    render_system.GetDescriptorPool().AllocateSet(
-                        render_system.TerrainDescriptorLayout());
-
-                vk::DescriptorBufferInfo ubo_info{
-                    *render_system.SceneUBOBuffer().GetBuffer(), 0, sizeof(mve::SceneUBO)};
-                vk::DescriptorBufferInfo meta_info{
-                    *terrain_comp->pm_chunk_meta_ssbo->GetBuffer(), 0, meta_size};
-                auto alpha_info = terrain_comp->pm_alpha_array->DescriptorInfo();
-
-                mve::DescriptorWriter writer{};
-                writer.WriteBuffer(0, ubo_info);
-                writer.WriteBuffer(1, meta_info, vk::DescriptorType::eStorageBuffer);
-                if (terrain_comp->pm_diffuse_array) {
-                    auto diffuse_info = terrain_comp->pm_diffuse_array->DescriptorInfo();
-                    writer.WriteImage(2, diffuse_info);
-                } else {
-                    // No diffuse: bind the alpha array slice 0 just to satisfy
-                    // the layout. The shader's all-slots-unused branch will
-                    // paint magenta everywhere.
-                    writer.WriteImage(2, alpha_info);
-                }
-                writer.WriteImage(3, alpha_info);
-                writer.Apply(device.GetDevice(), terrain_comp->pm_descriptor_set);
-
-                // Center the camera roughly on the tile. The tile spans
-                // ~533 yards. The terrain's vertex world-positions come
-                // straight from the ADT (WoW coords), so the tile sits
-                // somewhere in world space dictated by its (x, y) index.
-                //
-                // We average the WoW positions across all parsed chunks
-                // and convert to engine coords once. Using chunks[0] and
-                // chunks[255] alone is fragile: if either corner failed
-                // to parse, that entry is zero-initialized and the
-                // midpoint lands halfway to world origin (far from the
-                // tile, which sits at ~+/- 9000 yards in WoW absolute coords).
-                glm::dvec3 sum_wow{0.0};
-                int counted = 0;
-                for (const auto& ch : tile.chunks) {
-                    // A parsed chunk has at least one non-zero outer height
-                    // or non-zero base position. Pure-zero entries are
-                    // either failed parses or default-constructed.
-                    if (ch.wow_x != 0.0f || ch.wow_y != 0.0f ||
-                        ch.heights.y_outer[0] != 0.0f) {
-                        sum_wow.x += ch.wow_x;
-                        sum_wow.y += ch.wow_y;
-                        sum_wow.z += ch.wow_z_base;
-                        counted++;
-                    }
-                }
-                glm::vec3 center{0.0f, 0.5f, 0.0f};
-                if (counted > 0) {
-                    glm::dvec3 avg = sum_wow / double(counted);
-                    // WowToEngine: (wow_x, wow_y, wow_z) -> (wow_y, wow_z, wow_x)
-                    center = glm::vec3(avg.y, avg.z, avg.x);
-                }
-                cam->pm_camera.SetTarget(center);
-                cam->pm_camera.SetOrbit(800.0f, 0.5f, 0.6f);
-            }
+        // Initial focus is (32, 48) - Northshire / north Stormwind. We
+        // point the camera at that tile's expected engine centroid, then
+        // ask the streamer which tile the camera actually ended up in
+        // (the orbit position can sit in a neighbor) and preload around
+        // that tile - this prevents the first per-frame Update from
+        // immediately evicting tiles we just loaded.
+        mve::TerrainStreamer streamer{assets, scene};
+        if (!streamer.LoadWdt("World/Maps/Azeroth/Azeroth.wdt")) {
+            std::cerr << "WDT load failed - streamer falls back to "
+                         "try-every-tile mode\n";
         }
+
+        // Hardcoded engine center of tile (32, 48). The per-tile centroid
+        // from the file would be slightly more accurate, but the file
+        // load happens DURING the preload below - so we use the analytic
+        // tile center to bootstrap.
+        glm::vec3 center{-8800.0f, 170.0f, -250.0f};
+        cam->pm_camera.SetTarget(center);
+        // Bigger orbit so the full 3x3 (1600 yards across) fits in view.
+        cam->pm_camera.SetOrbit(1500.0f, 0.5f, 0.5f);
+
+        // Preload around wherever the camera actually sits (which may be
+        // a neighboring tile because of the orbit offset). Radius 2 (5x5)
+        // gives a ~2700-yard view region - enough that the target tile
+        // (32, 48) is always inside the loaded set even when the camera
+        // sits in a neighbor.
+        streamer.SetRadius(2);
+        streamer.SetEvictRadius(3);
+        int cam_tx, cam_ty;
+        streamer.EngineToTile(cam->pm_camera.GetPosition(), cam_tx, cam_ty);
+        streamer.PreloadAround(cam_tx, cam_ty, 2,
+                                render_system.TerrainDescriptorLayout());
 
         auto last_time = std::chrono::high_resolution_clock::now();
 
@@ -226,6 +115,20 @@ int main() {
             editor_ui.Update(scene, render_system, dt);
             animation_system.Update(scene, dt);
             render_system.UpdateSceneUBO();
+
+            // Stream-load tiles around the camera. Cheap when the camera
+            // stays in the same tile; loads ~one new tile per boundary
+            // crossing. Runs before FlushDestroyed so evicted tiles
+            // disappear in the same frame.
+            mve::Camera* stream_cam = nullptr;
+            scene.Each<mve::CameraComponent>(
+                [&](mve::Entity&, mve::CameraComponent& cc) {
+                    if (cc.pm_is_active) stream_cam = &cc.pm_camera;
+                });
+            if (stream_cam) {
+                streamer.Update(stream_cam->GetPosition(),
+                                render_system.TerrainDescriptorLayout());
+            }
             scene.FlushDestroyed();
 
             // Render

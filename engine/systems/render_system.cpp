@@ -29,17 +29,25 @@ void RenderSystem::Init() {
         .AddBinding(2, vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eVertex)
         .Build();
 
-    // Pool sized generously enough for R2 terrain + future doodad spawn
-    // in R4. Per-entity sets consume:
+    // Pool sized generously enough for R3 multi-tile streaming + R4
+    // doodad spawn. Per-entity sets consume:
     //   M2:      1 UBO + 1 sampler  + 1 storage (bones)
     //   Terrain: 1 UBO + 2 samplers + 1 storage (chunk meta)
-    // 1024 entity sets covers ~900 doodads + terrain + camera with
-    // headroom for sub-meshes. Memory cost is sub-MB of driver state.
-    pm_descriptor_pool = std::make_unique<DescriptorPool>(pm_device, 1024, std::vector<vk::DescriptorPoolSize>{
-        {vk::DescriptorType::eUniformBuffer,        1024},
-        {vk::DescriptorType::eCombinedImageSampler, 2048},
-        {vk::DescriptorType::eStorageBuffer,        1024},
-    });
+    // 1024 entity sets covers a 5x5 tile grid (25 tiles) plus ~900
+    // doodads. Memory cost is sub-MB of driver state.
+    //
+    // FreeDescriptorSet flag lets vk::raii::DescriptorSet release back
+    // to the pool when an entity is destroyed (R3 tile eviction).
+    // Without it, validation complains and the slot leaks until program
+    // exit.
+    pm_descriptor_pool = std::make_unique<DescriptorPool>(
+        pm_device, 1024,
+        std::vector<vk::DescriptorPoolSize>{
+            {vk::DescriptorType::eUniformBuffer,        1024},
+            {vk::DescriptorType::eCombinedImageSampler, 2048},
+            {vk::DescriptorType::eStorageBuffer,        1024},
+        },
+        vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet);
 
     // Terrain descriptor layout: UBO + chunk-meta SSBO (fragment) +
     // diffuse 2D-array sampler + alpha 2D-array sampler. Both array

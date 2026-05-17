@@ -6,7 +6,11 @@
 #include "../scene/components/skeleton_component.h"
 #include "../scene/components/camera_component.h"
 #include "../scene/components/m2_info_component.h"
+#include "../scene/components/terrain_component.h"
+#include "../scene/components/terrain_tile_component.h"
+#include "../scene/terrain_mesh.h"
 #include "../formats/blp_loader.h"
+#include "../formats/adt_types.h"
 #include "../animation/skeleton.h"
 
 #include <algorithm>
@@ -269,11 +273,11 @@ AdtTextureSet AssetManager::LoadAdtTextures(const AdtTile& tile,
         // target_size and whose format is a supported block format.
         // Most WoW terrain BLPs are 256x256 BC1, so this check passes
         // trivially; large 1024x1024 ground BLPs hit the mip-skip path.
+        // Tiny 8x8 placeholder BLPs (used for "no border" markers on
+        // many tiles) fail silently here - the shader's magenta path
+        // covers them and they don't represent a real asset.
         int skip = BlpMipForTarget(c.blp.width, target_size);
         if (skip < 0) {
-            std::fprintf(stderr,
-                "BLP %s has unsupported size %u for target %u\n",
-                c.path.c_str(), c.blp.width, target_size);
             candidates.push_back(std::move(c));
             continue;
         }
@@ -328,6 +332,146 @@ AdtTextureSet AssetManager::LoadAdtTextures(const AdtTile& tile,
     }
     result.diffuse->FinalizeForSampling();
     return result;
+}
+
+Entity* AssetManager::LoadAdtTileIntoScene(
+    int tile_x, int tile_y, Scene& scene,
+    const vk::raii::DescriptorSetLayout& terrain_layout) {
+
+    if (!pm_descriptor_pool || !pm_scene_ubo) return nullptr;
+    if (tile_x < 0 || tile_x > 63 || tile_y < 0 || tile_y > 63) return nullptr;
+
+    // Build the WoW-style path. Backslashes mirror what asset_extract
+    // produces and what ResolveWowAsset normalizes.
+    char rel_path[96];
+    std::snprintf(rel_path, sizeof(rel_path),
+        "World/Maps/Azeroth/Azeroth_%d_%d.adt", tile_x, tile_y);
+    std::string fs_path = ResolveWowAsset(rel_path);
+
+    if (!fs::exists(fs_path)) {
+        std::fprintf(stderr, "ADT missing: %s\n", fs_path.c_str());
+        return nullptr;
+    }
+
+    // AdtTile is ~5 MB (256 chunks * ~19 KB each); must be heap-allocated.
+    auto tile = std::make_unique<AdtTile>();
+    if (!AdtLoader::LoadFile(fs_path, *tile)) {
+        std::fprintf(stderr, "ADT parse failed: %s\n", fs_path.c_str());
+        return nullptr;
+    }
+    tile->tile_x = tile_x;
+    tile->tile_y = tile_y;
+
+    // Build (or look up cached) mesh + alpha + chunk_meta.
+    char mesh_key[32];
+    std::snprintf(mesh_key, sizeof(mesh_key), "adt:%d_%d", tile_x, tile_y);
+
+    // Diffuse atlas isn't cached across tiles for now (each tile gets its
+    // own array). Adjacent tiles often share BLPs - a follow-up
+    // optimization will share the underlying TextureArray slices.
+    auto tex_set = LoadAdtTextures(*tile);
+    auto terrain_build = TerrainMesh::Build(
+        pm_device, *tile, tex_set.tile_tex_to_slice);
+
+    // Per-chunk alpha array: 256 slices of 64x64 RGBA8.
+    auto alpha_array = std::make_shared<TextureArray>(
+        pm_device, 64, 64, kAdtChunksPerTile,
+        vk::Format::eR8G8B8A8Unorm, 1);
+    for (int i = 0; i < kAdtChunksPerTile; i++) {
+        const uint8_t* slice = terrain_build.alpha_pixels.data() + i * 64 * 64 * 4;
+        alpha_array->UploadSlicePixels(static_cast<uint32_t>(i), 0,
+                                        slice, 64 * 64 * 4);
+    }
+    alpha_array->FinalizeForSampling();
+
+    // Chunk-meta SSBO.
+    vk::DeviceSize meta_size =
+        sizeof(TerrainChunkMeta) * terrain_build.chunk_meta.size();
+    auto chunk_meta_buf = std::make_unique<Buffer>(
+        pm_device, meta_size,
+        vk::BufferUsageFlagBits::eStorageBuffer,
+        vk::MemoryPropertyFlagBits::eHostVisible |
+            vk::MemoryPropertyFlagBits::eHostCoherent);
+    chunk_meta_buf->Write(terrain_build.chunk_meta.data(), meta_size);
+
+    // Compute the tile's centroid in engine space + diagonal radius. Used
+    // by the streamer to decide which tile a camera position belongs to
+    // and to prioritize eviction.
+    glm::dvec3 sum_wow{0.0};
+    int counted = 0;
+    glm::vec3 vmin{ std::numeric_limits<float>::max() };
+    glm::vec3 vmax{ -std::numeric_limits<float>::max() };
+    for (const auto& ch : tile->chunks) {
+        if (ch.wow_x != 0.0f || ch.wow_y != 0.0f ||
+            ch.heights.y_outer[0] != 0.0f) {
+            sum_wow.x += ch.wow_x;
+            sum_wow.y += ch.wow_y;
+            sum_wow.z += ch.wow_z_base;
+            counted++;
+            glm::vec3 corner(ch.wow_y, ch.wow_z_base, ch.wow_x);
+            vmin = glm::min(vmin, corner);
+            vmax = glm::max(vmax, corner);
+        }
+    }
+    glm::vec3 centroid{0.0f};
+    if (counted > 0) {
+        glm::dvec3 avg = sum_wow / double(counted);
+        // WowToEngine: (wow_x, wow_y, wow_z) -> (wow_y, wow_z, wow_x)
+        centroid = glm::vec3(avg.y, avg.z, avg.x);
+    }
+    float radius = glm::length(vmax - vmin) * 0.5f;
+
+    // Spawn entity.
+    char entity_name[48];
+    std::snprintf(entity_name, sizeof(entity_name),
+                  "Tile_%d_%d", tile_x, tile_y);
+    Entity* entity = scene.CreateEntity(entity_name);
+    entity->AddComponent<TransformComponent>();
+
+    auto* mesh_comp = entity->AddComponent<MeshComponent>();
+    auto shared_mesh = std::shared_ptr<Mesh>(std::move(terrain_build.mesh));
+    pm_mesh_cache[mesh_key] = shared_mesh;
+    mesh_comp->pm_mesh = shared_mesh;
+
+    auto* terrain_comp = entity->AddComponent<TerrainComponent>();
+    terrain_comp->pm_alpha_array = alpha_array;
+    terrain_comp->pm_chunk_meta_ssbo = std::move(chunk_meta_buf);
+    if (tex_set.diffuse) {
+        terrain_comp->pm_diffuse_array =
+            std::shared_ptr<TextureArray>(tex_set.diffuse.release());
+    }
+
+    terrain_comp->pm_descriptor_set =
+        pm_descriptor_pool->AllocateSet(terrain_layout);
+
+    vk::DescriptorBufferInfo ubo_info{
+        *pm_scene_ubo->GetBuffer(), 0, sizeof(float) * 8};
+    vk::DescriptorBufferInfo meta_info{
+        *terrain_comp->pm_chunk_meta_ssbo->GetBuffer(), 0, meta_size};
+    auto alpha_info = terrain_comp->pm_alpha_array->DescriptorInfo();
+
+    DescriptorWriter writer{};
+    writer.WriteBuffer(0, ubo_info);
+    writer.WriteBuffer(1, meta_info, vk::DescriptorType::eStorageBuffer);
+    if (terrain_comp->pm_diffuse_array) {
+        auto diffuse_info = terrain_comp->pm_diffuse_array->DescriptorInfo();
+        writer.WriteImage(2, diffuse_info);
+    } else {
+        // No diffuse: bind the alpha array to keep the layout happy. The
+        // shader's all-slots-unused branch then paints magenta so the
+        // missing-asset state is obvious.
+        writer.WriteImage(2, alpha_info);
+    }
+    writer.WriteImage(3, alpha_info);
+    writer.Apply(pm_device.GetDevice(), terrain_comp->pm_descriptor_set);
+
+    auto* tile_comp = entity->AddComponent<TerrainTileComponent>();
+    tile_comp->pm_tile_x = tile_x;
+    tile_comp->pm_tile_y = tile_y;
+    tile_comp->pm_centroid_engine = centroid;
+    tile_comp->pm_radius = radius;
+
+    return entity;
 }
 
 } // namespace mve

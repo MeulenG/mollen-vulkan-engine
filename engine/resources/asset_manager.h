@@ -35,6 +35,19 @@ public:
     // Caches M2 data and textures so loading the same model twice shares GPU resources.
     Entity* LoadM2IntoScene(const std::string& m2_path, Scene& scene);
 
+    // Load one ADT terrain tile (parses Azeroth_<x>_<y>.adt under
+    // assets/World/Maps/Azeroth/), build its mesh + diffuse/alpha
+    // atlases, and spawn a fully-wired Transform + Mesh + Terrain +
+    // TerrainTile entity in the scene. The caller supplies the
+    // terrain-pipeline descriptor layout because RenderSystem owns it.
+    //
+    // Returns nullptr if the .adt file doesn't exist or fails to parse.
+    // The mesh is cached by "adt:<x>_<y>" so re-loading a tile shares
+    // GPU memory; BLPs are cached per-path inside LoadAdtTextures.
+    Entity* LoadAdtTileIntoScene(
+        int tile_x, int tile_y, Scene& scene,
+        const vk::raii::DescriptorSetLayout& terrain_layout);
+
     // Load the diffuse BLP textures referenced by an ADT tile's MTEX
     // list into a 2D-array image. Each unique BLP gets one slice.
     // BLPs that fail to load (missing file, format mismatch with the

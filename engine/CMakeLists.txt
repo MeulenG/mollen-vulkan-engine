@@ -26,6 +26,7 @@ add_library(mollen-engine STATIC
     formats/wdt_loader.cpp
     formats/adt_loader.cpp
     scene/terrain_mesh.cpp
+    scene/terrain_streamer.cpp
 )
 
 target_include_directories(mollen-engine PUBLIC
