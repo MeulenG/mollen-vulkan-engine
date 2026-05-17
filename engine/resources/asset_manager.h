@@ -10,9 +10,13 @@
 #include "../formats/m2_loader.h"
 #include "../formats/adt_types.h"
 
+#include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
+
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace mve {
 
@@ -32,8 +36,25 @@ public:
     AssetManager(Device& device);
 
     // Load an M2 model and spawn a fully-wired entity in the scene.
-    // Caches M2 data and textures so loading the same model twice shares GPU resources.
+    // Caches M2 data and textures so loading the same model twice
+    // shares GPU resources. Uses the legacy WoW-coord transform that
+    // hoists the model so its lowest bbox corner sits at y=0.
     Entity* LoadM2IntoScene(const std::string& m2_path, Scene& scene);
+
+    // Same, but with an explicit world transform - used by R4 doodad
+    // spawning where the MDDF data specifies position + Euler rotation
+    // + scale directly. The caller is responsible for converting WoW
+    // coords to engine coords before passing them in.
+    //
+    // name_hint becomes the entity's debug name (typically
+    // "Doodad#<unique_id>" so the editor entity panel can identify it).
+    // Empty name_hint falls back to the model's internal name.
+    Entity* LoadM2IntoScene(
+        const std::string& m2_path, Scene& scene,
+        const glm::vec3& position,
+        const glm::quat& rotation,
+        const glm::vec3& scale,
+        const std::string& name_hint = "");
 
     // Load one ADT terrain tile (parses Azeroth_<x>_<y>.adt under
     // assets/World/Maps/Azeroth/), build its mesh + diffuse/alpha
@@ -87,6 +108,13 @@ private:
     std::unordered_map<std::string, MeshHandle> pm_mesh_cache;
     std::unordered_map<std::string, TextureHandle> pm_texture_cache;
     TextureHandle pm_default_texture;
+
+    // MDDF doodad unique_ids that have already been spawned across any
+    // tile. Used to dedupe edge-shared doodads in the multi-tile R3
+    // streamer: WoW places the same prop in multiple tiles' MDDF when
+    // it sits near a tile boundary, so without dedup we'd render N
+    // overlapping copies.
+    std::unordered_set<uint32_t> pm_spawned_doodad_ids;
 
     // Descriptor resources (set externally by RenderSystem or main)
     const vk::raii::DescriptorSetLayout* pm_descriptor_layout = nullptr;

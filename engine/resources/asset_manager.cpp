@@ -49,6 +49,22 @@ int BlpMipForTarget(uint32_t blp_w, uint32_t target) {
     return skip;
 }
 
+// MMDX path strings often end in the legacy ".mdx" extension even
+// though the file actually extracted from MPQ is ".m2". If the
+// requested .mdx doesn't exist, try the .m2 variant transparently
+// so the user doesn't have to rewrite every doodad path.
+std::string ResolveM2Extension(const std::string& path) {
+    if (fs::exists(path)) return path;
+    if (path.size() < 4) return path;
+    std::string ext = path.substr(path.size() - 4);
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+    if (ext == ".mdx") {
+        std::string m2 = path.substr(0, path.size() - 4) + ".m2";
+        if (fs::exists(m2)) return m2;
+    }
+    return path;
+}
+
 } // namespace
 
 AssetManager::AssetManager(Device& device)
@@ -81,11 +97,31 @@ TextureHandle AssetManager::GetTexture(const std::string& key) const {
 }
 
 Entity* AssetManager::LoadM2IntoScene(const std::string& m2_path, Scene& scene) {
+    return LoadM2IntoScene(m2_path, scene,
+                            glm::vec3{0.0f},
+                            glm::quat{1.0f, 0.0f, 0.0f, 0.0f},
+                            glm::vec3{1.0f},
+                            "");
+}
+
+Entity* AssetManager::LoadM2IntoScene(
+    const std::string& m2_path_in, Scene& scene,
+    const glm::vec3& position,
+    const glm::quat& rotation,
+    const glm::vec3& scale,
+    const std::string& name_hint) {
+
     if (!pm_descriptor_layout || !pm_descriptor_pool || !pm_scene_ubo) {
         return nullptr;
     }
 
-    // Parse M2 (or fetch from cache)
+    // MMDX paths in WoW are often the legacy ".mdx" extension; the
+    // actual file extracted from MPQ is ".m2". Try the swap before
+    // bailing on a missing file.
+    std::string m2_path = ResolveM2Extension(m2_path_in);
+
+    // Parse M2 (or fetch from cache). The cache is keyed by the
+    // resolved path so .m2 / .mdx variants share one entry.
     std::shared_ptr<M2CacheEntry> cache_entry;
     auto cache_it = pm_m2_cache.find(m2_path);
     if (cache_it != pm_m2_cache.end()) {
@@ -93,8 +129,14 @@ Entity* AssetManager::LoadM2IntoScene(const std::string& m2_path, Scene& scene) 
     } else {
         if (!fs::exists(m2_path)) return nullptr;
 
-        cache_entry = std::make_shared<M2CacheEntry>();
-        cache_entry->model = M2Loader::LoadFile(m2_path);
+        try {
+            cache_entry = std::make_shared<M2CacheEntry>();
+            cache_entry->model = M2Loader::LoadFile(m2_path);
+        } catch (...) {
+            // Corrupt M2 or unsupported version. Don't insert into
+            // cache so a retry might succeed if the file is fixed.
+            return nullptr;
+        }
         pm_m2_cache[m2_path] = cache_entry;
     }
 
@@ -119,12 +161,14 @@ Entity* AssetManager::LoadM2IntoScene(const std::string& m2_path, Scene& scene) 
         blp_path = "assets/" + model.texture_paths[0];
     } else {
         fs::path m2_dir = fs::path(m2_path).parent_path();
-        for (auto& entry : fs::directory_iterator(m2_dir)) {
-            auto ext = entry.path().extension().string();
-            std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-            if (ext == ".blp" && entry.path().stem().string().find("Skin") != std::string::npos) {
-                blp_path = entry.path().string();
-                break;
+        if (fs::exists(m2_dir)) {
+            for (auto& entry : fs::directory_iterator(m2_dir)) {
+                auto ext = entry.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+                if (ext == ".blp" && entry.path().stem().string().find("Skin") != std::string::npos) {
+                    blp_path = entry.path().string();
+                    break;
+                }
             }
         }
     }
@@ -148,13 +192,36 @@ Entity* AssetManager::LoadM2IntoScene(const std::string& m2_path, Scene& scene) 
         texture = GetDefaultTexture();
     }
 
-    // Create entity
-    Entity* entity = scene.CreateEntity(model.name.empty() ? "M2Model" : model.name);
+    // Create entity. Use name_hint when provided (doodads name themselves
+    // "Doodad#<unique_id>") so the editor's entity panel can identify
+    // each instance; otherwise fall back to the model's internal name.
+    std::string entity_name = !name_hint.empty()
+        ? name_hint
+        : (model.name.empty() ? "M2Model" : model.name);
+    Entity* entity = scene.CreateEntity(entity_name);
 
-    // TransformComponent with WoW coordinate conversion
+    // TransformComponent - use the caller-supplied TRS directly. The
+    // default overload above passes pos=0, rot=identity, scale=1 +
+    // calls ApplyWowCoordTransform afterward; the doodad overload
+    // passes the MDDF-derived TRS with no further mutation.
     auto* transform = entity->AddComponent<TransformComponent>();
     float ground_offset = -model.bbox_min.z;
-    transform->ApplyWowCoordTransform(ground_offset);
+
+    // Heuristic: zero position + identity rotation + unit scale means
+    // the caller is the legacy single-arg overload, so apply the
+    // WoW-coord hoist that R0 expected. Any non-default TRS came from
+    // the explicit overload (doodads), which sets exact values.
+    bool is_legacy = (position == glm::vec3{0.0f}) &&
+                     (rotation == glm::quat{1.0f, 0.0f, 0.0f, 0.0f}) &&
+                     (scale == glm::vec3{1.0f}) &&
+                     name_hint.empty();
+    if (is_legacy) {
+        transform->ApplyWowCoordTransform(ground_offset);
+    } else {
+        transform->pm_position = position;
+        transform->pm_rotation = rotation;
+        transform->pm_scale    = scale;
+    }
 
     // MeshComponent
     auto* mesh_comp = entity->AddComponent<MeshComponent>();
@@ -470,6 +537,63 @@ Entity* AssetManager::LoadAdtTileIntoScene(
     tile_comp->pm_tile_y = tile_y;
     tile_comp->pm_centroid_engine = centroid;
     tile_comp->pm_radius = radius;
+
+    // Spawn MDDF doodads. Each entry references a path via name_id ->
+    // tile->doodad_paths. Dedupe by unique_id across tiles so a prop
+    // listed in two neighboring tiles doesn't render twice (typical
+    // for forest edges and roads that cross tile boundaries).
+    size_t spawn_attempts = 0;
+    size_t spawn_failures = 0;
+    size_t spawn_duplicates = 0;
+    for (const auto& d : tile->doodads) {
+        if (!pm_spawned_doodad_ids.insert(d.unique_id).second) {
+            spawn_duplicates++;
+            continue;
+        }
+        if (d.name_id >= tile->doodad_paths.size()) {
+            spawn_failures++;
+            continue;
+        }
+        const std::string& wow_path = tile->doodad_paths[d.name_id];
+        if (wow_path.empty()) {
+            spawn_failures++;
+            continue;
+        }
+
+        std::string fs_path = ResolveWowAsset(wow_path);
+
+        // WoW MDDF position is { south, up, east }. Engine wants
+        // { east, up, south }. So engine = (pos_z, pos_y, pos_x).
+        glm::vec3 engine_pos(d.pos_z, d.pos_y, d.pos_x);
+
+        // WoW MDDF rotation is Euler degrees applied YXZ (yaw, pitch,
+        // roll about the WoW axes). Build the quaternion in WoW frame
+        // then compose with the -90 X-axis rotation that converts WoW
+        // Z-up to engine Y-up.
+        glm::quat q_wow =
+              glm::angleAxis(glm::radians(d.rot_y_deg), glm::vec3{0, 1, 0})
+            * glm::angleAxis(glm::radians(d.rot_x_deg), glm::vec3{1, 0, 0})
+            * glm::angleAxis(glm::radians(d.rot_z_deg), glm::vec3{0, 0, 1});
+        glm::quat q_axis = glm::angleAxis(glm::radians(-90.0f), glm::vec3{1, 0, 0});
+        glm::quat q_final = q_axis * q_wow;
+
+        glm::vec3 scale_vec(d.scale);
+        char name_buf[48];
+        std::snprintf(name_buf, sizeof(name_buf),
+                      "Doodad#%u", d.unique_id);
+
+        spawn_attempts++;
+        Entity* doodad = LoadM2IntoScene(
+            fs_path, scene, engine_pos, q_final, scale_vec, name_buf);
+        if (!doodad) spawn_failures++;
+    }
+    if (spawn_attempts > 0) {
+        std::fprintf(stderr,
+            "Tile (%d, %d): %zu doodads, spawned %zu, missing %zu, dedup %zu\n",
+            tile_x, tile_y, tile->doodads.size(),
+            spawn_attempts - spawn_failures,
+            spawn_failures, spawn_duplicates);
+    }
 
     return entity;
 }

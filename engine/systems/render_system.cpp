@@ -29,23 +29,26 @@ void RenderSystem::Init() {
         .AddBinding(2, vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eVertex)
         .Build();
 
-    // Pool sized generously enough for R3 multi-tile streaming + R4
-    // doodad spawn. Per-entity sets consume:
+    // Pool sized for R3 multi-tile + R4 doodad density. Per-entity sets
+    // consume:
     //   M2:      1 UBO + 1 sampler  + 1 storage (bones)
     //   Terrain: 1 UBO + 2 samplers + 1 storage (chunk meta)
-    // 1024 entity sets covers a 5x5 tile grid (25 tiles) plus ~900
-    // doodads. Memory cost is sub-MB of driver state.
+    //
+    // A 5x5 tile preload of Elwynn has ~4000-6000 unique doodad
+    // unique_ids after cross-tile dedup. 8192 gives enough headroom
+    // for the actual scene + transient overlap during streaming
+    // eviction. Memory cost: ~3-4 MB of driver state, plus 8K bone
+    // buffers at 16KB each = 128MB GPU - bone buffers for static
+    // doodads are wasted but a static-doodad optimization is post-R4.
     //
     // FreeDescriptorSet flag lets vk::raii::DescriptorSet release back
     // to the pool when an entity is destroyed (R3 tile eviction).
-    // Without it, validation complains and the slot leaks until program
-    // exit.
     pm_descriptor_pool = std::make_unique<DescriptorPool>(
-        pm_device, 1024,
+        pm_device, 8192,
         std::vector<vk::DescriptorPoolSize>{
-            {vk::DescriptorType::eUniformBuffer,        1024},
-            {vk::DescriptorType::eCombinedImageSampler, 2048},
-            {vk::DescriptorType::eStorageBuffer,        1024},
+            {vk::DescriptorType::eUniformBuffer,        8192},
+            {vk::DescriptorType::eCombinedImageSampler, 8192},
+            {vk::DescriptorType::eStorageBuffer,        8192},
         },
         vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet);
 
