@@ -18,23 +18,51 @@ namespace mve {
 // Scene-wide uniforms. Bound at binding 0 of both the M2 and terrain
 // descriptor layouts; both fragment shaders read it.
 //
-// std140 layout: vec3 fields take a full 16-byte slot due to alignas(16).
-// The trailing float on each line fits in the same slot's pad. Total
-// size = 4 * 16 = 64 bytes.
+// std140 layout: vec3 fields take a full 16-byte slot due to alignas(16);
+// the trailing float on each line fits in the same slot. Total = 5 * 16
+// = 80 bytes.
 //
-// Fog: linear depth-based fog. Pixel color blends toward pm_fog_color
-// over the [fog_start, fog_end] camera-distance range. End is set to
-// match the far plane (3000) by default so far-clipped geometry fades
-// to fog color instead of cutting hard against the sky.
+// Naming follows WoW client's Light.dbc terminology (see wowdev.wiki/
+// DB/LightIntBand):
+//   pm_direct_color   = LightIntBand row 0 "DirectColor" (sun tint
+//                       multiplied by Lambert dot(N, L)). For Elwynn
+//                       noon this is a saturated orange (1.00, 0.53,
+//                       0.00) which gives the warm midday tint.
+//   pm_ambient_color  = LightIntBand row 1 "AmbientColor" (cool blue-
+//                       grey at noon, 0.41, 0.51, 0.60). Promoted from
+//                       a scalar because the client uses a vec3 here
+//                       and a scalar ambient was bleaching the shadow
+//                       side of foliage toward grey.
+//   pm_fog_color      = LightIntBand row 7 "SkyFogColor" (also used
+//                       as the lowest sky band). 0.30, 0.47, 0.56 for
+//                       Elwynn noon.
+//   pm_fog_start/_end = LightFloatBand rows 0+1. fog_end = row0 / 36
+//                       yards; fog_start = fog_end * row1 (the "fog
+//                       multiplier"). 125/500 yards for Elwynn.
+//   pm_fog_rate       = Power exponent on the linear fog ramp; see
+//                       DayNight::CalcFogRate. Effectively bends the
+//                       linear (1 - clamp((end-d)/(end-start),0,1))
+//                       ramp toward the far end. ~2.875 for Elwynn.
+//   pm_light_intensity= Scalar multiplier on direct_color (kept as a
+//                       knob even though the client doesn't really
+//                       have a separate intensity scalar; useful for
+//                       editor lighting overrides).
+//
+// Math: see Math-Lighting.md for the full derivation. Lighting is
+// pure Lambert + colored ambient (no hemispherical / no specular),
+// matching the WoW M2 vertex shader. Fog is linear ramp with pow
+// shaping, matching `CShaderEffect::SetFogParams` + vertex shader.
 struct SceneUBO {
     alignas(16) glm::vec3 pm_light_dir;
-    float pm_ambient;
-    alignas(16) glm::vec3 pm_light_color;
     float pm_light_intensity;
-    alignas(16) glm::vec3 pm_fog_color;
+    alignas(16) glm::vec3 pm_direct_color;
+    float pm_fog_rate;
+    alignas(16) glm::vec3 pm_ambient_color;
     float pm_fog_start;
-    alignas(16) glm::vec3 pm_camera_pos;
+    alignas(16) glm::vec3 pm_fog_color;
     float pm_fog_end;
+    alignas(16) glm::vec3 pm_camera_pos;
+    float pm_pad;
 };
 
 struct PushConstants {

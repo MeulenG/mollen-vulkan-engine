@@ -514,14 +514,26 @@ void EditorUISystem::DrawInspector(Scene& scene, RenderSystem& render_system) {
         ImGui::Separator();
 
         auto& ubo = render_system.SceneData();
-        ImGui::SeparatorText("Scene Lighting");
+        ImGui::SeparatorText("Scene Lighting (WoW Light.dbc semantics)");
         float light_dir[3] = {ubo.pm_light_dir.x, ubo.pm_light_dir.y, ubo.pm_light_dir.z};
         if (ImGui::SliderFloat3("Light Direction", light_dir, -1.0f, 1.0f)) {
             ubo.pm_light_dir = glm::normalize(
                 glm::vec3{light_dir[0], light_dir[1], light_dir[2]});
         }
-        ImGui::SliderFloat("Ambient",   &ubo.pm_ambient,         0.0f, 1.0f);
-        ImGui::SliderFloat("Intensity", &ubo.pm_light_intensity, 0.0f, 2.0f);
+        // Promoted from scalar to vec3 (matches LightIntBand row 1
+        // AmbientColor). Color picker so the editor can read the
+        // cool-blue vs warm-grey ambient tone at a glance.
+        ImGui::ColorEdit3("Direct Color (sun)",  &ubo.pm_direct_color.x);
+        ImGui::ColorEdit3("Ambient Color",       &ubo.pm_ambient_color.x);
+        ImGui::ColorEdit3("Fog Color",           &ubo.pm_fog_color.x);
+        ImGui::SliderFloat("Intensity",          &ubo.pm_light_intensity, 0.0f, 2.0f);
+        ImGui::SliderFloat("Fog Start",          &ubo.pm_fog_start, 0.0f, 1000.0f);
+        ImGui::SliderFloat("Fog End",            &ubo.pm_fog_end,   0.0f, 2000.0f);
+        // Fog rate (the pow exponent on the linear fog ramp). 1.0 =
+        // pure linear; higher values bend the ramp toward fog_end
+        // (most fog accumulates near the far edge). 2.875 is Elwynn's
+        // canonical client-computed value.
+        ImGui::SliderFloat("Fog Rate",           &ubo.pm_fog_rate,  0.5f, 7.0f);
 
         ImGui::End();
         return;

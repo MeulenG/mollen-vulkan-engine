@@ -29,15 +29,19 @@ layout(location = 2) in vec2 frag_chunk_uv;
 layout(location = 3) flat in uint frag_chunk_index;
 layout(location = 4) in vec3 frag_mccv;
 
+// std140 layout matches engine::SceneUBO. See basic.frag for the
+// WoW Light.dbc field semantics.
 layout(set = 0, binding = 0) uniform SceneUBO {
     vec3 light_dir;
-    float ambient;
-    vec3 light_color;
     float light_intensity;
-    vec3 fog_color;
+    vec3 direct_color;
+    float fog_rate;
+    vec3 ambient_color;
     float fog_start;
-    vec3 camera_pos;
+    vec3 fog_color;
     float fog_end;
+    vec3 camera_pos;
+    float pad;
 } scene;
 
 // Per-chunk layer-slot lookup. Each chunk has 4 uints, one per layer,
@@ -105,10 +109,11 @@ void main() {
         albedo = c0 * w0 + c1 * w1 + c2 * w2 + c3 * w3;
     }
 
+    // WoW lighting model: Lambert + colored ambient. See basic.frag.
     vec3 N = normalize(frag_normal);
-    vec3 L = normalize(scene.light_dir);
-    float diffuse = max(dot(N, L), 0.0);
-    vec3 lighting = scene.ambient + diffuse * scene.light_intensity * scene.light_color;
+    vec3 L = normalize(-scene.light_dir);
+    float NdotL = max(dot(N, L), 0.0);
+    vec3 lighting = scene.ambient_color + NdotL * scene.light_intensity * scene.direct_color;
 
     // MCCV tint. WoW's "neutral" painted value is 0x7F / 255 ~ 0.5,
     // so the convention is: tint = 2 * MCCV. That makes 0.5 unchanged,
@@ -117,13 +122,12 @@ void main() {
     vec3 tint = frag_mccv * 2.0;
     vec3 color = albedo * lighting * tint;
 
-    // Anchored exponential squared fog. See basic.frag for the math.
+    // WoW linear-ramp-with-pow fog. See basic.frag for derivation.
     float dist = length(frag_world_pos - scene.camera_pos);
-    float ramp = max(0.0, dist - scene.fog_start);
     float span = max(1.0, scene.fog_end - scene.fog_start);
-    float density = 1.7 / span;
-    float fog = 1.0 - exp(-(ramp * density) * (ramp * density));
-    fog = clamp(fog, 0.0, 1.0);
+    float f1 = (scene.fog_end - dist) / span;
+    float f2 = pow(clamp(f1, 0.0, 1.0), scene.fog_rate);
+    float fog = 1.0 - f2;
     color = mix(color, scene.fog_color, fog);
 
     out_color = vec4(color, 1.0);

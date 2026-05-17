@@ -70,39 +70,75 @@ RenderSystem::RenderSystem(Device& device, OffscreenPass& offscreen)
     : pm_device{device}, pm_offscreen{offscreen},
       pm_ground_mesh{Mesh::CreateGroundPlane(device, 30.0f)} {
 
-    // Sun and ambient tuned to match Elwynn's "overcast afternoon"
-    // mood (target Goldshire ref shows rainy/cloudy weather). Low sun
-    // intensity + high ambient mimics diffuse overcast lighting where
-    // there's no strong sun direction. Slight cool tint (towards grey-
-    // blue) matches the storm color temperature.
-    // Sun lower in the sky (more horizontal Z component) for stronger
-    // shadowing on tree canopies. A near-vertical sun (0,1,0) lit
-    // everything from above and made the foliage read as a flat green
-    // mass; tilting toward (0.35, 0.7, 0.6) puts the dot(N, L) peak on
-    // canopy tops + facing planes, giving WoW's characteristic
-    // half-lit / half-shadowed leaves look without breaking the
-    // overcast mood.
-    pm_scene_data.pm_light_dir = glm::normalize(glm::vec3{0.35f, 0.70f, 0.60f});
-    // Ambient was 0.55, intensity 0.55 (flat overcast). Pulling ambient
-    // down to 0.42 and intensity up to 0.70 keeps overall brightness
-    // similar but increases shadow contrast. With dot(N,L) ranging
-    // [0..1] across a leaf cluster, perceived brightness now spans
-    // [0.42 (shadow side)..1.12 (lit side)] instead of [0.55..1.10] -
-    // a measurable contrast lift on every surface.
-    pm_scene_data.pm_ambient = 0.42f;
-    pm_scene_data.pm_light_color = glm::vec3{0.95f, 0.93f, 0.85f};
-    pm_scene_data.pm_light_intensity = 0.70f;
-    // Fog: anchored exp^2. With fog_start = 200 yards the immediate
-    // foreground (trees, grass) stays unfogged and reads with proper
-    // colour, then the ramp covers [200, 800]: half-way is ~390 yards
-    // (51% fog), and 800 yards is ~94% fog. That gives the camera a
-    // crisp 200-yard "pocket of clear" before haze takes over, which
-    // matches how a real foggy/overcast afternoon falls off. Earlier
-    // fog_start = 80 looked atmospheric but bleached the foreground.
-    pm_scene_data.pm_fog_color = glm::vec3{0.46f, 0.49f, 0.52f};
-    pm_scene_data.pm_fog_start = 200.0f;
-    pm_scene_data.pm_fog_end   = 800.0f;
+    // Canonical Elwynn Forest "noon clear" values, pulled from the
+    // WoW client's Light.dbc / LightParams.dbc / LightIntBand.dbc /
+    // LightFloatBand.dbc tables (WotLK 3.3.5a 12340 binaries). Elwynn
+    // has no zone-local light entry on Map 0 Azeroth, so it falls back
+    // to the worldwide default Light.dbc ID=1 -> ParamsClear =
+    // LightParams.dbc ID=12 -> the LightIntBand/FloatBand rows below.
+    //
+    // BGRA -> RGB conversion (client stores colors BGRA in the DBC):
+    //   byte0 = B, byte1 = G, byte2 = R, byte3 = A
+    // Values are normalized to [0..1] by dividing by 255.
+    //
+    // Previously these were hand-tuned by eyeballing screenshots,
+    // which biased everything toward a stormy/overcast outlier
+    // weather state. The DBC values are the actual canonical Elwynn
+    // identity ("bright, warm afternoon, autumn-tinged amber
+    // canopies, olive-yellow grass"). See docs / wowdev.wiki for the
+    // full DBC chain.
+
+    // Sun direction. WoW client computes this from DayNight phi/theta
+    // tables: at t=0.5 (noon) phi ~= 2.217 rad, theta ~= 3.927 rad.
+    // sunPos = (sin(phi)*cos(theta), sin(phi)*sin(theta), cos(phi))
+    //        ~= (-0.566, -0.566, -0.601)
+    // We want lightDir to point AT the surface (so dot(N, lightDir) is
+    // negative for lit faces), so the shader uses -lightDir as L. We
+    // store sunPos directly; the shaders negate.
+    pm_scene_data.pm_light_dir = glm::normalize(glm::vec3{-0.566f, -0.566f, -0.601f});
+    pm_scene_data.pm_light_intensity = 1.0f;
+
+    // LightIntBand row 0 "DirectColor" noon = #FF8800 BGRA -> RGB.
+    // This is the sun's tint, multiplied by Lambert dot(N, L). A
+    // saturated orange might look extreme on paper, but the bulk of
+    // the lit color comes from the texture/MCCV combine and this only
+    // applies where N actually faces the sun. The result reads "warm
+    // afternoon" rather than monochrome.
+    pm_scene_data.pm_direct_color = glm::vec3{1.000f, 0.533f, 0.000f};
+
+    // LightIntBand row 1 "AmbientColor" noon = #68829A BGRA -> RGB.
+    // Cool blue-grey, applied to every fragment regardless of N. The
+    // mathematical pairing of warm sun + cool ambient is the
+    // photometric standard for outdoor scenes: it produces the
+    // "lit side warm, shadow side cool" color separation that gives
+    // depth without needing GI.
+    pm_scene_data.pm_ambient_color = glm::vec3{0.408f, 0.510f, 0.604f};
+
+    // LightIntBand row 7 "SkyFogColor" noon = #4D788F BGRA -> RGB.
+    // Also drives the lowest sky band and the background gradient
+    // (background.frag reads this via push constant).
+    pm_scene_data.pm_fog_color = glm::vec3{0.302f, 0.471f, 0.561f};
+
+    // LightFloatBand at noon:
+    //   row 0 = FogEnd (DBC value / 36 -> yards) = 18000 / 36 = 500
+    //   row 1 = FogMultiplier = 0.25 -> fog_start = 500 * 0.25 = 125
+    // The client always derives start as end * multiplier; it never
+    // stores start directly.
+    pm_scene_data.pm_fog_start = 125.0f;
+    pm_scene_data.pm_fog_end   = 500.0f;
+
+    // Fog rate exponent. From DayNight::CalcFogRate:
+    //   farClip   = max(500, cameraFar - 200)   // we pick 500
+    //   fogRange  = fog_end - fog_start         // 500 - 125 = 375
+    //   rate      = (1 - fogRange/farClip) * 5.5 + 1.5
+    //             = (1 - 375/500) * 5.5 + 1.5 = 2.875
+    // Effectively this bends the linear fog ramp so the bulk of the
+    // fog accumulates near fog_end, which matches how distant
+    // mountains in WoW go to haze suddenly rather than gradually.
+    pm_scene_data.pm_fog_rate = 2.875f;
+
     pm_scene_data.pm_camera_pos = glm::vec3{0.0f};
+    pm_scene_data.pm_pad = 0.0f;
 }
 
 void RenderSystem::Init() {
@@ -179,10 +215,17 @@ void RenderSystem::Init() {
         model_config);
 
     // Background pipeline (fullscreen gradient, no vertex input, no depth).
-    // Takes a fog-color push constant so the sky tint stays in sync
-    // with the scene fog tint.
+    // Takes the canonical Elwynn 6-band sky-cone colors as push
+    // constants. The pipeline doesn't need a descriptor set (the
+    // shader is purely a procedural gradient), so push-constants are
+    // cheaper than a UBO binding for the ~80 bytes we need. Layout:
+    //   bytes 0..15:  sky_top    (zenith)
+    //   bytes 16..31: sky_middle (sky body)
+    //   bytes 32..47: sky_band1  (just above horizon)
+    //   bytes 48..63: sky_band2  (right at horizon)
+    //   bytes 64..79: fog_color  (below horizon - matches scene fog)
     vk::PushConstantRange bg_push_range{
-        vk::ShaderStageFlagBits::eFragment, 0, sizeof(glm::vec4)};
+        vk::ShaderStageFlagBits::eFragment, 0, 5 * sizeof(glm::vec4)};
     vk::PipelineLayoutCreateInfo bg_layout_info{};
     bg_layout_info.setPushConstantRanges(bg_push_range);
     pm_bg_pipeline_layout = pm_device.GetDevice().createPipelineLayout(bg_layout_info);
@@ -278,11 +321,34 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
     // still contributes a visible (if faded) pixel.
     constexpr float kDoodadCullDistance = 2600.0f;
 
-    // Background gradient. fog_color drives the sky tint so distant
-    // fogged geometry blends seamlessly into the sky.
+    // Background gradient. Push the canonical Elwynn 6-band sky cone
+    // colors so the shader can do a proper WoW sky procedure. These
+    // are hardcoded from LightIntBand for now; a future change will
+    // drive them from runtime DBC interpolation.
+    //
+    // BGRA -> RGB conversions of LightIntBand rows 2-5 + the fog
+    // color (row 7). At noon for LightParams ID 12:
+    //   row 2 SkyTop    #001F49 = (0.000, 0.122, 0.286)
+    //   row 3 SkyMiddle #3AA2CF = (0.227, 0.635, 0.812)
+    //   row 4 SkyBand1  #99DCF5 = (0.600, 0.863, 0.961)
+    //   row 5 SkyBand2  #AFDAE0 = (0.686, 0.855, 0.878)
+    //   row 7 SkyFog    #4D788F = (0.302, 0.471, 0.561) (== fog_color)
+    struct BgPush {
+        glm::vec4 sky_top;
+        glm::vec4 sky_middle;
+        glm::vec4 sky_band1;
+        glm::vec4 sky_band2;
+        glm::vec4 fog_color;
+    };
+    BgPush bg_push{
+        glm::vec4{0.000f, 0.122f, 0.286f, 0.0f},
+        glm::vec4{0.227f, 0.635f, 0.812f, 0.0f},
+        glm::vec4{0.600f, 0.863f, 0.961f, 0.0f},
+        glm::vec4{0.686f, 0.855f, 0.878f, 0.0f},
+        glm::vec4{pm_scene_data.pm_fog_color, 0.0f},
+    };
     pm_bg_pipeline->Bind(cmd);
-    glm::vec4 bg_push{pm_scene_data.pm_fog_color, 0.0f};
-    cmd.pushConstants<glm::vec4>(
+    cmd.pushConstants<BgPush>(
         *pm_bg_pipeline_layout, vk::ShaderStageFlagBits::eFragment, 0, bg_push);
     cmd.draw(3, 1, 0, 0);
 
