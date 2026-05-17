@@ -43,6 +43,19 @@ struct AdtChunkNormals {
     bool  parsed = false;
 };
 
+// Optional MCCV - per-vertex RGB tint applied to terrain shading. WoW
+// uses this to paint regional color variation (sun-bleached patches,
+// darker rocky outcrops, mossy areas) that the splat textures alone
+// can't express. 145 RGB triplets stored as 0..255 -> 0..1 floats.
+//
+// `parsed` is false when MCCV was absent (older ADTs / no painted
+// tints); the mesh builder then uses pure white (no tint).
+struct AdtChunkVertexColors {
+    float c_outer[81 * 3];
+    float c_inner[64 * 3];
+    bool  parsed = false;
+};
+
 // One ADT texture layer inside a chunk. The MCLY sub-chunk gives 16 bytes
 // per layer: { texture_index, flags, ofs_mcal, effect_id }. We capture the
 // first three; effect_id is unused for now.
@@ -68,6 +81,7 @@ struct AdtChunk {
 
     AdtChunkHeights heights{};
     AdtChunkNormals normals{};
+    AdtChunkVertexColors vertex_colors{};
 
     // Up to 4 layers per chunk. Layers beyond layer_count have default
     // (-1) texture_index and zero-filled alpha.

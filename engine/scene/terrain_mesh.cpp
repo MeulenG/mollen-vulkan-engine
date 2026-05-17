@@ -53,6 +53,7 @@ TerrainVertex::GetAttributeDescriptions() {
         {1, 0, vk::Format::eR32G32B32Sfloat, offsetof(TerrainVertex, normal)},
         {2, 0, vk::Format::eR32G32Sfloat,    offsetof(TerrainVertex, chunk_uv)},
         {3, 0, vk::Format::eR32Uint,         offsetof(TerrainVertex, chunk_index)},
+        {4, 0, vk::Format::eR32G32B32Sfloat, offsetof(TerrainVertex, mccv)},
     };
 }
 
@@ -138,6 +139,17 @@ TerrainBuildResult TerrainMesh::Build(
                     // sampling lines up with the geometry.
                     v.chunk_uv    = glm::vec2(oy / 8.0f, ox / 8.0f);
                     v.chunk_index = static_cast<uint32_t>(chunk_lin);
+                    if (ch.vertex_colors.parsed) {
+                        v.mccv = glm::vec3(ch.vertex_colors.c_outer[idx * 3 + 0],
+                                           ch.vertex_colors.c_outer[idx * 3 + 1],
+                                           ch.vertex_colors.c_outer[idx * 3 + 2]);
+                    } else {
+                        // WoW's "neutral" MCCV is 0x7F / 255 = ~0.5; the
+                        // fragment shader doubles before multiplying so
+                        // 0.5 means "no tint". Default unpainted chunks
+                        // to that neutral value.
+                        v.mccv = glm::vec3(0.5f);
+                    }
                     vertices.push_back(v);
                 }
             }
@@ -162,6 +174,13 @@ TerrainBuildResult TerrainMesh::Build(
                     v.chunk_uv    = glm::vec2((iy + 0.5f) / 8.0f,
                                               (ix + 0.5f) / 8.0f);
                     v.chunk_index = static_cast<uint32_t>(chunk_lin);
+                    if (ch.vertex_colors.parsed) {
+                        v.mccv = glm::vec3(ch.vertex_colors.c_inner[idx * 3 + 0],
+                                           ch.vertex_colors.c_inner[idx * 3 + 1],
+                                           ch.vertex_colors.c_inner[idx * 3 + 2]);
+                    } else {
+                        v.mccv = glm::vec3(0.5f);  // neutral unpainted
+                    }
                     vertices.push_back(v);
                 }
             }
