@@ -109,6 +109,21 @@ private:
     std::unordered_map<std::string, TextureHandle> pm_texture_cache;
     TextureHandle pm_default_texture;
 
+    // Per-M2-path cached descriptor set. Used by doodads: instead of
+    // each placement getting its own (mat, descriptor set, bone
+    // buffer) triple, instances of the same M2 path share one. Cuts
+    // pool consumption from ~4650 sets (one per placement) to ~50
+    // (one per unique M2). Bone buffer is the identity matrix - fine
+    // for static doodads (rocks, fences, signposts), wrong for
+    // animated ones, but the editor's v1 acceptance is static-only.
+    struct M2SharedMaterial {
+        std::unique_ptr<Buffer> pm_bone_buffer;
+        vk::DescriptorSet       pm_descriptor_set = VK_NULL_HANDLE;
+        TextureHandle           pm_texture;
+    };
+    std::unordered_map<std::string, std::shared_ptr<M2SharedMaterial>>
+        pm_shared_m2_material;
+
     // MDDF doodad unique_ids that have already been spawned across any
     // tile. Used to dedupe edge-shared doodads in the multi-tile R3
     // streamer: WoW places the same prop in multiple tiles' MDDF when

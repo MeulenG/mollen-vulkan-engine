@@ -227,39 +227,91 @@ Entity* AssetManager::LoadM2IntoScene(
     auto* mesh_comp = entity->AddComponent<MeshComponent>();
     mesh_comp->pm_mesh = mesh;
 
-    // MaterialComponent with per-entity bone buffer and descriptor set
+    // MaterialComponent. Two paths:
+    //   Legacy (single-arg LoadM2IntoScene): per-entity bone buffer
+    //     and descriptor set. Used by the spell editor's model preview
+    //     where bones get animated independently.
+    //   Doodad (explicit-TRS overload, is_legacy=false): shared bone
+    //     buffer + descriptor set cached per M2 path. Identity bones,
+    //     so animation breaks but pool usage drops from N entities
+    //     to N unique M2 paths.
     auto* mat = entity->AddComponent<MaterialComponent>();
 
     vk::DeviceSize bone_buffer_size = Skeleton::MAX_BONES * sizeof(glm::mat4);
-    mat->pm_bone_buffer = std::make_unique<Buffer>(
-        pm_device, bone_buffer_size,
-        vk::BufferUsageFlagBits::eStorageBuffer,
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
-    std::vector<glm::mat4> identity(Skeleton::MAX_BONES, glm::mat4{1.0f});
-    mat->pm_bone_buffer->Write(identity.data(), bone_buffer_size);
+    if (is_legacy) {
+        // Per-entity buffer + set (legacy path)
+        mat->pm_bone_buffer = std::make_unique<Buffer>(
+            pm_device, bone_buffer_size,
+            vk::BufferUsageFlagBits::eStorageBuffer,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
-    // Raw handle - see MaterialComponent header for why we avoid the
-    // raii destructor here. The pool's own destruction at shutdown
-    // reclaims this slot.
-    mat->pm_descriptor_set = pm_descriptor_pool->AllocateSetRaw(*pm_descriptor_layout);
+        std::vector<glm::mat4> identity(Skeleton::MAX_BONES, glm::mat4{1.0f});
+        mat->pm_bone_buffer->Write(identity.data(), bone_buffer_size);
 
-    vk::DescriptorBufferInfo ubo_info{*pm_scene_ubo->GetBuffer(), 0, sizeof(float) * 8};
-    auto tex_info = texture->DescriptorInfo();
-    vk::DescriptorBufferInfo bone_info{*mat->pm_bone_buffer->GetBuffer(), 0, bone_buffer_size};
+        mat->pm_descriptor_set = pm_descriptor_pool->AllocateSetRaw(*pm_descriptor_layout);
 
-    DescriptorWriter{}
-        .WriteBuffer(0, ubo_info)
-        .WriteImage(1, tex_info)
-        .WriteBuffer(2, bone_info, vk::DescriptorType::eStorageBuffer)
-        .Apply(pm_device.GetDevice(), mat->pm_descriptor_set);
+        vk::DescriptorBufferInfo ubo_info{*pm_scene_ubo->GetBuffer(), 0, sizeof(float) * 8};
+        auto tex_info = texture->DescriptorInfo();
+        vk::DescriptorBufferInfo bone_info{*mat->pm_bone_buffer->GetBuffer(), 0, bone_buffer_size};
+
+        DescriptorWriter{}
+            .WriteBuffer(0, ubo_info)
+            .WriteImage(1, tex_info)
+            .WriteBuffer(2, bone_info, vk::DescriptorType::eStorageBuffer)
+            .Apply(pm_device.GetDevice(), mat->pm_descriptor_set);
+    } else {
+        // Doodad path: look up or create the cached shared material
+        // for this M2 path. mat->pm_bone_buffer stays null (the
+        // shared buffer lives in pm_shared_m2_material).
+        auto it = pm_shared_m2_material.find(m2_path);
+        std::shared_ptr<M2SharedMaterial> shared;
+        if (it != pm_shared_m2_material.end()) {
+            shared = it->second;
+        } else {
+            shared = std::make_shared<M2SharedMaterial>();
+            shared->pm_texture = texture;
+            shared->pm_bone_buffer = std::make_unique<Buffer>(
+                pm_device, bone_buffer_size,
+                vk::BufferUsageFlagBits::eStorageBuffer,
+                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+
+            std::vector<glm::mat4> identity(Skeleton::MAX_BONES, glm::mat4{1.0f});
+            shared->pm_bone_buffer->Write(identity.data(), bone_buffer_size);
+
+            shared->pm_descriptor_set =
+                pm_descriptor_pool->AllocateSetRaw(*pm_descriptor_layout);
+
+            vk::DescriptorBufferInfo ubo_info{
+                *pm_scene_ubo->GetBuffer(), 0, sizeof(float) * 8};
+            auto tex_info = texture->DescriptorInfo();
+            vk::DescriptorBufferInfo bone_info{
+                *shared->pm_bone_buffer->GetBuffer(), 0, bone_buffer_size};
+
+            DescriptorWriter{}
+                .WriteBuffer(0, ubo_info)
+                .WriteImage(1, tex_info)
+                .WriteBuffer(2, bone_info, vk::DescriptorType::eStorageBuffer)
+                .Apply(pm_device.GetDevice(), shared->pm_descriptor_set);
+
+            pm_shared_m2_material[m2_path] = shared;
+        }
+
+        // The entity references the shared resources but doesn't own
+        // them. mat->pm_bone_buffer is left null - the actual bone
+        // buffer is bound via the shared descriptor set.
+        mat->pm_descriptor_set = shared->pm_descriptor_set;
+    }
 
     SubmeshMaterial sub_mat;
     sub_mat.pm_texture = texture;
     mat->pm_submesh_materials.push_back(sub_mat);
 
-    // SkeletonComponent
-    if (model.skeleton.BoneCount() > 0) {
+    // SkeletonComponent only on the legacy path. Doodads share a bone
+    // buffer across instances, so any per-entity animation would
+    // corrupt the shared state. The legacy spell-editor preview
+    // needs per-entity animation and gets the full setup.
+    if (is_legacy && model.skeleton.BoneCount() > 0) {
         auto* skel = entity->AddComponent<SkeletonComponent>();
         skel->pm_skeleton = &model.skeleton;
         skel->pm_animator = std::make_unique<Animator>(model.skeleton);
