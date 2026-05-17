@@ -129,19 +129,30 @@ private:
     std::unordered_map<std::string, TextureHandle> pm_texture_cache;
     TextureHandle pm_default_texture;
 
-    // Per-M2-path cached descriptor set + shared bone buffer. Used by
-    // both the legacy single-arg LoadM2IntoScene (one-off previews) and
-    // the doodad path. R4.5 also caches a single shared identity-instance
-    // buffer for the legacy path so binding 3 of the descriptor set is
-    // always populated even when there's no real instance data.
+    // Per-M2-path cached descriptor + shared bone buffer + per-submesh
+    // texture bindings. R4.8 splits a single per-M2 descriptor set into
+    // N per-submesh sets so each submesh (tree trunk vs leaves vs
+    // glow overlay) can carry its own texture binding instead of all
+    // sharing texture_paths[0].
     //
-    // Bone buffer is the identity matrix - fine for static doodads
-    // (rocks, fences, signposts), wrong for animated ones, but the
-    // editor's v1 acceptance is static-only.
+    // The bone buffer is identity (static doodads); the instance SSBO
+    // is set later by FlushDoodadInstances.
+    struct M2SharedSubmesh {
+        TextureHandle     pm_texture;
+        vk::DescriptorSet pm_descriptor_set = VK_NULL_HANDLE;
+        uint32_t          pm_index_start = 0;
+        uint32_t          pm_index_count = 0;
+        uint16_t          pm_blend_mode  = 0;   // 0=opaque, 1=alpha key
+    };
     struct M2SharedMaterial {
-        std::unique_ptr<Buffer> pm_bone_buffer;
-        vk::DescriptorSet       pm_descriptor_set = VK_NULL_HANDLE;
-        TextureHandle           pm_texture;
+        std::unique_ptr<Buffer>      pm_bone_buffer;
+        std::vector<M2SharedSubmesh> pm_submeshes;
+
+        // Back-compat: the legacy single-arg LoadM2IntoScene uses a
+        // single descriptor set / texture (no per-submesh split). When
+        // pm_submeshes is empty this pair is used instead.
+        vk::DescriptorSet pm_descriptor_set = VK_NULL_HANDLE;
+        TextureHandle     pm_texture;
     };
     std::unordered_map<std::string, std::shared_ptr<M2SharedMaterial>>
         pm_shared_m2_material;

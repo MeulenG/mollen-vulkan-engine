@@ -54,6 +54,16 @@ void Mesh::DrawInstanced(const vk::raii::CommandBuffer& command_buffer,
     command_buffer.drawIndexed(index_count_, instance_count, 0, 0, 0);
 }
 
+void Mesh::DrawInstancedRange(const vk::raii::CommandBuffer& command_buffer,
+                               uint32_t instance_count,
+                               uint32_t index_start,
+                               uint32_t index_count) const {
+    // index_start is the offset into the model's shared index buffer.
+    // index_count triangles fanning from that offset will be drawn,
+    // each replicated instance_count times.
+    command_buffer.drawIndexed(index_count, instance_count, index_start, 0, 0);
+}
+
 Mesh Mesh::CreatePyramid(Device& device, glm::vec3 color) {
     std::vector<Vertex> vertices = {
         // Square base

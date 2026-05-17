@@ -232,8 +232,35 @@ void EditorUISystem::DrawMenuBar(Scene& scene) {
             scene.Each<CameraComponent>(
                 [](Entity&, CameraComponent& cc) {
                     if (!cc.pm_is_active) return;
+                    cc.pm_camera.SetMode(CameraMode::Orbit);
                     cc.pm_camera.SetTarget({-8800.0f, 170.0f, -250.0f});
                     cc.pm_camera.SetOrbit(1500.0f, 0.5f, 0.5f);
+                });
+        }
+        ImGui::Separator();
+
+        // Camera mode toggle. Orbit (default) keeps a target-centered
+        // orbital view for inspecting a model or a fixed location.
+        // First-person walk (WASD) drops the camera into a player-eye
+        // perspective for navigating the scene.
+        bool any_fps = false;
+        scene.Each<CameraComponent>(
+            [&](Entity&, CameraComponent& cc) {
+                if (cc.pm_is_active &&
+                    cc.pm_camera.Mode() == CameraMode::FlyFirstPerson) {
+                    any_fps = true;
+                }
+            });
+        if (ImGui::MenuItem("Camera: Orbit", nullptr, !any_fps)) {
+            scene.Each<CameraComponent>(
+                [](Entity&, CameraComponent& cc) {
+                    if (cc.pm_is_active) cc.pm_camera.SetMode(CameraMode::Orbit);
+                });
+        }
+        if (ImGui::MenuItem("Camera: First-Person (WASD)", nullptr, any_fps)) {
+            scene.Each<CameraComponent>(
+                [](Entity&, CameraComponent& cc) {
+                    if (cc.pm_is_active) cc.pm_camera.SetMode(CameraMode::FlyFirstPerson);
                 });
         }
         ImGui::EndMenu();
@@ -354,23 +381,54 @@ void EditorUISystem::DrawViewport(Scene& scene, float delta_time) {
             double dx = mx - pm_last_x, dy = my - pm_last_y;
             pm_last_x = mx; pm_last_y = my;
 
-            // Scale Pan/Zoom by orbit distance so movement-per-pixel
-            // feels constant across zoom levels. At distance 8 (M2 model
-            // scale), pan = 8 * 0.001 = 0.008 yards/pixel - close to the
-            // old hardcoded 0.005. At distance 1500 (terrain), pan = 1.5
-            // yards/pixel - cross the viewport in ~700 px instead of
-            // 200,000. Rotate is angular and doesn't need scaling.
+            const bool fps = active_cam->Mode() == CameraMode::FlyFirstPerson;
+
+            // Speeds. Orbit mode scales pan/zoom by distance so they
+            // feel constant across zoom levels. FPS mode uses fixed
+            // yards-per-second since there's no orbit distance to
+            // scale from; held-shift multiplies for "sprint".
             float dist       = active_cam->Distance();
             float pan_speed  = dist * 0.001f;
             float zoom_speed = dist * 0.05f;
+            float fps_walk   = 25.0f * delta_time;   // yards per frame
+            if (ImGui::GetIO().KeyShift) fps_walk *= 5.0f;
+            float fps_look   = 0.003f;               // radians per pixel
 
-            if (ImGui::IsMouseDown(ImGuiMouseButton_Left))
+            if (ImGui::IsMouseDown(ImGuiMouseButton_Right) || fps) {
+                // Right-click drag or any FPS-mode mouse motion rotates
+                // the view. FPS mode rotates on any mouse motion if RMB
+                // is held (so the user can free-look without losing
+                // ImGui interaction with other panels).
+                if (ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
+                    active_cam->Rotate(float(-dx) * fps_look,
+                                       float(-dy) * fps_look);
+                }
+            }
+            if (!fps && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
                 active_cam->Rotate(float(-dx) * 0.005f, float(dy) * 0.005f);
-            if (ImGui::IsMouseDown(ImGuiMouseButton_Middle))
+            }
+            if (!fps && ImGui::IsMouseDown(ImGuiMouseButton_Middle)) {
                 active_cam->Pan(float(-dx) * pan_speed, float(dy) * pan_speed);
+            }
 
             float scroll = pm_window.GetScrollDelta();
             if (scroll != 0.0f) active_cam->Zoom(scroll * zoom_speed);
+
+            // WASD for FPS mode: forward / left / back / right + Q/E
+            // for up/down. Using ImGui's keyboard state means input is
+            // routed correctly (no fight with the ImGui input stack).
+            if (fps) {
+                float f = 0.0f, s = 0.0f, u = 0.0f;
+                if (ImGui::IsKeyDown(ImGuiKey_W)) f += 1.0f;
+                if (ImGui::IsKeyDown(ImGuiKey_S)) f -= 1.0f;
+                if (ImGui::IsKeyDown(ImGuiKey_D)) s += 1.0f;
+                if (ImGui::IsKeyDown(ImGuiKey_A)) s -= 1.0f;
+                if (ImGui::IsKeyDown(ImGuiKey_E)) u += 1.0f;
+                if (ImGui::IsKeyDown(ImGuiKey_Q)) u -= 1.0f;
+                if (f != 0.0f || s != 0.0f || u != 0.0f) {
+                    active_cam->Move(s * fps_walk, u * fps_walk, f * fps_walk);
+                }
+            }
         } else {
             double mx, my;
             pm_window.GetCursorPos(mx, my);

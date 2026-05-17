@@ -70,10 +70,16 @@ RenderSystem::RenderSystem(Device& device, OffscreenPass& offscreen)
     : pm_device{device}, pm_offscreen{offscreen},
       pm_ground_mesh{Mesh::CreateGroundPlane(device, 30.0f)} {
 
+    // Sun and ambient tuned to match Elwynn's "warm afternoon" mood
+    // (target ref). Pure-white directional light at full intensity
+    // washes out the M2 textures' baked variation and makes the scene
+    // feel synthetic. Slight yellow tint + ~0.8x intensity + lower
+    // ambient brings out the trees' contrast and the terrain's MCCV
+    // tints without underexposing shadowed areas.
     pm_scene_data.pm_light_dir = glm::normalize(glm::vec3{0.5f, 1.0f, 0.3f});
-    pm_scene_data.pm_ambient = 0.15f;
-    pm_scene_data.pm_light_color = glm::vec3{1.0f};
-    pm_scene_data.pm_light_intensity = 0.85f;
+    pm_scene_data.pm_ambient = 0.35f;
+    pm_scene_data.pm_light_color = glm::vec3{1.0f, 0.96f, 0.86f};
+    pm_scene_data.pm_light_intensity = 0.75f;
     // Fog tuned to the 3000-yard far plane. Geometry past 2400 yards
     // starts to fade; at 3000 it's fully fog-colored. The sky-blue tint
     // matches the background gradient so the fade looks like atmosphere
@@ -356,7 +362,7 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
             DoodadInstanceComponent& inst) {
             if (!mesh_comp.pm_visible || !mesh_comp.pm_mesh) return;
             if (inst.pm_instance_count == 0) return;
-            if (!inst.pm_descriptor_set) return;
+            if (inst.pm_submeshes.empty()) return;
 
             float dist_to_nearest =
                 glm::length(inst.pm_bbox_center - cam_pos) - inst.pm_bbox_radius;
@@ -366,11 +372,8 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
                 return;
             }
 
-            cmd.bindDescriptorSets(
-                vk::PipelineBindPoint::eGraphics,
-                *pm_model_pipeline_layout, 0,
-                inst.pm_descriptor_set, nullptr);
-
+            // Push constants are the same for every submesh - only the
+            // bound descriptor set + index range change.
             PushConstants push{};
             push.pm_model = glm::mat4{1.0f};
             push.pm_mvp   = view_proj_for_cull;
@@ -378,7 +381,16 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
                 *pm_model_pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, push);
 
             mesh_comp.pm_mesh->Bind(cmd);
-            mesh_comp.pm_mesh->DrawInstanced(cmd, inst.pm_instance_count);
+            for (const auto& sub : inst.pm_submeshes) {
+                if (!sub.pm_descriptor_set || sub.pm_index_count == 0) continue;
+                cmd.bindDescriptorSets(
+                    vk::PipelineBindPoint::eGraphics,
+                    *pm_model_pipeline_layout, 0,
+                    sub.pm_descriptor_set, nullptr);
+                mesh_comp.pm_mesh->DrawInstancedRange(
+                    cmd, inst.pm_instance_count,
+                    sub.pm_index_start, sub.pm_index_count);
+            }
         });
 
     pm_offscreen.EndRendering(cmd);

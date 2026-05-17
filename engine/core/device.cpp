@@ -137,6 +137,11 @@ void Device::createLogicalDevice() {
     sync2_features.pNext = &dynamic_rendering_features;
 
     vk::PhysicalDeviceFeatures device_features{};
+    // Anisotropic texture filtering. Every Vulkan 1.0+ desktop GPU
+    // supports this; explicit opt-in is required to actually use it.
+    // The sampler's maxAnisotropy is then clamped against
+    // physicalDeviceLimits.maxSamplerAnisotropy.
+    device_features.samplerAnisotropy = vk::True;
 
     vk::DeviceCreateInfo create_info{};
     create_info.setQueueCreateInfos(queue_create_infos);
