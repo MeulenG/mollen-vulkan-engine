@@ -105,16 +105,23 @@ TerrainBuildResult TerrainMesh::Build(
                 }
             }
 
-            // Outer verts. Within the chunk, outer vertex (ox, oy) has
-            // WoW-relative offsets (-oy * kCellSize, -ox * kCellSize) -
-            // both axes are negative-step because WoW tiles increase
-            // toward south-east while chunk-local coords increase toward
-            // east-north (per wowdev wiki).
+            // Outer verts. MCVT row indexes the WoW Y (east) direction;
+            // MCVT col indexes WoW X (south). y_outer[row*9 + col] is
+            // stored row-major in the parser. So our loop variable
+            // `oy` (row) advances east and `ox` (col) advances south.
+            //
+            // I had this backwards in R2 - had `oy` driving wow_x and
+            // `ox` driving wow_y, which gave adjacent chunks
+            // mismatched heights at their shared edge and the
+            // venetian-blind shattered look. Verified by checking that
+            // chunk (0,0) row 8 == chunk (0,1) row 0 (rows match
+            // across iy-adjacent tiles) and chunk (0,0) col 8 ==
+            // chunk (1,0) col 0 (cols match across ix-adjacent tiles).
             for (int oy = 0; oy < 9; oy++) {
                 for (int ox = 0; ox < 9; ox++) {
                     int idx = oy * 9 + ox;
-                    float wx = ch.wow_x - oy * kCellSize;
-                    float wy = ch.wow_y - ox * kCellSize;
+                    float wx = ch.wow_x - ox * kCellSize;  // col -> south
+                    float wy = ch.wow_y - oy * kCellSize;  // row -> east
                     float wz = ch.heights.y_outer[idx];
 
                     TerrainVertex v{};
@@ -126,17 +133,21 @@ TerrainBuildResult TerrainMesh::Build(
                     } else {
                         v.normal = glm::vec3(0, 1, 0);  // refined below
                     }
-                    v.chunk_uv    = glm::vec2(ox / 8.0f, oy / 8.0f);
+                    // chunk_uv.x along east (oy), chunk_uv.y along south (ox).
+                    // Matches MCAL's row/col convention so per-chunk alpha
+                    // sampling lines up with the geometry.
+                    v.chunk_uv    = glm::vec2(oy / 8.0f, ox / 8.0f);
                     v.chunk_index = static_cast<uint32_t>(chunk_lin);
                     vertices.push_back(v);
                 }
             }
             // Inner verts (8x8, offset by 0.5 cell along both axes).
+            // Same row/col -> east/south mapping as outer.
             for (int iy = 0; iy < 8; iy++) {
                 for (int ix = 0; ix < 8; ix++) {
                     int idx = iy * 8 + ix;
-                    float wx = ch.wow_x - (iy + 0.5f) * kCellSize;
-                    float wy = ch.wow_y - (ix + 0.5f) * kCellSize;
+                    float wx = ch.wow_x - (ix + 0.5f) * kCellSize;  // col -> south
+                    float wy = ch.wow_y - (iy + 0.5f) * kCellSize;  // row -> east
                     float wz = ch.heights.y_inner[idx];
 
                     TerrainVertex v{};
@@ -148,18 +159,26 @@ TerrainBuildResult TerrainMesh::Build(
                     } else {
                         v.normal = glm::vec3(0, 1, 0);
                     }
-                    v.chunk_uv    = glm::vec2((ix + 0.5f) / 8.0f,
-                                              (iy + 0.5f) / 8.0f);
+                    v.chunk_uv    = glm::vec2((iy + 0.5f) / 8.0f,
+                                              (ix + 0.5f) / 8.0f);
                     v.chunk_index = static_cast<uint32_t>(chunk_lin);
                     vertices.push_back(v);
                 }
             }
 
-            // Index triangles. For each of 8x8 outer cells (ox, oy),
-            // the cell's four outer corners are at outer indices:
-            //   tl = oy*9 + ox       tr = oy*9 + ox + 1
-            //   bl = (oy+1)*9 + ox   br = (oy+1)*9 + ox + 1
-            // The inner vertex at the cell center is at index 81 + iy*8 + ix.
+            // Index triangles. For each of 8x8 outer cells (oy, ox),
+            // tl/tr/bl/br are the four outer corners. Naming is
+            // historical; after the row/col swap above, in engine
+            // space:
+            //   tl = (row=oy,   col=ox  ) = north-west of cell
+            //   tr = (row=oy,   col=ox+1) = south of tl  (col -> south)
+            //   bl = (row=oy+1, col=ox  ) = east of tl   (row -> east)
+            //   br = (row=oy+1, col=ox+1) = south-east
+            // The winding below is the reverse of what worked under
+            // R2's broken position math - swapping the position
+            // mapping flips the cross-product sign, so we have to
+            // reverse the index order to keep the face normal pointing
+            // +Y in engine space.
             for (int oy = 0; oy < 8; oy++) {
                 for (int ox = 0; ox < 8; ox++) {
                     uint32_t tl = base_v + (uint32_t)(oy * 9 + ox);
@@ -168,12 +187,10 @@ TerrainBuildResult TerrainMesh::Build(
                     uint32_t br = base_v + (uint32_t)((oy + 1) * 9 + ox + 1);
                     uint32_t in = base_v + 81 + (uint32_t)(oy * 8 + ox);
 
-                    // Four triangles fanning around the inner vertex.
-                    // Winding chosen so the upward face's normal points +Y.
-                    indices.push_back(in); indices.push_back(tr); indices.push_back(tl);
-                    indices.push_back(in); indices.push_back(br); indices.push_back(tr);
-                    indices.push_back(in); indices.push_back(bl); indices.push_back(br);
-                    indices.push_back(in); indices.push_back(tl); indices.push_back(bl);
+                    indices.push_back(in); indices.push_back(tl); indices.push_back(tr);
+                    indices.push_back(in); indices.push_back(tr); indices.push_back(br);
+                    indices.push_back(in); indices.push_back(br); indices.push_back(bl);
+                    indices.push_back(in); indices.push_back(bl); indices.push_back(tl);
                 }
             }
         }
