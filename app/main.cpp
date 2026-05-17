@@ -88,13 +88,21 @@ int main() {
         // bird's-eye made the editor read as a diorama. Ground level
         // (matches the target reference) shows trees + terrain at
         // proper density. User can switch via Tools menu.
-        // Ground-eye looking up at the canopy. target Y=120 is
-        // canopy mid; radius 35; pitch -0.3 gives camera_y ~= 109.6
-        // (ground level) with the look-vector tilted 17deg upward.
-        // This is the "player standing under a tree" framing.
-        glm::vec3 center{-8059.6f, 120.0f, 983.0f};
+        // Northshire Valley default spawn. Engine coords
+        // (-8800, 200, -250) is the analytic centroid of WoW MDDF
+        // tile (32, 48) = the human starting valley with the Abbey
+        // (WMO, not yet rendered), Maclure Vineyards tower, and the
+        // forested ring around them.
+        //
+        // target Y=170 is a typical Northshire ground height (the
+        // valley floor sits well below the 200 yard "default" that
+        // earlier comments used as a bootstrap). pitch -0.10 tilts
+        // the look-vector slightly upward so canopies fill the
+        // upper half. orbit 30y gives ~30 yards of foreground
+        // visible.
+        glm::vec3 center{-8800.0f, 170.0f, -250.0f};
         cam->pm_camera.SetTarget(center);
-        cam->pm_camera.SetOrbit(35.0f, 3.14f, -0.30f);
+        cam->pm_camera.SetOrbit(30.0f, 4.0f, -0.10f);
         cam->pm_camera.SetMode(mve::CameraMode::FlyFirstPerson);
 
         // Preload around wherever the camera actually sits (which may be
