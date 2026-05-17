@@ -117,12 +117,12 @@ void main() {
     vec3 tint = frag_mccv * 2.0;
     vec3 color = albedo * lighting * tint;
 
-    // Exponential squared fog. See basic.frag for the rationale -
-    // nearby pixels almost untinted, far pixels heavily hazed.
-    // Density tuned so geometry at fog_end is ~95% fog.
+    // Anchored exponential squared fog. See basic.frag for the math.
     float dist = length(frag_world_pos - scene.camera_pos);
-    float density = 1.7 / scene.fog_end;
-    float fog = 1.0 - exp(-(dist * density) * (dist * density));
+    float ramp = max(0.0, dist - scene.fog_start);
+    float span = max(1.0, scene.fog_end - scene.fog_start);
+    float density = 1.7 / span;
+    float fog = 1.0 - exp(-(ramp * density) * (ramp * density));
     fog = clamp(fog, 0.0, 1.0);
     color = mix(color, scene.fog_color, fog);
 
