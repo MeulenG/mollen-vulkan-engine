@@ -53,7 +53,8 @@ int main() {
             render_system.SceneUBOBuffer());
 
         mve::AnimationSystem animation_system;
-        mve::EditorUISystem editor_ui{window, imgui_ctx, *offscreen, device};
+        mve::EditorUISystem editor_ui{window, imgui_ctx, *offscreen,
+                                       device, assets};
 
         // Editor camera
         auto* cam_entity = scene.CreateEntity("EditorCamera");
@@ -109,9 +110,9 @@ int main() {
 
             // ImGui frame
             imgui_ctx.NewFrame();
-            ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport());
 
-            // Systems
+            // Systems. EditorUISystem owns the dockspace + menu/status
+            // bars, so the host viewport gets its layout from there.
             editor_ui.Update(scene, render_system, dt);
             animation_system.Update(scene, dt);
             render_system.UpdateSceneUBO();
