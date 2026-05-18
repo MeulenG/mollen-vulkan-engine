@@ -318,9 +318,12 @@ bool ParseMcnk(const uint8_t* mcnk_data, size_t mcnk_payload_size,
         }
     }
 
-    // MCLY sub-chunk: 16 bytes per layer. We capture
-    // texture_index (uint32 @ +0), flags (uint32 @ +4), and ofs_mcal
-    // (uint32 @ +8). effect_id (+12) is unused for now.
+    // MCLY sub-chunk: 16 bytes per layer:
+    //   texture_index (uint32 @ +0), flags (uint32 @ +4),
+    //   ofs_mcal      (uint32 @ +8), effect_id (uint32 @ +12)
+    // effect_id is the GroundEffectTexture.dbc row id - the key the
+    // detail-grass system uses to look up which grass M2s to scatter
+    // on this layer. 0 means "no ground cover for this layer".
     out.layer_count = static_cast<int>(n_layers > 4 ? 4 : n_layers);
 
     // Track each layer's MCAL offset so the MCAL decode pass below can
@@ -337,11 +340,13 @@ bool ParseMcnk(const uint8_t* mcnk_data, size_t mcnk_payload_size,
                 mcly_off + 8 + mcly_size <= mcnk_payload_size) {
                 const uint8_t* mcly_body = mcnk_data + mcly_off + 8;
                 for (int l = 0; l < out.layer_count; l++) {
-                    uint32_t tex_idx = ReadU32(mcly_body, l * 16 + 0);
-                    uint32_t flags   = ReadU32(mcly_body, l * 16 + 4);
-                    uint32_t ofs_a   = ReadU32(mcly_body, l * 16 + 8);
+                    uint32_t tex_idx   = ReadU32(mcly_body, l * 16 + 0);
+                    uint32_t flags     = ReadU32(mcly_body, l * 16 + 4);
+                    uint32_t ofs_a     = ReadU32(mcly_body, l * 16 + 8);
+                    uint32_t effect_id = ReadU32(mcly_body, l * 16 + 12);
                     out.layers[l].texture_index = static_cast<int>(tex_idx);
                     out.layers[l].flags = flags;
+                    out.layers[l].effect_id = effect_id;
                     per_layer_ofs_mcal[l] = ofs_a;
                 }
             }

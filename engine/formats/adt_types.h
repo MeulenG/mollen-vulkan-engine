@@ -57,8 +57,9 @@ struct AdtChunkVertexColors {
 };
 
 // One ADT texture layer inside a chunk. The MCLY sub-chunk gives 16 bytes
-// per layer: { texture_index, flags, ofs_mcal, effect_id }. We capture the
-// first three; effect_id is unused for now.
+// per layer: { texture_index, flags, ofs_mcal, effect_id }. We capture all
+// four. effect_id is a foreign key into GroundEffectTexture.dbc and drives
+// the per-MCNK detail-grass scatter (the "ground cover" doodad system).
 //
 // alpha[] is the layer's 64x64 alpha map decoded out of MCAL. Per WoW's
 // blending convention, layer 0 has no alpha map (it's the base, full
@@ -67,6 +68,7 @@ struct AdtChunkVertexColors {
 struct AdtLayer {
     int      texture_index = -1;   // -1 = no layer
     uint32_t flags = 0;
+    uint32_t effect_id = 0;        // GroundEffectTexture.dbc row id (0 = none)
     uint8_t  alpha[64 * 64] = {};
 };
 

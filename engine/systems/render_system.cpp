@@ -412,6 +412,14 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
     // still contributes a visible (if faded) pixel.
     constexpr float kDoodadCullDistance = 2600.0f;
 
+    // Detail-grass cull radius. Grass blades become invisibly small
+    // past ~50 yards (WoW's own client uses 60-80 depending on
+    // settings) and the per-blade overdraw cost dominates at any
+    // distance where you can't see individual blades. 60 yards
+    // matches the canonical low-spec value and keeps the foreground
+    // dense without paying for grass we couldn't see.
+    constexpr float kGrassCullDistance = 60.0f;
+
     // Background gradient. Push the canonical Elwynn 6-band sky cone
     // colors so the shader can do a proper WoW sky procedure. These
     // are hardcoded from LightIntBand for now; a future change will
@@ -554,7 +562,9 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
 
             float dist_to_nearest =
                 glm::length(inst.pm_bbox_center - cam_pos) - inst.pm_bbox_radius;
-            if (dist_to_nearest > kDoodadCullDistance) return;
+            float cull_dist = inst.pm_is_detail_grass
+                ? kGrassCullDistance : kDoodadCullDistance;
+            if (dist_to_nearest > cull_dist) return;
 
             if (!SphereInFrustum(frustum, inst.pm_bbox_center, inst.pm_bbox_radius)) {
                 return;

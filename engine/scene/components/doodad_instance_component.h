@@ -74,6 +74,13 @@ struct DoodadInstanceComponent : Component {
     // possible instance is farther than the doodad draw radius).
     glm::vec3 pm_bbox_center{0.0f};
     float     pm_bbox_radius{0.0f};
+
+    // True when this group is detail grass scattered from the
+    // GroundEffect DBC system, not an MDDF tree/rock. The renderer
+    // uses an aggressively shorter cull distance for grass since
+    // small blades become invisible past ~50 yards but a 1-yard
+    // distance cull on trees would pop them out of view comically.
+    bool pm_is_detail_grass = false;
 };
 
 } // namespace mve

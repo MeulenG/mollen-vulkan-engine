@@ -4,6 +4,7 @@
 #include "../core/device.h"
 #include "../scene/mesh.h"
 #include "../scene/scene.h"
+#include "../scene/grass_scatter.h"
 #include "../resources/image.h"
 #include "../resources/descriptor.h"
 #include "../resources/texture_array.h"
@@ -88,6 +89,29 @@ public:
     // The pending list is shared across tiles so cross-tile dedup works
     // (pm_spawned_doodad_ids tracks unique_ids).
     void FlushDoodadInstances(Scene& scene);
+
+    // Load GroundEffectTexture.dbc + GroundEffectDoodad.dbc out of the
+    // canonical assets/dbc/ folder. Call once at engine startup.
+    // Returns false if either table fails to parse, in which case
+    // ScatterGrassForTile() becomes a silent no-op (no grass renders).
+    bool LoadGroundEffectTables();
+
+    // Read-only access for code that wants to drive the scatter
+    // directly (e.g. tests or the terrain streamer).
+    const GroundEffectTables& GroundEffects() const { return pm_ground_effects; }
+
+    // Enqueue one detail-grass placement. Mirrors the MDDF doodad
+    // pending list but flags the M2 path as detail grass so the
+    // renderer can apply a shorter cull distance to it. The path is
+    // expected to be a backslashed WoW relative path (e.g.
+    // "WORLD\AZEROTH\ELWYNN\PASSIVEDOODADS\GRASS\ELWYNNGRASS01.M2").
+    void EnqueueDetailGrassInstance(const std::string& wow_m2_path,
+                                     const glm::mat4& model_matrix);
+
+    // Scatter detail grass for every MCNK in `tile` and queue the
+    // placements for the next FlushDoodadInstances() call. No-op if
+    // LoadGroundEffectTables() failed or wasn't called.
+    void ScatterGrassForTile(const AdtTile& tile);
 
     // Load the diffuse BLP textures referenced by an ADT tile's MTEX
     // list into a 2D-array image. Each unique BLP gets one slice.
@@ -199,6 +223,19 @@ private:
     const vk::raii::DescriptorSetLayout* pm_descriptor_layout = nullptr;
     DescriptorPool* pm_descriptor_pool = nullptr;
     const Buffer* pm_scene_ubo = nullptr;
+
+    // GroundEffectTexture.dbc + GroundEffectDoodad.dbc, loaded once at
+    // engine init. Empty until LoadGroundEffectTables() succeeds.
+    GroundEffectTables pm_ground_effects;
+    bool pm_ground_effects_loaded = false;
+
+    // The set of resolved fs paths that came from the detail-grass
+    // scatter (rather than MDDF). Used by FlushDoodadInstances to
+    // tag the resulting DoodadInstanceComponent so the renderer can
+    // apply a shorter cull distance. Detail-grass paths are never
+    // shared with MDDF (grass M2s live under
+    // .../PassiveDoodads/Grass/ which trees never use).
+    std::unordered_set<std::string> pm_detail_grass_paths;
 };
 
 } // namespace mve

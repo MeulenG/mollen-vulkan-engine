@@ -52,6 +52,14 @@ int main() {
             render_system.GetDescriptorPool(),
             render_system.SceneUBOBuffer());
 
+        // Load the GroundEffect DBC tables (texture + doodad) once,
+        // before any tiles stream in. ADT tile loading calls
+        // ScatterGrassForTile() which silently does nothing if the
+        // tables didn't load. A missing or unparseable DBC is logged
+        // by LoadGroundEffectTables but isn't fatal - the engine just
+        // renders without detail grass.
+        assets.LoadGroundEffectTables();
+
         mve::AnimationSystem animation_system;
         mve::EditorUISystem editor_ui{window, imgui_ctx, *offscreen,
                                        device, assets};
@@ -88,19 +96,16 @@ int main() {
         // bird's-eye made the editor read as a diorama. Ground level
         // (matches the target reference) shows trees + terrain at
         // proper density. User can switch via Tools menu.
-        // Northshire road - player-eye composition matching video
-        // frame 30 (cobblestone path with fence rails + lamp post +
-        // tree canopy). Target sits at the road centerline, camera
-        // pulled back and angled slightly downward so the path
-        // surface fills the lower half and trees + sky fill the
-        // upper half.
-        //   - Cobblestone path MCLY layer: visible (proven in 32)
-        //   - ElwynnWoodPost01 / WoodFence01 doodads: visible
-        //   - LampPost.M2 at (-9003, 88, -14): in frame
-        //   - Canopy trees flanking: in upper half
+        // Ground-eye close shot at the Northshire road, designed to
+        // catch detail-grass blades scattered around the camera and
+        // the cobblestone path in the same frame. orbit 8y radius +
+        // pitch +0.15 (~9deg downward look) puts the camera at
+        // ~91 yards Y (just above the ground at Y=89) so we're
+        // standing on the road looking slightly down at our feet.
+        // Grass cull radius is 60 yards so foreground blades render.
         glm::vec3 center{-9014.0f, 89.0f, -2.0f};
         cam->pm_camera.SetTarget(center);
-        cam->pm_camera.SetOrbit(28.0f, 1.57f, 0.20f);
+        cam->pm_camera.SetOrbit(8.0f, 1.57f, 0.15f);
         cam->pm_camera.SetMode(mve::CameraMode::FlyFirstPerson);
 
         // Preload around wherever the camera actually sits (which may be

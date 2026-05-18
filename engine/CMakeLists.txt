@@ -27,6 +27,7 @@ add_library(mollen-engine STATIC
     formats/adt_loader.cpp
     scene/terrain_mesh.cpp
     scene/terrain_streamer.cpp
+    scene/grass_scatter.cpp
 )
 
 target_include_directories(mollen-engine PUBLIC
@@ -38,6 +39,7 @@ target_link_libraries(mollen-engine PUBLIC
     glfw
     glm::glm
     imgui_lib
+    mollen-dbc
 )
 
 # Compile GLSL shaders to SPIR-V

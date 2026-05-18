@@ -676,7 +676,73 @@ Entity* AssetManager::LoadAdtTileIntoScene(
             spawn_attempts, spawn_failures, spawn_duplicates);
     }
 
+    // R4-grass: walk the MCNK / MCLY effect_ids and scatter grass M2s
+    // from the GroundEffect DBC tables. This is a separate pass from
+    // MDDF because grass is procedurally placed at runtime - it never
+    // appears in the ADT MDDF list. Skipped silently when the tables
+    // weren't loaded (LoadGroundEffectTables() failed or wasn't
+    // called).
+    ScatterGrassForTile(*tile);
+
     return entity;
+}
+
+bool AssetManager::LoadGroundEffectTables() {
+    // Asset layout: assets/dbc/GroundEffectTexture.dbc and
+    // assets/dbc/GroundEffectDoodad.dbc. Both ship with the WoW
+    // 3.3.5a client and were extracted at asset-prep time. Failure
+    // here is non-fatal - the rest of the engine renders without
+    // detail grass.
+    std::string tex_path =
+        std::string(MVE_ASSET_DIR) + "/dbc/GroundEffectTexture.dbc";
+    std::string doo_path =
+        std::string(MVE_ASSET_DIR) + "/dbc/GroundEffectDoodad.dbc";
+    pm_ground_effects_loaded =
+        pm_ground_effects.Load(tex_path, doo_path);
+    return pm_ground_effects_loaded;
+}
+
+void AssetManager::EnqueueDetailGrassInstance(
+    const std::string& wow_m2_path, const glm::mat4& model_matrix) {
+    if (wow_m2_path.empty()) return;
+    // Resolve identically to MDDF: ResolveWowAsset then ResolveM2Extension
+    // so the cache key matches whatever the M2 loader will use. Without
+    // this, two grass placements that differ only by .mdx vs .m2 in
+    // their source DBC produce two separate entities.
+    std::string fs_path = ResolveWowAsset(wow_m2_path);
+    fs_path = ResolveM2Extension(fs_path);
+
+    pm_detail_grass_paths.insert(fs_path);
+    PendingDoodadInstance pending{};
+    pending.model_matrix = model_matrix;
+    pm_pending_doodad_instances[fs_path].push_back(pending);
+}
+
+void AssetManager::ScatterGrassForTile(const AdtTile& tile) {
+    if (!pm_ground_effects_loaded) return;
+
+    // Conservative per-sub-cell cap so a 5x5 preload doesn't blow the
+    // descriptor pool. WoW's GroundEffectTexture.Density values reach
+    // 12+ in dense forest tiles; combined with 256 chunks * 64 sub-
+    // cells that's >150k placements per tile if we let it run free.
+    // 1 per sub-cell per layer means at most 4 * 64 * 256 = ~65k per
+    // tile, but in practice most sub-cells fall under the 10% alpha
+    // threshold or have effect_id=0 so real counts are ~5-15k.
+    constexpr int kMaxPerSubcell = 1;
+
+    std::vector<GrassPlacement> placements;
+    placements.reserve(8192);
+    mve::ScatterGrassForTile(tile, pm_ground_effects, kMaxPerSubcell, placements);
+
+    for (const auto& p : placements) {
+        EnqueueDetailGrassInstance(p.wow_m2_path, p.model_matrix);
+    }
+
+    if (!placements.empty()) {
+        std::fprintf(stderr,
+            "ScatterGrassForTile (%d, %d): %zu grass placements queued\n",
+            tile.tile_x, tile.tile_y, placements.size());
+    }
 }
 
 void AssetManager::FlushDoodadInstances(Scene& scene) {
@@ -924,6 +990,13 @@ void AssetManager::FlushDoodadInstances(Scene& scene) {
         auto* dic = entity->GetComponent<DoodadInstanceComponent>();
         dic->pm_instance_buffer = std::move(inst_buf);
         dic->pm_instance_count  = static_cast<uint32_t>(total_count);
+        // Tag the group as detail grass if any placement for this M2
+        // path came from the GroundEffect scatter (the set membership
+        // is sticky - once tagged, always tagged - since grass paths
+        // never alias to MDDF paths in practice).
+        dic->pm_is_detail_grass =
+            (pm_detail_grass_paths.find(m2_path) !=
+             pm_detail_grass_paths.end());
         dic->pm_submeshes.clear();
         dic->pm_submeshes.reserve(shared->pm_submeshes.size());
         for (const auto& ssm : shared->pm_submeshes) {
