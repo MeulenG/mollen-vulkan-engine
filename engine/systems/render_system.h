@@ -9,6 +9,7 @@
 #include "../scene/scene.h"
 #include "../scene/camera.h"
 #include "../scene/mesh.h"
+#include "../scene/light_cycle.h"
 
 #include <glm/glm.hpp>
 #include <memory>
@@ -82,6 +83,16 @@ public:
     void UpdateSceneUBO();
 
     SceneUBO& SceneData() { return pm_scene_data; }
+
+    // Day/night cycle wiring. SetLightCycle hands the RenderSystem a
+    // pointer to the AssetManager-owned cycle; the renderer calls
+    // Tick(dt) + Sample(cam, map) each frame to refresh SceneUBO +
+    // sky push constants from the interpolated DBC values. nullptr
+    // means "no cycle" - the SceneUBO falls back to whatever the
+    // constructor seeded (canonical Elwynn noon).
+    void SetLightCycle(LightCycle* cycle) { pm_light_cycle = cycle; }
+    LightCycle* GetLightCycle() { return pm_light_cycle; }
+
     const vk::raii::DescriptorSetLayout& DescriptorLayout() const { return pm_descriptor_layout; }
     const vk::raii::DescriptorSetLayout& TerrainDescriptorLayout() const { return pm_terrain_descriptor_layout; }
     mve::DescriptorPool& GetDescriptorPool() { return *pm_descriptor_pool; }
@@ -139,6 +150,14 @@ private:
     Mesh pm_ground_mesh;
 
     SceneUBO pm_scene_data{};
+
+    // Day/night cycle pointer. AssetManager owns the LightTables;
+    // app/main.cpp constructs the LightCycle and hands it here.
+    LightCycle* pm_light_cycle = nullptr;
+
+    // Last-sampled snapshot so the editor UI can display the
+    // current band colors without re-sampling.
+    LightSnapshot pm_last_snapshot{};
 };
 
 } // namespace mve

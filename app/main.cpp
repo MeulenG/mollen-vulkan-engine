@@ -60,6 +60,18 @@ int main() {
         // renders without detail grass.
         assets.LoadGroundEffectTables();
 
+        // Load the Light DBC tables (Light + LightParams + LightIntBand
+        // + LightFloatBand) and attach a LightCycle to the render
+        // system. The cycle interpolates the 18 LightIntBand colors +
+        // 6 LightFloatBand floats across a 16-keyframe per-day curve
+        // and drives the scene UBO + sky cone push constants every
+        // frame. Without it the renderer uses the hardcoded canonical
+        // Elwynn noon values seeded by the RenderSystem constructor.
+        assets.LoadLightTables();
+        mve::LightCycle light_cycle;
+        light_cycle.SetTables(&assets.Lights());
+        render_system.SetLightCycle(&light_cycle);
+
         mve::AnimationSystem animation_system;
         mve::EditorUISystem editor_ui{window, imgui_ctx, *offscreen,
                                        device, assets};
@@ -138,6 +150,13 @@ int main() {
 
             // ImGui frame
             imgui_ctx.NewFrame();
+
+            // Advance the day/night cycle clock. light_cycle.Tick
+            // wraps to a no-op when paused, which is the editor's
+            // default state - the user pins a specific time-of-day
+            // for stable comparisons and clicks "Real-time" to let
+            // it advance.
+            light_cycle.Tick(dt);
 
             // Systems. EditorUISystem owns the dockspace + menu/status
             // bars, so the host viewport gets its layout from there.

@@ -28,6 +28,7 @@ add_library(mollen-engine STATIC
     scene/terrain_mesh.cpp
     scene/terrain_streamer.cpp
     scene/grass_scatter.cpp
+    scene/light_cycle.cpp
 )
 
 target_include_directories(mollen-engine PUBLIC

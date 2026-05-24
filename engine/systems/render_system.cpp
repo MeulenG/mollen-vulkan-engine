@@ -399,6 +399,34 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
     // write is visible to the GPU immediately - no flush required.
     glm::vec3 cam_pos = active_camera.GetPosition();
     pm_scene_data.pm_camera_pos = cam_pos;
+
+    // Day/night cycle: if a LightCycle is wired, sample the
+    // interpolated Light DBC snapshot for the current time + camera
+    // position and copy the relevant fields into SceneUBO. The
+    // hardcoded "Elwynn noon" values from the constructor remain as
+    // a fallback when no cycle is attached or its tables didn't
+    // load. Map ID = 0 (Azeroth) for now; multi-map support is a
+    // future change.
+    if (pm_light_cycle) {
+        pm_last_snapshot = pm_light_cycle->Sample(cam_pos, /*map_id=*/0u);
+        pm_scene_data.pm_direct_color  = pm_last_snapshot.direct_color;
+        pm_scene_data.pm_ambient_color = pm_last_snapshot.ambient_color;
+        pm_scene_data.pm_fog_color     = pm_last_snapshot.sky_fog;
+        pm_scene_data.pm_fog_end       = pm_last_snapshot.fog_distance;
+        pm_scene_data.pm_fog_start     = pm_last_snapshot.fog_distance *
+                                          pm_last_snapshot.fog_multiplier;
+        // Recompute fog_rate from the new range. CalcFogRate:
+        //   farClip = max(500, cameraFar - 200)  (we hardcode 500)
+        //   range   = end - start
+        //   rate    = (1 - range/farClip)*5.5 + 1.5  in [1.5, 7.0]
+        const float far_clip = 500.0f;
+        float range = pm_scene_data.pm_fog_end - pm_scene_data.pm_fog_start;
+        float ratio = (range >= 0.0f && range <= far_clip) ? range / far_clip : 1.0f;
+        pm_scene_data.pm_fog_rate = std::clamp((1.0f - ratio) * 5.5f + 1.5f,
+                                                1.5f, 7.0f);
+        pm_scene_data.pm_light_dir = pm_last_snapshot.light_dir;
+    }
+
     pm_scene_ubo->Write(&pm_scene_data, sizeof(SceneUBO));
 
     // Extract frustum planes once - reused for terrain tile culling
@@ -420,18 +448,13 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
     // dense without paying for grass we couldn't see.
     constexpr float kGrassCullDistance = 60.0f;
 
-    // Background gradient. Push the canonical Elwynn 6-band sky cone
-    // colors so the shader can do a proper WoW sky procedure. These
-    // are hardcoded from LightIntBand for now; a future change will
-    // drive them from runtime DBC interpolation.
-    //
-    // BGRA -> RGB conversions of LightIntBand rows 2-5 + the fog
-    // color (row 7). At noon for LightParams ID 12:
-    //   row 2 SkyTop    #001F49 = (0.000, 0.122, 0.286)
-    //   row 3 SkyMiddle #3AA2CF = (0.227, 0.635, 0.812)
-    //   row 4 SkyBand1  #99DCF5 = (0.600, 0.863, 0.961)
-    //   row 5 SkyBand2  #AFDAE0 = (0.686, 0.855, 0.878)
-    //   row 7 SkyFog    #4D788F = (0.302, 0.471, 0.561) (== fog_color)
+    // Background gradient. The sky-cone shader takes 5 colors via
+    // push constant: SkyTop, SkyMiddle, SkyBand1, SkyBand2 (rows 2-5
+    // of LightIntBand) plus SkyFog (row 7) for the below-horizon
+    // tint. When a LightCycle is attached, these come from the
+    // current snapshot; when not, fall back to the constructor's
+    // canonical-Elwynn-noon literals via pm_scene_data.pm_fog_color
+    // and the hardcoded BGRA values below.
     struct BgPush {
         glm::vec4 sky_top;
         glm::vec4 sky_middle;
@@ -439,13 +462,22 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
         glm::vec4 sky_band2;
         glm::vec4 fog_color;
     };
-    BgPush bg_push{
-        glm::vec4{0.000f, 0.122f, 0.286f, 0.0f},
-        glm::vec4{0.227f, 0.635f, 0.812f, 0.0f},
-        glm::vec4{0.600f, 0.863f, 0.961f, 0.0f},
-        glm::vec4{0.686f, 0.855f, 0.878f, 0.0f},
-        glm::vec4{pm_scene_data.pm_fog_color, 0.0f},
-    };
+    BgPush bg_push;
+    if (pm_light_cycle) {
+        bg_push.sky_top    = glm::vec4{pm_last_snapshot.sky_top,    0.0f};
+        bg_push.sky_middle = glm::vec4{pm_last_snapshot.sky_middle, 0.0f};
+        bg_push.sky_band1  = glm::vec4{pm_last_snapshot.sky_band1,  0.0f};
+        bg_push.sky_band2  = glm::vec4{pm_last_snapshot.sky_band2,  0.0f};
+        bg_push.fog_color  = glm::vec4{pm_last_snapshot.sky_fog,    0.0f};
+    } else {
+        bg_push = BgPush{
+            glm::vec4{0.000f, 0.122f, 0.286f, 0.0f},
+            glm::vec4{0.227f, 0.635f, 0.812f, 0.0f},
+            glm::vec4{0.600f, 0.863f, 0.961f, 0.0f},
+            glm::vec4{0.686f, 0.855f, 0.878f, 0.0f},
+            glm::vec4{pm_scene_data.pm_fog_color, 0.0f},
+        };
+    }
     pm_bg_pipeline->Bind(cmd);
     cmd.pushConstants<BgPush>(
         *pm_bg_pipeline_layout, vk::ShaderStageFlagBits::eFragment, 0, bg_push);

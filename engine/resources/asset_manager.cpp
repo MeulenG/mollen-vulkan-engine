@@ -702,6 +702,16 @@ bool AssetManager::LoadGroundEffectTables() {
     return pm_ground_effects_loaded;
 }
 
+bool AssetManager::LoadLightTables() {
+    // Asset layout: assets/dbc/{Light,LightParams,LightIntBand,
+    // LightFloatBand}.dbc. All four ship with the WoW 3.3.5a client.
+    // Failure is non-fatal: the RenderSystem's LightCycle will
+    // produce default snapshots if these aren't loaded, which means
+    // the engine renders with the hardcoded "Elwynn noon" colors
+    // baked into the LightSnapshot defaults.
+    return pm_light_tables.Load(std::string(MVE_ASSET_DIR));
+}
+
 void AssetManager::EnqueueDetailGrassInstance(
     const std::string& wow_m2_path, const glm::mat4& model_matrix) {
     if (wow_m2_path.empty()) return;

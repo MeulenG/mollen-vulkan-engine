@@ -5,6 +5,7 @@
 #include "../scene/mesh.h"
 #include "../scene/scene.h"
 #include "../scene/grass_scatter.h"
+#include "../scene/light_cycle.h"
 #include "../resources/image.h"
 #include "../resources/descriptor.h"
 #include "../resources/texture_array.h"
@@ -99,6 +100,13 @@ public:
     // Read-only access for code that wants to drive the scatter
     // directly (e.g. tests or the terrain streamer).
     const GroundEffectTables& GroundEffects() const { return pm_ground_effects; }
+
+    // Load Light.dbc + LightParams.dbc + LightIntBand.dbc +
+    // LightFloatBand.dbc. Call once at engine startup. The
+    // RenderSystem reads from this via LightCycle to drive the
+    // SceneUBO + sky cone push constants per frame.
+    bool LoadLightTables();
+    const LightTables& Lights() const { return pm_light_tables; }
 
     // Enqueue one detail-grass placement. Mirrors the MDDF doodad
     // pending list but flags the M2 path as detail grass so the
@@ -228,6 +236,11 @@ private:
     // engine init. Empty until LoadGroundEffectTables() succeeds.
     GroundEffectTables pm_ground_effects;
     bool pm_ground_effects_loaded = false;
+
+    // Light.dbc + LightParams.dbc + LightIntBand.dbc + LightFloatBand.dbc,
+    // loaded once at engine init. The LightCycle held by RenderSystem
+    // points at this; nothing else owns it.
+    LightTables pm_light_tables;
 
     // The set of resolved fs paths that came from the detail-grass
     // scatter (rather than MDDF). Used by FlushDoodadInstances to
