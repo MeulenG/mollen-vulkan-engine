@@ -226,10 +226,12 @@ std::unique_ptr<WmoGroup> WmoLoader::LoadGroup(const std::string& fs_path) {
         h.flags2                = ReadU32(mogp, 60);
         h.parent_or_first_child = ReadI16(mogp, 64);
         h.next_split_child      = ReadI16(mogp, 66);
-        // padding at 68..75
 
-        // Sub-chunks live in [76 .. size). Recursive scan.
-        size_t sub_pos = 76;
+        // MOGP header is 68 bytes (verified by hex-dumping Stormwind_000.wmo:
+        // MVER header at file offset 0, MOGP chunk header at 0x0C, MOGP
+        // payload at 0x14, first sub-chunk MOPY at 0x58 = 0x14 + 68).
+        // Sub-chunks live in [68 .. size). Recursive scan.
+        size_t sub_pos = 68;
         const uint8_t* sub_base = mogp;
         size_t sub_end = size;
         while (sub_pos + 8 <= sub_end) {

@@ -74,9 +74,9 @@ struct WmoMogi {
     int32_t  name_ofs     = 0;   // byte offset into MOGN, -1 = none
 };
 
-// MOGP group header (76 bytes). The MOGP chunk wraps ALL the
+// MOGP group header (68 bytes). The MOGP chunk wraps ALL the
 // group-file sub-chunks inside its payload (it's recursive - the
-// remaining sub-chunks live in [76 .. mogp_payload_size)). Same
+// remaining sub-chunks live in [68 .. mogp_payload_size)). Same
 // trick as ADT's MCNK.
 struct WmoMogp {
     uint32_t name_ofs              = 0;
@@ -96,7 +96,6 @@ struct WmoMogp {
     uint32_t flags2                = 0;
     int16_t  parent_or_first_child = -1;
     int16_t  next_split_child      = -1;
-    uint32_t padding               = 0;
 };
 
 // MOGP.flags bits (canonical SMOGroupFlags from WebWowViewerCpp).

@@ -1239,12 +1239,13 @@ Entity* AssetManager::LoadWmoPlacement(
     bbox_mins.reserve(root->header.n_groups);
     bbox_maxs.reserve(root->header.n_groups);
 
+    size_t grp_load_fail = 0, grp_build_empty = 0;
     for (uint32_t gi = 0; gi < root->header.n_groups; ++gi) {
         char suffix[16];
         std::snprintf(suffix, sizeof(suffix), "_%03u.wmo", gi);
         std::string gpath = stem + suffix;
         auto grp = WmoLoader::LoadGroup(gpath);
-        if (!grp) continue;
+        if (!grp) { ++grp_load_fail; continue; }
 
         auto gpu = WmoMesh::Build(pm_device, *grp);
         if (gpu.mesh) {
@@ -1258,9 +1259,19 @@ Entity* AssetManager::LoadWmoPlacement(
             bbox_maxs.emplace_back(gi_info.bbox_max[0],
                                     gi_info.bbox_max[1],
                                     gi_info.bbox_max[2], 0.0f);
+        } else {
+            ++grp_build_empty;
         }
     }
-    if (group_gpus.empty()) return nullptr;
+    if (group_gpus.empty()) {
+        std::fprintf(stderr,
+            "  WMO %s: n_groups=%u, loaded=%zu, build_empty=%zu, "
+            "load_fail=%zu -> bbox fallback\n",
+            p.wow_path.c_str(),
+            root->header.n_groups, group_gpus.size(),
+            grp_build_empty, grp_load_fail);
+        return nullptr;
+    }
 
     // Build the WMO model matrix. Three components, applied right to
     // left (so vertex transforms as: B then R_world then T):
