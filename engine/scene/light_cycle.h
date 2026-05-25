@@ -201,9 +201,16 @@ public:
     // stays good for ~48 hours of continuous play.
     double GetGameTimeSeconds() const { return pm_t_seconds; }
 
+    // Continuous REAL-time accumulator in seconds (no day_speed
+    // multiplier applied). Game-time runs 60x faster than real-time
+    // by default, which makes the clouds whip across the sky and the
+    // river textures strobe; shader animations should use this instead.
+    double GetRealTimeSeconds() const { return pm_real_seconds; }
+
 private:
     const LightTables* pm_tables = nullptr;
     double pm_t_seconds = 12.0 * 3600.0;     // start at noon
+    double pm_real_seconds = 0.0;            // dt-accumulated, no day_speed
     float  pm_day_speed = 60.0f;             // WoW default: 24 min per day
     bool   pm_paused = false;
 };

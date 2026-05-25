@@ -338,6 +338,10 @@ void LightCycle::Tick(float dt_seconds) {
     if (pm_paused) return;
     pm_t_seconds += static_cast<double>(dt_seconds) *
                     static_cast<double>(pm_day_speed);
+    // Real-time accumulator is unaffected by day_speed, so shader
+    // animations (cloud scroll, water UV scroll) keep their natural
+    // pacing regardless of whether the day cycle is sped up for editing.
+    pm_real_seconds += static_cast<double>(dt_seconds);
 }
 
 float LightCycle::GetDayFraction() const {

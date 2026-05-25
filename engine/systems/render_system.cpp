@@ -432,7 +432,14 @@ void RenderSystem::Init() {
     water_config.attribute_descriptions  = WaterVertex::GetAttributeDescriptions();
     water_config.rasterization_info.cullMode = vk::CullModeFlagBits::eNone;
     water_config.depth_stencil_info.depthTestEnable  = vk::True;
-    water_config.depth_stencil_info.depthWriteEnable = vk::True;
+    // Depth-write OFF: keeping it on caused waterfall M2 doodads (and
+    // anything else alpha-blended behind the water surface in screen
+    // space) to fail the depth test against the water polygon and
+    // disappear. The WebWowViewerCpp reference enables depth-write
+    // because it pairs with a later opaque underwater pass (fish, kelp)
+    // that should be occluded by the surface; we don't have that pass
+    // yet, so depth-write off is the right v1 trade-off.
+    water_config.depth_stencil_info.depthWriteEnable = vk::False;
     water_config.color_blend_attachment.blendEnable         = vk::True;
     water_config.color_blend_attachment.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha;
     water_config.color_blend_attachment.dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
@@ -538,7 +545,7 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
             glm::vec4{pm_last_snapshot.cloud_layer2_ambient, 0.0f};
         bg_push.cloud_anim = glm::vec4{
             pm_last_snapshot.cloud_density,
-            static_cast<float>(pm_light_cycle->GetGameTimeSeconds()),
+            static_cast<float>(pm_light_cycle->GetRealTimeSeconds()),
             pm_last_snapshot.celestial_glow_through,
             0.0f};
     } else {
@@ -671,7 +678,7 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
         // 0.85) still produce a reasonable river look.
         float time_sec  = 0.0f;
         if (pm_light_cycle) {
-            time_sec = static_cast<float>(pm_light_cycle->GetGameTimeSeconds());
+            time_sec = static_cast<float>(pm_light_cycle->GetRealTimeSeconds());
         }
         wp.params = glm::vec4{pm_last_snapshot.water_shallow_alpha,
                               pm_last_snapshot.water_deep_alpha,
