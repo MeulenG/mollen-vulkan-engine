@@ -51,6 +51,12 @@ public:
     // where the raii destruction path has caused trouble.
     vk::DescriptorSet AllocateSetRaw(const vk::raii::DescriptorSetLayout& layout);
 
+    // Return a raw handle to the pool. Caller MUST ensure no in-flight
+    // command buffer is still referencing the set (typically a
+    // device.waitIdle() before the call). The pool was created with
+    // eFreeDescriptorSet so this is spec-legal; no-op when set is null.
+    void FreeSet(vk::DescriptorSet set);
+
 private:
     Device& device_;
     vk::raii::DescriptorPool pool_{nullptr};

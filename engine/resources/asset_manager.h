@@ -178,6 +178,11 @@ public:
     // be referenced by an in-flight command buffer).
     Device& GetDevice() { return pm_device; }
 
+    // The descriptor pool entities allocate sets from. Exposed so
+    // TerrainStreamer can return tile sets to the pool on eviction
+    // (otherwise the pool exhausts after a few minutes of streaming).
+    DescriptorPool* GetDescriptorPool() { return pm_descriptor_pool; }
+
 private:
     Device& pm_device;
 

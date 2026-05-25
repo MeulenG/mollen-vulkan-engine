@@ -169,20 +169,23 @@ void RenderSystem::Init() {
     //   M2:      1 UBO + 1 sampler  + 2 storage (bones + instances)
     //   Terrain: 1 UBO + 2 samplers + 1 storage (chunk meta)
     //
-    // R4.5 collapses ~4650 doodad placements into ~50 instanced entities
-    // (one per unique M2 path). So the M2 set demand drops dramatically
-    // and the pool's main consumer is now terrain tiles (25 at radius
-    // 2). 2048 gives plenty of headroom even if a future change loosens
-    // dedup or adds animated doodads.
+    // Pool sizing: terrain tile sets are now returned to the pool on
+    // eviction (TerrainStreamer::Update -> DescriptorPool::FreeSet), so
+    // the terrain demand is bounded by the active streaming radius
+    // (~25 tiles). The M2 material cache is path-deduplicated and
+    // never evicted (pm_shared_m2_material lives for AssetManager's
+    // lifetime), so its consumption is bounded by the number of unique
+    // M2 paths in the loaded area - ~1500 paths * 2-3 submeshes for a
+    // full Elwynn explore. 32768 gives healthy headroom for cross-map
+    // flight sessions until refcounted doodad eviction lands.
     //
-    // FreeDescriptorSet flag lets vk::raii::DescriptorSet release back
-    // to the pool when an entity is destroyed (R3 tile eviction).
+    // FreeDescriptorSet flag is required for FreeSet() to be legal.
     pm_descriptor_pool = std::make_unique<DescriptorPool>(
-        pm_device, 2048,
+        pm_device, 32768,
         std::vector<vk::DescriptorPoolSize>{
-            {vk::DescriptorType::eUniformBuffer,        2048},
-            {vk::DescriptorType::eCombinedImageSampler, 4096},
-            {vk::DescriptorType::eStorageBuffer,        4096},
+            {vk::DescriptorType::eUniformBuffer,        32768},
+            {vk::DescriptorType::eCombinedImageSampler, 65536},
+            {vk::DescriptorType::eStorageBuffer,        65536},
         },
         vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet);
 

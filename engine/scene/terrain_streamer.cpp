@@ -1,11 +1,14 @@
 #include "terrain_streamer.h"
 
+#include "components/terrain_component.h"
 #include "components/terrain_tile_component.h"
 #include "../formats/adt_types.h"
 #include "../formats/wdt_loader.h"
+#include "../resources/descriptor.h"
 
 #include <algorithm>
 #include <cstdio>
+#include <unordered_set>
 
 namespace mve {
 
@@ -133,11 +136,21 @@ void TerrainStreamer::Update(const glm::vec3& camera_pos_engine,
     // Drain the GPU before destroying entities. The component
     // destructors release CPU resources (textures, buffers,
     // vertex/index buffer raii wrappers) which the in-flight command
-    // buffer is still sampling. Descriptor sets stay valid because we
-    // hold them as raw handles in the components - the pool reclaims
-    // them at shutdown.
+    // buffer is still sampling. With the pool created using
+    // eFreeDescriptorSet, returning the sets back is now spec-legal
+    // and necessary - without it the pool exhausts after a few
+    // minutes of flight (R3 was hitting ErrorOutOfPoolMemory).
     if (!to_destroy.empty()) {
         pm_assets.GetDevice().GetDevice().waitIdle();
+        DescriptorPool* pool = pm_assets.GetDescriptorPool();
+        std::unordered_set<uint32_t> doomed(to_destroy.begin(), to_destroy.end());
+        pm_scene.Each<TerrainComponent>(
+            [&](Entity& e, TerrainComponent& tc) {
+                if (doomed.count(e.Id()) && tc.pm_descriptor_set && pool) {
+                    pool->FreeSet(tc.pm_descriptor_set);
+                    tc.pm_descriptor_set = VK_NULL_HANDLE;
+                }
+            });
     }
     for (uint32_t id : to_destroy) {
         pm_scene.DestroyEntity(id);

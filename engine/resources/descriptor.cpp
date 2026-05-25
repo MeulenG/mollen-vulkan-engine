@@ -65,6 +65,16 @@ vk::DescriptorSet DescriptorPool::AllocateSetRaw(const vk::raii::DescriptorSetLa
     return vk::DescriptorSet(raw);
 }
 
+void DescriptorPool::FreeSet(vk::DescriptorSet set) {
+    if (!set) return;
+    // vk::raii::Device hides freeDescriptorSets (raii layer expects
+    // wrapper destruction). Drop to the plain vk::Device wrapper to
+    // make the C call directly. Spec-legal because the pool was created
+    // with eFreeDescriptorSet.
+    vk::Device raw_device = *device_.GetDevice();
+    (void)raw_device.freeDescriptorSets(*pool_, 1, &set);
+}
+
 DescriptorWriter& DescriptorWriter::WriteBuffer(
     uint32_t binding,
     const vk::DescriptorBufferInfo& buffer_info,
