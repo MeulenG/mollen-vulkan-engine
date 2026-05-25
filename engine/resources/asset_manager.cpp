@@ -1320,42 +1320,44 @@ Entity* AssetManager::LoadWmoPlacement(
         return nullptr;
     }
 
-    // Build the WMO model matrix. Three components, applied right to
-    // left (so vertex transforms as: B then R_world then T):
+    // Build the WMO model matrix per the WoWee reference impl
+    // (Kelsidavis/WoWee src/rendering/wmo_renderer.cpp:2237-2253).
+    // Their model: WoW Ry(B)*Rx(A)*Rz(C) becomes GL Rz(B)*Ry(-A)*Rx(-C)
+    // applied to MOVT vertices that are consumed RAW (no basis swap).
     //
-    //   B = basis swap from WMO server frame (Z-up) to engine frame
-    //       (Y-up). Per wowdev.wiki/WMO/v17, MOVT vertices are in
-    //       server frame: X=north-south, Y=east-west, Z=up. Our
-    //       engine frame is: X=server.X, Y=server.Z (up), Z=server.Y.
-    //       So the swap is just Y<->Z, NOT a 3-cycle permutation.
-    //       The previous 3-cycle was rotating every WMO by an extra
-    //       120 degrees around the (1,1,1) diagonal in addition to
-    //       the placement rotation - which is why Stormwind's gate
-    //       didn't face the direction Elwynn extends.
+    // Scrambled Euler triple (radians): (-rot_z, -rot_x, rot_y + pi).
+    // The +pi on yaw is because adtToWorld mirrors both horizontal
+    // axes (K - pos.x and K - pos.z), which flips heading by 180 deg.
+    // The sign flips on pitch and roll compensate for the same mirror
+    // landing on the pitch/roll axes.
     //
-    //   R_world = MODF Euler applied in engine-frame axes, matching
-    //       the MDDF/M2 convention since WMOs use the same MDDF
-    //       on-disk rotation convention:
-    //         yaw   (rot_y) -> rotate about engine Y = (0,1,0) up
-    //         pitch (rot_x) -> rotate about engine Z = (0,0,1)
-    //         roll  (rot_z) -> rotate about engine X = (1,0,0)
-    //         order: YXZ
+    // Axis correspondence WoWee renderXYZ -> our engine basis:
+    //   WoWee renderX (their "west")  -> our engine.Z (server.Y)
+    //   WoWee renderY (their "north") -> our engine.X (server.X)
+    //   WoWee renderZ (up)            -> our engine.Y (up)
     //
-    //   T = translate to engine_pos
+    // So WoWee's Rx_their(angle) = our R(angle, (0,0,1)),
+    //    WoWee's Ry_their(angle) = our R(angle, (1,0,0)),
+    //    WoWee's Rz_their(angle) = our R(angle, (0,1,0)).
     //
-    glm::mat4 B{0.0f};
-    B[0] = glm::vec4{1, 0, 0, 0};   // MOVT.x -> engine.X (server.X)
-    B[1] = glm::vec4{0, 0, 1, 0};   // MOVT.y -> engine.Z (server.Y)
-    B[2] = glm::vec4{0, 1, 0, 0};   // MOVT.z -> engine.Y (server.Z up)
-    B[3] = glm::vec4{0, 0, 0, 1};
-
-    glm::quat q_yaw   = glm::angleAxis(glm::radians(p.rot_deg.y), glm::vec3{0, 1, 0});
-    glm::quat q_pitch = glm::angleAxis(glm::radians(p.rot_deg.x), glm::vec3{0, 0, 1});
-    glm::quat q_roll  = glm::angleAxis(glm::radians(p.rot_deg.z), glm::vec3{1, 0, 0});
-    glm::mat4 R = glm::mat4_cast(q_yaw * q_pitch * q_roll);
+    // Composition with Rx innermost (vertex hit by Rx first):
+    //   M = T * Rz_their * Ry_their * Rx_their
+    //     = T * R(rot_y+180, Y_up) * R(-rot_x, X_north) * R(-rot_z, Z_west)
+    //
+    // No basis matrix B. The previous T*R*B with a permutation matrix
+    // was applying an extra 120-deg rotation around (1,1,1) on top of
+    // the placement, which is why Stormwind didn't face Elwynn.
+    glm::quat q_z_outer = glm::angleAxis(
+        glm::radians(p.rot_deg.y + 180.0f), glm::vec3{0, 1, 0});
+    glm::quat q_y_mid   = glm::angleAxis(
+        glm::radians(-p.rot_deg.x),         glm::vec3{1, 0, 0});
+    glm::quat q_x_inner = glm::angleAxis(
+        glm::radians(-p.rot_deg.z),         glm::vec3{0, 0, 1});
+    glm::quat q_world = q_z_outer * q_y_mid * q_x_inner;
+    glm::mat4 R = glm::mat4_cast(q_world);
 
     glm::mat4 T = glm::translate(glm::mat4{1.0f}, p.engine_pos);
-    glm::mat4 model = T * R * B;
+    glm::mat4 model = T * R;
 
     char entity_name[96];
     std::snprintf(entity_name, sizeof(entity_name), "WMO_%u", p.unique_id);
