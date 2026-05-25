@@ -25,6 +25,7 @@ add_library(mollen-engine STATIC
     formats/m2_loader.cpp
     formats/wdt_loader.cpp
     formats/adt_loader.cpp
+    formats/wmo_loader.cpp
     scene/terrain_mesh.cpp
     scene/terrain_streamer.cpp
     scene/water_mesh.cpp
