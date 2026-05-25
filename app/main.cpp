@@ -185,10 +185,20 @@ int main() {
                 bool d = ImGui::IsKeyDown(ImGuiKey_D);
                 bool sprint = ImGui::GetIO().KeyShift;
                 player.Update(dt, cam->pm_camera, w, a, s, d, sprint);
+
+                // Snap the player's Y to the terrain. Without this
+                // the player floats at fixed Y while the ground slopes
+                // underneath. GetGroundY returns false off-tile, in
+                // which case we leave the previous Y alone (player
+                // glides off the loaded region instead of falling).
+                glm::vec3 pos = player.GetPosition();
+                float ground_y;
+                if (assets.GetGroundY(pos, &ground_y)) {
+                    pos.y = ground_y;
+                    player.SetPosition(pos);
+                }
+
                 cam->pm_camera.SetTarget(player.GetEyePos());
-                // Hand the player position to the renderer so it draws
-                // the placeholder cube at the right spot. Will be
-                // replaced by a real M2 character entity in Phase 2C.
                 render_system.SetPlayerPos(player.GetPosition());
             } else {
                 render_system.HidePlayerMarker();

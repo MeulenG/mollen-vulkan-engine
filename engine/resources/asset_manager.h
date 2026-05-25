@@ -108,6 +108,18 @@ public:
     bool LoadLightTables();
     const LightTables& Lights() const { return pm_light_tables; }
 
+    // Sample the ground height (engine.y) at an engine-space (x, z)
+    // position. Returns true and writes out_y on success; returns
+    // false when the position falls outside any loaded tile (caller
+    // should keep the previous Y in that case).
+    //
+    // Used by the player controller in Phase 2B to make the placeholder
+    // character follow the terrain contour instead of floating at a
+    // fixed Y. Implementation: lookup the tile that contains the
+    // position, find the chunk inside that tile, then bilerp the
+    // MCVT 9x9 outer-vertex grid.
+    bool GetGroundY(const glm::vec3& engine_pos, float* out_y) const;
+
     // Enqueue one detail-grass placement. Mirrors the MDDF doodad
     // pending list but flags the M2 path as detail grass so the
     // renderer can apply a shorter cull distance to it. The path is
@@ -241,6 +253,22 @@ private:
     // loaded once at engine init. The LightCycle held by RenderSystem
     // points at this; nothing else owns it.
     LightTables pm_light_tables;
+
+    // Per-tile cached MCVT height grid for GetGroundY queries. The
+    // full AdtTile is parsed-and-dropped during LoadAdtTileIntoScene
+    // (~5 MB of mesh+texture data we'd rather not retain) so we copy
+    // just the chunks' 9x9 outer height grid + NW-corner positions
+    // out before the tile drops. ~80 KB per tile, ~2 MB total at
+    // a 5x5 preload. Keyed by tile_x * 64 + tile_y.
+    struct ChunkHeightCache {
+        float wow_x = 0.0f;          // chunk's NW corner, south-axis
+        float wow_y = 0.0f;          // chunk's NW corner, east-axis
+        float y_outer[81] = {0.0f};  // 9x9 grid, y_outer[r*9+c]
+    };
+    struct TileHeightCache {
+        ChunkHeightCache chunks[256];
+    };
+    std::unordered_map<uint32_t, TileHeightCache> pm_tile_height_cache;
 
     // The set of resolved fs paths that came from the detail-grass
     // scatter (rather than MDDF). Used by FlushDoodadInstances to

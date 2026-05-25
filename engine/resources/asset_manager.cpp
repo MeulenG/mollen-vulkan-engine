@@ -486,6 +486,28 @@ Entity* AssetManager::LoadAdtTileIntoScene(
     tile->tile_x = tile_x;
     tile->tile_y = tile_y;
 
+    // Cache the heightmap before the AdtTile gets dropped at end of
+    // this function. PlayerController queries this via GetGroundY to
+    // make the player follow terrain contour. Stored sparse - tiles
+    // evicted by the streamer aren't currently removed from this
+    // cache (memory leak in the strict sense, but ~80 KB/tile means
+    // even a full Azeroth = 64*64*80 = 320 MB which is fine).
+    {
+        const uint32_t key = static_cast<uint32_t>(tile_x) * 64u +
+                              static_cast<uint32_t>(tile_y);
+        TileHeightCache cache{};
+        for (int i = 0; i < kAdtChunksPerTile; ++i) {
+            const auto& src = tile->chunks[i];
+            auto& dst = cache.chunks[i];
+            dst.wow_x = src.wow_x;
+            dst.wow_y = src.wow_y;
+            for (int j = 0; j < 81; ++j) {
+                dst.y_outer[j] = src.heights.y_outer[j];
+            }
+        }
+        pm_tile_height_cache[key] = cache;
+    }
+
     // Build (or look up cached) mesh + alpha + chunk_meta.
     char mesh_key[32];
     std::snprintf(mesh_key, sizeof(mesh_key), "adt:%d_%d", tile_x, tile_y);
@@ -700,6 +722,84 @@ bool AssetManager::LoadGroundEffectTables() {
     pm_ground_effects_loaded =
         pm_ground_effects.Load(tex_path, doo_path);
     return pm_ground_effects_loaded;
+}
+
+bool AssetManager::GetGroundY(const glm::vec3& engine_pos,
+                                float* out_y) const {
+    // Engine -> WoW frame:
+    //   engine.x = wow_y (east-axis)
+    //   engine.z = wow_x (south-axis)
+    //   engine.y = wow_z (up)
+    const float wow_x = engine_pos.z;
+    const float wow_y = engine_pos.x;
+
+    // Tile coords. Tile (32, 32) sits at WoW origin; both axes count
+    // up TOWARD the southern/eastern edge with each tile spanning
+    // 533.333 yards. The +0.5 offset puts wow=0 in the centre of
+    // tile 32 not at its boundary.
+    const float kTileSize = kAdtTileSize;
+    int tile_x = 32 - static_cast<int>(std::floor(wow_x / kTileSize + 0.5f));
+    int tile_y = 32 - static_cast<int>(std::floor(wow_y / kTileSize + 0.5f));
+    // Try the analytic tile first, plus the 8 neighbours, since the
+    // analytic tile math can land just outside the chunk grid at
+    // tile borders.
+    for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            int tx = tile_x + dx;
+            int ty = tile_y + dy;
+            if (tx < 0 || tx > 63 || ty < 0 || ty > 63) continue;
+            uint32_t key = static_cast<uint32_t>(tx) * 64u +
+                            static_cast<uint32_t>(ty);
+            auto it = pm_tile_height_cache.find(key);
+            if (it == pm_tile_height_cache.end()) continue;
+
+            const TileHeightCache& cache = it->second;
+            for (int i = 0; i < kAdtChunksPerTile; ++i) {
+                const auto& ch = cache.chunks[i];
+                // Chunk footprint: wow_x in [ch.wow_x - kChunkSize,
+                // ch.wow_x] (the chunk's NW corner has the LARGEST
+                // wow_x; moving south decreases it). Same for wow_y
+                // (east axis). A tiny epsilon avoids missing edges
+                // where the position sits exactly on a chunk seam.
+                const float kChunk = kAdtChunkSize;
+                const float eps = 1e-3f;
+                if (wow_x > ch.wow_x + eps) continue;
+                if (wow_x < ch.wow_x - kChunk - eps) continue;
+                if (wow_y > ch.wow_y + eps) continue;
+                if (wow_y < ch.wow_y - kChunk - eps) continue;
+
+                // Position within chunk, normalised to [0, 1]:
+                //   col_norm = south-axis fraction (0 = north edge)
+                //   row_norm = east-axis fraction  (0 = east edge)
+                float col_norm = (ch.wow_x - wow_x) / kChunk;
+                float row_norm = (ch.wow_y - wow_y) / kChunk;
+                col_norm = std::clamp(col_norm, 0.0f, 1.0f);
+                row_norm = std::clamp(row_norm, 0.0f, 1.0f);
+
+                // Bilerp the 9x9 outer-vertex grid. Same convention
+                // as grass_scatter.cpp's SampleHeight - the indexing
+                // is y_outer[r * 9 + c] where r is east-axis index
+                // and c is south-axis index.
+                float fr = row_norm * 8.0f;
+                float fc = col_norm * 8.0f;
+                int r0 = static_cast<int>(std::floor(fr));
+                int c0 = static_cast<int>(std::floor(fc));
+                int r1 = std::min(r0 + 1, 8);
+                int c1 = std::min(c0 + 1, 8);
+                float tr = fr - r0;
+                float tc = fc - c0;
+                float h00 = ch.y_outer[r0 * 9 + c0];
+                float h10 = ch.y_outer[r1 * 9 + c0];
+                float h01 = ch.y_outer[r0 * 9 + c1];
+                float h11 = ch.y_outer[r1 * 9 + c1];
+                float h_c0 = h00 + (h10 - h00) * tr;
+                float h_c1 = h01 + (h11 - h01) * tr;
+                *out_y = h_c0 + (h_c1 - h_c0) * tc;
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 bool AssetManager::LoadLightTables() {
