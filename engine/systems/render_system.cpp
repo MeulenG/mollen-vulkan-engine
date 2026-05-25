@@ -483,6 +483,13 @@ void RenderSystem::Init() {
     wmo_config.depth_attachment_format = pm_offscreen.DepthFormat();
     wmo_config.binding_descriptions    = WmoVertex::GetBindingDescriptions();
     wmo_config.attribute_descriptions  = WmoVertex::GetAttributeDescriptions();
+    // The WMO model matrix contains an inner Y-Z swap (a reflection,
+    // det = -1) to convert Z-up MOVT vertices to our Y-up engine.
+    // The reflection inverts triangle winding, so backface culling
+    // would discard the visible faces. Disable culling for WMO until
+    // we switch the conversion to a pure rotation or pre-swap MOVT at
+    // load time (and flip indices).
+    wmo_config.rasterization_info.cullMode = vk::CullModeFlagBits::eNone;
 
     pm_wmo_pipeline = std::make_unique<Pipeline>(
         pm_device, shader_dir + "/wmo.vert.spv", shader_dir + "/wmo.frag.spv",

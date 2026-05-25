@@ -1347,6 +1347,16 @@ Entity* AssetManager::LoadWmoPlacement(
     // No basis matrix B. The previous T*R*B with a permutation matrix
     // was applying an extra 120-deg rotation around (1,1,1) on top of
     // the placement, which is why Stormwind didn't face Elwynn.
+    // Innermost: Y-Z swap. MOVT vertices are Z-up (server frame). Our
+    // engine is Y-up. Without this swap, the up component lands in
+    // engine.Z (a horizontal axis) - putting Stormwind on its side.
+    // The swap is a REFLECTION (det = -1) which flips triangle winding,
+    // so the WMO pipeline must run with cullMode=eNone (set in
+    // render_system.cpp).
+    glm::mat4 swapYZ{1.0f};
+    swapYZ[1] = glm::vec4{0, 0, 1, 0};   // input.y -> output.z
+    swapYZ[2] = glm::vec4{0, 1, 0, 0};   // input.z -> output.y
+
     glm::quat q_z_outer = glm::angleAxis(
         glm::radians(p.rot_deg.y + 180.0f), glm::vec3{0, 1, 0});
     glm::quat q_y_mid   = glm::angleAxis(
@@ -1357,7 +1367,7 @@ Entity* AssetManager::LoadWmoPlacement(
     glm::mat4 R = glm::mat4_cast(q_world);
 
     glm::mat4 T = glm::translate(glm::mat4{1.0f}, p.engine_pos);
-    glm::mat4 model = T * R;
+    glm::mat4 model = T * R * swapYZ;
 
     char entity_name[96];
     std::snprintf(entity_name, sizeof(entity_name), "WMO_%u", p.unique_id);
