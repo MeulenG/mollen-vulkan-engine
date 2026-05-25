@@ -708,25 +708,28 @@ Entity* AssetManager::LoadAdtTileIntoScene(
         // WoW -> engine: (east, up, south).
         glm::vec3 engine_pos(mcnk_y, mcnk_z, mcnk_x);
 
-        // WoW MDDF rotation is Euler degrees applied YXZ (yaw, pitch,
-        // roll about the WoW axes). Build the quaternion in WoW frame
-        // then compose with the -90 X-axis rotation that converts WoW
-        // Z-up to engine Y-up.
-        glm::quat q_wow =
-              glm::angleAxis(glm::radians(d.rot_y_deg), glm::vec3{0, 1, 0})
-            * glm::angleAxis(glm::radians(d.rot_x_deg), glm::vec3{1, 0, 0})
-            * glm::angleAxis(glm::radians(d.rot_z_deg), glm::vec3{0, 0, 1});
-        glm::quat q_axis = glm::angleAxis(glm::radians(-90.0f), glm::vec3{1, 0, 0});
-        glm::quat q_final = q_axis * q_wow;
+        // MDDF on-disk frame is (X=south, Y=UP, Z=east); M2 vertices are
+        // stored Z-up. The MDDF Euler is applied in WORLD frame after
+        // the model has been axis-swapped from M2-local to engine basis.
+        // The axis correspondences MDDF -> engine are:
+        //   MDDF Y (up)    -> engine Y (up)    -> yaw axis  (0,1,0)
+        //   MDDF X (south) -> engine Z (south) -> pitch axis (0,0,1)
+        //   MDDF Z (east)  -> engine X (east)  -> roll axis  (1,0,0)
+        // YXZ application order matches the MDDF spec.
+        glm::quat q_yaw   = glm::angleAxis(glm::radians(d.rot_y_deg), glm::vec3{0, 1, 0});
+        glm::quat q_pitch = glm::angleAxis(glm::radians(d.rot_x_deg), glm::vec3{0, 0, 1});
+        glm::quat q_roll  = glm::angleAxis(glm::radians(d.rot_z_deg), glm::vec3{1, 0, 0});
+        glm::quat q_world = q_yaw * q_pitch * q_roll;
+        // M2 axis swap: -90 around engine X brings M2 +Z (up) to engine
+        // +Y (up). Applied as the INNERMOST rotation so the placement
+        // rotation operates on an already-engine-oriented model.
+        glm::quat q_m2_axis = glm::angleAxis(glm::radians(-90.0f), glm::vec3{1, 0, 0});
 
         glm::vec3 scale_vec(d.scale);
 
-        // Build the per-instance model matrix and park it in the
-        // pending list. The shader will multiply this against the
-        // skin-bind-pose position to land each vertex in world space.
-        //   M = T(engine_pos) * R(q_final) * S(scale)
+        // M = T(engine_pos) * R(q_world) * R(q_m2_axis) * S(scale)
         glm::mat4 m = glm::translate(glm::mat4{1.0f}, engine_pos);
-        m = m * glm::mat4_cast(q_final);
+        m = m * glm::mat4_cast(q_world * q_m2_axis);
         m = glm::scale(m, scale_vec);
 
         PendingDoodadInstance pending{};
