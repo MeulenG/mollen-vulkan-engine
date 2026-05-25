@@ -523,6 +523,28 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
         pm_player_mesh.Draw(cmd);
     }
 
+    // Phase 2E stage 1: WMO bounding-box markers. Each WMO MODF
+    // placement becomes one colored cube sized to fill the WMO's
+    // AABB. Cheap proxy until the full WMO geometry loader lands -
+    // tells us where buildings ARE before we can render their
+    // detailed geometry.
+    if (!pm_wmo_bboxes.empty()) {
+        pm_player_mesh.Bind(cmd);   // reuse the unit cube
+        for (const auto& m : pm_wmo_bboxes) {
+            glm::mat4 mat = glm::translate(glm::mat4{1.0f},
+                                            m.pos + glm::vec3{0.0f, m.extents.y * 0.5f, 0.0f});
+            mat = glm::scale(mat, m.extents);
+            PushConstants push{};
+            push.pm_model = mat;
+            push.pm_mvp   = active_camera.GetProjectionMatrix() *
+                             active_camera.GetViewMatrix() * mat;
+            cmd.pushConstants<PushConstants>(
+                *pm_ground_pipeline_layout,
+                vk::ShaderStageFlagBits::eVertex, 0, push);
+            pm_player_mesh.Draw(cmd);
+        }
+    }
+
     // Terrain entities. Drawn before model entities so the depth buffer
     // has terrain depth written first; model entities (doodads in R4)
     // then test against it. Frustum culled by TerrainTileComponent's

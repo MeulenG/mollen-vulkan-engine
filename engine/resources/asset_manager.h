@@ -108,6 +108,23 @@ public:
     bool LoadLightTables();
     const LightTables& Lights() const { return pm_light_tables; }
 
+    // One resolved WMO placement, ready to spawn or visualise. The
+    // ADT MODF parsing collects these per tile, with positions
+    // already converted to engine space + bbox preserved as raw
+    // (lo, hi) in WoW pre-engine-swap coords (we use it as a size
+    // proxy only, not actually positioned).
+    struct WmoPlacement {
+        std::string wow_path;       // backslashed, e.g. WORLD\WMO\AZEROTH\...
+        glm::vec3   engine_pos{0.0f};
+        glm::vec3   bbox_extents{1.0f};   // size in yards
+        glm::vec3   rot_deg{0.0f};
+        uint32_t    unique_id = 0;
+    };
+    const std::vector<WmoPlacement>& PendingWmoPlacements() const {
+        return pm_pending_wmo_placements;
+    }
+    void ClearPendingWmoPlacements() { pm_pending_wmo_placements.clear(); }
+
     // Sample the ground height (engine.y) at an engine-space (x, z)
     // position. Returns true and writes out_y on success; returns
     // false when the position falls outside any loaded tile (caller
@@ -269,6 +286,14 @@ private:
         ChunkHeightCache chunks[256];
     };
     std::unordered_map<uint32_t, TileHeightCache> pm_tile_height_cache;
+
+    // Phase 2E stage 1: WMO placements parsed out of every loaded
+    // ADT MODF, deduped by unique_id (Stormwind alone spans 10+
+    // tiles and each tile lists it). Populated by LoadAdtTileIntoScene;
+    // main.cpp drains this after the initial PreloadAround completes
+    // and pushes bbox markers to RenderSystem.
+    std::vector<WmoPlacement>          pm_pending_wmo_placements;
+    std::unordered_set<uint32_t>       pm_wmo_seen_unique_ids;
 
     // The set of resolved fs paths that came from the detail-grass
     // scatter (rather than MDDF). Used by FlushDoodadInstances to

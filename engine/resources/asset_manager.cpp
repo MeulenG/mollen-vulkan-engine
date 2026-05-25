@@ -486,6 +486,49 @@ Entity* AssetManager::LoadAdtTileIntoScene(
     tile->tile_x = tile_x;
     tile->tile_y = tile_y;
 
+    // Phase 2E stage 1: capture every MODF WMO placement BEFORE the
+    // AdtTile drops at end of this function. Dedup by unique_id - the
+    // same WMO (e.g. Stormwind) is listed in every ADT it overlaps, so
+    // without dedup we'd spawn a dozen copies. Convert from MDDF-frame
+    // WoW coords to engine space using the same axis flip the MDDF
+    // doodad code uses.
+    for (const auto& w : tile->wmos) {
+        if (pm_wmo_seen_unique_ids.count(w.unique_id)) continue;
+        pm_wmo_seen_unique_ids.insert(w.unique_id);
+
+        // MDDF -> MCNK frame -> engine frame (same convention as doodads).
+        float mcnk_x = kAdtMaxCoord - w.pos_x;
+        float mcnk_y = kAdtMaxCoord - w.pos_z;
+        float mcnk_z =                w.pos_y;
+        glm::vec3 engine_pos(mcnk_y, mcnk_z, mcnk_x);
+
+        // Bbox extents from MODF bbox_lo/hi. The bbox is in WoW MDDF
+        // coords too, so the extents (hi - lo) are valid yard sizes
+        // regardless of axis swap. Clamp tiny/huge values defensively.
+        float ex = std::abs(w.bbox_hi[0] - w.bbox_lo[0]);
+        float ey = std::abs(w.bbox_hi[1] - w.bbox_lo[1]);
+        float ez = std::abs(w.bbox_hi[2] - w.bbox_lo[2]);
+        if (ex < 1.0f) ex = 5.0f;
+        if (ey < 1.0f) ey = 5.0f;
+        if (ez < 1.0f) ez = 5.0f;
+        // Swap Y and Z extents to match the WoW->engine axis remap
+        // (WoW Z up -> engine Y up; WoW Y east -> engine X east).
+        glm::vec3 extents{ex, ez, ey};
+
+        std::string wmo_path;
+        if (w.name_id < tile->wmo_paths.size()) {
+            wmo_path = tile->wmo_paths[w.name_id];
+        }
+
+        WmoPlacement p{};
+        p.wow_path     = wmo_path;
+        p.engine_pos   = engine_pos;
+        p.bbox_extents = extents;
+        p.rot_deg      = glm::vec3{w.rot_x_deg, w.rot_y_deg, w.rot_z_deg};
+        p.unique_id    = w.unique_id;
+        pm_pending_wmo_placements.push_back(std::move(p));
+    }
+
     // Cache the heightmap before the AdtTile gets dropped at end of
     // this function. PlayerController queries this via GetGroundY to
     // make the player follow terrain contour. Stored sparse - tiles

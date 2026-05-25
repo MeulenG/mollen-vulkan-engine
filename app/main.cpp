@@ -152,6 +152,32 @@ int main() {
         // Without this call the doodads never enter the scene.
         assets.FlushDoodadInstances(scene);
 
+        // Phase 2E stage 1: each MODF WMO placement becomes a colored
+        // bounding-box marker. Real WMO geometry rendering is stage 2.
+        // Color cycles deterministically by unique_id so each building
+        // has a distinct hue for easy identification on screen.
+        size_t bbox_count = 0;
+        for (const auto& w : assets.PendingWmoPlacements()) {
+            mve::RenderSystem::WmoBboxMarker m{};
+            m.pos     = w.engine_pos;
+            m.extents = w.bbox_extents;
+            uint32_t h = w.unique_id * 2654435761u;
+            m.color = glm::vec3{
+                ((h >>  0) & 0xff) / 255.0f * 0.7f + 0.3f,
+                ((h >>  8) & 0xff) / 255.0f * 0.7f + 0.3f,
+                ((h >> 16) & 0xff) / 255.0f * 0.7f + 0.3f,
+            };
+            render_system.AddWmoBbox(m);
+            std::fprintf(stderr,
+                "  WMO bbox: %s at engine=(%.0f, %.0f, %.0f) extents=(%.0f, %.0f, %.0f)\n",
+                w.wow_path.c_str(),
+                w.engine_pos.x, w.engine_pos.y, w.engine_pos.z,
+                w.bbox_extents.x, w.bbox_extents.y, w.bbox_extents.z);
+            ++bbox_count;
+        }
+        std::fprintf(stderr, "WMO bbox markers spawned: %zu\n", bbox_count);
+        assets.ClearPendingWmoPlacements();
+
         auto last_time = std::chrono::high_resolution_clock::now();
 
         while (!window.ShouldClose()) {

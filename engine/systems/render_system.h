@@ -13,6 +13,7 @@
 
 #include <glm/glm.hpp>
 #include <memory>
+#include <vector>
 
 namespace mve {
 
@@ -104,6 +105,20 @@ public:
     }
     void HidePlayerMarker() { pm_player_visible = false; }
 
+    // Phase 2E stage 1: WMO bounding-box markers. Each entry renders
+    // as a colored cube at engine-space `pos`, scaled to (extents.x,
+    // extents.y, extents.z) yards. Used as a "the abbey goes here"
+    // placeholder until the full WMO geometry loader lands in stage
+    // 2. AddWmoBbox is called once per WMO MODF placement at tile
+    // load time; the list persists across frames.
+    struct WmoBboxMarker {
+        glm::vec3 pos{0.0f};
+        glm::vec3 extents{1.0f};
+        glm::vec3 color{0.6f, 0.5f, 0.4f};
+    };
+    void AddWmoBbox(const WmoBboxMarker& m) { pm_wmo_bboxes.push_back(m); }
+    void ClearWmoBboxes()                   { pm_wmo_bboxes.clear(); }
+
     const vk::raii::DescriptorSetLayout& DescriptorLayout() const { return pm_descriptor_layout; }
     const vk::raii::DescriptorSetLayout& TerrainDescriptorLayout() const { return pm_terrain_descriptor_layout; }
     mve::DescriptorPool& GetDescriptorPool() { return *pm_descriptor_pool; }
@@ -167,6 +182,12 @@ private:
     Mesh pm_player_mesh;
     glm::vec3 pm_player_pos{0.0f};
     bool      pm_player_visible = false;
+
+    // Phase 2E stage 1: WMO bounding-box markers. Each list entry is
+    // drawn as one cube via pm_player_mesh (same primitive) translated
+    // + scaled to fill the WMO's AABB. Lives until ClearWmoBboxes is
+    // called. Future: replaced by real WMO geometry in stage 2.
+    std::vector<WmoBboxMarker> pm_wmo_bboxes;
 
     SceneUBO pm_scene_data{};
 
