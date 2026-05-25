@@ -53,6 +53,14 @@ struct WmoDebugTuning {
     bool mirror_x = true;
     bool mirror_y = false;
     bool mirror_z = false;
+
+    // Skip INTERIOR-flagged groups when drawing. Useful for buildings
+    // where interior + exterior groups overlap when viewed from
+    // outside (no portal culling yet). DANGEROUS for fortress-style
+    // WMOs (Stormwind) where INTERIOR covers everything inside the
+    // outer walls including district plazas and buildings. Leave off
+    // until per-WMO toggle support lands.
+    bool skip_interior_groups = false;
 };
 
 // Process-wide tunables. Defined in editor_ui_system.cpp.

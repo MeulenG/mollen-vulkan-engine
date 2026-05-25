@@ -804,15 +804,14 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
 
                 for (auto& g : wmo.groups) {
                     if (!g.mesh) continue;
-                    // Skip INTERIOR-flagged groups - without portal
-                    // culling, rendering them from outside the WMO
-                    // shows the building's interior overlapping the
-                    // exterior (e.g. Stormwind's cathedral interior
-                    // layered over its outer cathedral shell, which
-                    // reads as "two cathedrals stacked"). Player can't
-                    // enter buildings yet, so interior geometry is
-                    // never needed. Revisit when adding portal culling.
-                    if (g.group_flags & WmoMogpFlag_Interior) continue;
+                    // Optional INTERIOR-group skip (debug toggle).
+                    // Without portal culling, interior + exterior
+                    // groups overlap when viewed from outside. But for
+                    // Stormwind-like fortress WMOs, "interior" covers
+                    // the entire city behind the walls - so skipping
+                    // here can destroy whole districts. Off by default.
+                    if (dbg.skip_interior_groups &&
+                        (g.group_flags & WmoMogpFlag_Interior)) continue;
                     g.mesh->Bind(cmd);
                     for (const auto& b : g.batches) {
                         vk::DescriptorSet ds = VK_NULL_HANDLE;
