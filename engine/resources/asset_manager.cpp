@@ -1357,12 +1357,21 @@ Entity* AssetManager::LoadWmoPlacement(
     swapYZ[1] = glm::vec4{0, 0, 1, 0};   // input.y -> output.z
     swapYZ[2] = glm::vec4{0, 1, 0, 0};   // input.z -> output.y
 
+    // Axis mapping from WoWee (Z-up) to our (Y-up) engine via the
+    // similarity transform P * R_wowee * P^-1 where P swaps Y and Z
+    // components:
+    //   WoWee Rz around (0,0,1) -> our R around (0,1,0)  [up]
+    //   WoWee Ry around (0,1,0) -> our R around (0,0,1)
+    //   WoWee Rx around (1,0,0) -> our R around (1,0,0)
+    // Previously I had pitch/roll axes swapped, which doesn't affect
+    // Stormwind (rot_x = rot_z = 0) but mis-rotates other WMOs that
+    // have non-zero pitch or roll (KeepWall pieces, towers, etc).
     glm::quat q_z_outer = glm::angleAxis(
         glm::radians(p.rot_deg.y + 180.0f), glm::vec3{0, 1, 0});
     glm::quat q_y_mid   = glm::angleAxis(
-        glm::radians(-p.rot_deg.x),         glm::vec3{1, 0, 0});
+        glm::radians(-p.rot_deg.x),         glm::vec3{0, 0, 1});
     glm::quat q_x_inner = glm::angleAxis(
-        glm::radians(-p.rot_deg.z),         glm::vec3{0, 0, 1});
+        glm::radians(-p.rot_deg.z),         glm::vec3{1, 0, 0});
     glm::quat q_world = q_z_outer * q_y_mid * q_x_inner;
     glm::mat4 R = glm::mat4_cast(q_world);
 
