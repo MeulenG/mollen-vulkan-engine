@@ -97,6 +97,42 @@ struct AdtChunk {
     uint16_t holes_low_res = 0;
 };
 
+// One MODF entry. Each ADT tile lists 0..N of these to place WMO
+// buildings (the Abbey, Stormwind walls, Lion's Pride Inn, gnoll tents,
+// etc.) at specific world positions. Same on-disk pos/rot/scale
+// convention as MDDF, but the entry is 64 bytes instead of 36 - the
+// extra fields are an axis-aligned bounding box, the doodad_set
+// selector (each WMO ships with up to N "doodad sets" of interior
+// props; this picks which set is active), and a name_set.
+//
+// On-disk format (64 bytes per entry):
+//   uint32 name_id      - index into AdtTile::wmo_paths
+//   uint32 unique_id    - global dedup key (same convention as MDDF)
+//   float  pos[3]       - (X south, Y up, Z east) in WoW coords
+//   float  rot[3]       - Euler degrees, applied YXZ
+//   float  bbox_lo[3]   - AABB in world-space, used for visibility cull
+//   float  bbox_hi[3]
+//   uint16 flags        - bit 0x1 = "destructible", others ignored for v1
+//   uint16 doodad_set   - selects which MODS (doodad set) is active
+//   uint16 name_set     - selects which set of overlay textures
+//   uint16 scale        - WoW pre-Cata: ignored, scale always 1.0
+struct AdtWmoPlacement {
+    uint32_t name_id    = 0;
+    uint32_t unique_id  = 0;
+    float    pos_x      = 0.0f;
+    float    pos_y      = 0.0f;
+    float    pos_z      = 0.0f;
+    float    rot_x_deg  = 0.0f;
+    float    rot_y_deg  = 0.0f;
+    float    rot_z_deg  = 0.0f;
+    float    bbox_lo[3] = {0.0f, 0.0f, 0.0f};
+    float    bbox_hi[3] = {0.0f, 0.0f, 0.0f};
+    uint16_t flags      = 0;
+    uint16_t doodad_set = 0;
+    uint16_t name_set   = 0;
+    uint16_t scale      = 1024;
+};
+
 // One MDDF entry. Each ADT tile lists 0..N of these to place static
 // M2 doodads (trees, rocks, fences, lanterns) at specific world
 // positions. We keep the raw WoW coordinates and Euler degrees rather
@@ -144,6 +180,15 @@ struct AdtTile {
 
     // Parsed MDDF placements. Typical Elwynn tile has 100-500 entries.
     std::vector<AdtDoodadPlacement> doodads;
+
+    // WMO (building) paths resolved from MWMO via MWID byte offsets.
+    // wmo_paths[i] is the .wmo path for any MODF entry whose name_id
+    // == i. Same backslashed-WoW-path convention as doodad_paths.
+    std::vector<std::string> wmo_paths;
+
+    // Parsed MODF placements. Typical Elwynn tile has 0-10 entries
+    // (buildings are large and sparse vs. the dense MDDF prop list).
+    std::vector<AdtWmoPlacement> wmos;
 
     // 256 MCNK chunks, indexed as [y * 16 + x] where x and y are the chunk
     // coordinates within the tile (0..15).

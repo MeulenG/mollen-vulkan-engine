@@ -414,6 +414,11 @@ bool AdtLoader::LoadFile(const std::string& path, AdtTile& out) {
     std::vector<uint8_t> mmdx_blob;
     std::vector<uint32_t> mmid_offsets;
 
+    // MWMO/MWID/MODF: same shape as the doodad pair but for WMO
+    // buildings. Captured here, resolved after the main walk.
+    std::vector<uint8_t> mwmo_blob;
+    std::vector<uint32_t> mwid_offsets;
+
     // Walk top-level chunks.
     size_t pos = 0;
     while (pos + 8 <= buf.size()) {
@@ -476,6 +481,50 @@ bool AdtLoader::LoadFile(const std::string& path, AdtTile& out) {
                 d.scale = s;
                 out.doodads.push_back(d);
             }
+        } else if (id == FourCC("MWMO")) {
+            // Null-separated WMO path strings. Same byte-addressable
+            // convention as MMDX - MWID stores byte offsets.
+            mwmo_blob.assign(buf.data() + pos, buf.data() + pos + payload_size);
+        } else if (id == FourCC("MWID")) {
+            uint32_t count = payload_size / 4;
+            mwid_offsets.resize(count);
+            for (uint32_t i = 0; i < count; i++) {
+                mwid_offsets[i] = ReadU32(buf.data(), pos + i * 4);
+            }
+        } else if (id == FourCC("MODF")) {
+            // 64-byte entries per wowdev.wiki/ADT/v18#MODF. Same
+            // pos/rot/scale layout as MDDF but with an extra AABB +
+            // doodad_set + name_set + flags. WoW 3.3.5a stores scale
+            // as 1024 (= 1.0) effectively constant.
+            uint32_t count = payload_size / 64;
+            out.wmos.reserve(count);
+            for (uint32_t i = 0; i < count; i++) {
+                size_t off = pos + i * 64;
+                AdtWmoPlacement w{};
+                w.name_id      = ReadU32(buf.data(), off + 0);
+                w.unique_id    = ReadU32(buf.data(), off + 4);
+                w.pos_x        = ReadF32(buf.data(), off + 8);
+                w.pos_y        = ReadF32(buf.data(), off + 12);
+                w.pos_z        = ReadF32(buf.data(), off + 16);
+                w.rot_x_deg    = ReadF32(buf.data(), off + 20);
+                w.rot_y_deg    = ReadF32(buf.data(), off + 24);
+                w.rot_z_deg    = ReadF32(buf.data(), off + 28);
+                w.bbox_lo[0]   = ReadF32(buf.data(), off + 32);
+                w.bbox_lo[1]   = ReadF32(buf.data(), off + 36);
+                w.bbox_lo[2]   = ReadF32(buf.data(), off + 40);
+                w.bbox_hi[0]   = ReadF32(buf.data(), off + 44);
+                w.bbox_hi[1]   = ReadF32(buf.data(), off + 48);
+                w.bbox_hi[2]   = ReadF32(buf.data(), off + 52);
+                w.flags        = static_cast<uint16_t>(
+                    ReadU32(buf.data(), off + 56) & 0xFFFF);
+                w.doodad_set   = static_cast<uint16_t>(
+                    (ReadU32(buf.data(), off + 56) >> 16) & 0xFFFF);
+                w.name_set     = static_cast<uint16_t>(
+                    ReadU32(buf.data(), off + 60) & 0xFFFF);
+                w.scale        = static_cast<uint16_t>(
+                    (ReadU32(buf.data(), off + 60) >> 16) & 0xFFFF);
+                out.wmos.push_back(w);
+            }
         } else if (id == FourCC("MCNK")) {
             // Up to 256 MCNK chunks. Order in the file is row-major (the
             // index_x and index_y inside the header give the canonical
@@ -513,6 +562,18 @@ bool AdtLoader::LoadFile(const std::string& path, AdtTile& out) {
         const char* s = reinterpret_cast<const char*>(mmdx_blob.data() + off);
         size_t max_len = mmdx_blob.size() - off;
         out.doodad_paths.emplace_back(s, strnlen(s, max_len));
+    }
+
+    // Same trick for WMO paths.
+    out.wmo_paths.reserve(mwid_offsets.size());
+    for (uint32_t off : mwid_offsets) {
+        if (off >= mwmo_blob.size()) {
+            out.wmo_paths.emplace_back();
+            continue;
+        }
+        const char* s = reinterpret_cast<const char*>(mwmo_blob.data() + off);
+        size_t max_len = mwmo_blob.size() - off;
+        out.wmo_paths.emplace_back(s, strnlen(s, max_len));
     }
 
     return mcnk_seen > 0;
