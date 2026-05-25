@@ -1,12 +1,12 @@
 #version 450
 
 // WMO group geometry. Vertex format matches WmoVertex:
-//   location 0  vec3 position    - WMO-local frame
-//   location 1  vec3 normal      - WMO-local frame
-//   location 2  vec2 uv1         - texture coord layer 1
-//   location 3  vec2 uv2         - texture coord layer 2 (TVerts2)
+//   location 0  vec3 position    - WMO-local frame (post basis swap via model matrix)
+//   location 1  vec3 normal
+//   location 2  vec2 uv1
+//   location 3  vec2 uv2
 //   location 4  vec4 color1      - MOCV1 baked light + int/ext alpha
-//   location 5  vec4 color2      - MOCV2 blend mask
+//   location 5  vec4 color2
 
 layout(location = 0) in vec3 in_position;
 layout(location = 1) in vec3 in_normal;
@@ -18,12 +18,6 @@ layout(location = 5) in vec4 in_color2;
 layout(push_constant) uniform Push {
     mat4 mvp;
     mat4 model;
-    vec4 sun_dir;
-    vec4 sun_color;
-    vec4 ambient_color;
-    vec4 fog_color;     // rgb = tint, w = fog_end yards
-    vec4 fog_params;    // x = fog_start, y = fog_rate, z = sidn_ramp, w = unused
-    vec4 camera_pos;
 } push;
 
 layout(location = 0) out vec3 frag_world_pos;

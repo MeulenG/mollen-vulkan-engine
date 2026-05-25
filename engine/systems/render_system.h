@@ -123,6 +123,7 @@ public:
     const vk::raii::DescriptorSetLayout& TerrainDescriptorLayout() const { return pm_terrain_descriptor_layout; }
     mve::DescriptorPool& GetDescriptorPool() { return *pm_descriptor_pool; }
     const Buffer& SceneUBOBuffer() const { return *pm_scene_ubo; }
+    const vk::raii::DescriptorSetLayout& WmoDescriptorLayout() const { return pm_wmo_descriptor_layout; }
 
 private:
     Device& pm_device;
@@ -174,6 +175,7 @@ private:
 
     vk::raii::DescriptorSetLayout pm_descriptor_layout = nullptr;
     vk::raii::DescriptorSetLayout pm_terrain_descriptor_layout = nullptr;
+    vk::raii::DescriptorSetLayout pm_wmo_descriptor_layout = nullptr;
     std::unique_ptr<DescriptorPool> pm_descriptor_pool;
     std::unique_ptr<Buffer> pm_scene_ubo;
 

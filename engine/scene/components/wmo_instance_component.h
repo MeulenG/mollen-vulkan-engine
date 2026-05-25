@@ -2,10 +2,13 @@
 #define MVE_WMO_INSTANCE_COMPONENT_H
 
 #include "../entity.h"
+#include "../mesh.h"
 #include "../wmo_mesh.h"
 #include "../../formats/wmo_types.h"
+#include "../../resources/image.h"
 
 #include <glm/glm.hpp>
+#include <vulkan/vulkan.hpp>
 
 #include <memory>
 #include <vector>
@@ -25,6 +28,17 @@ struct WmoInstanceComponent : Component {
     std::vector<glm::vec4>        group_bbox_min; // WMO-local, .w = unused
     std::vector<glm::vec4>        group_bbox_max;
     glm::mat4                     model_matrix{1.0f};
+
+    // Per-material descriptor sets, indexed by MOMT slot. Each set
+    // has SceneUBO at binding 0 and the material's diffuse sampler at
+    // binding 1. NULL handle = missing texture (the draw loop skips or
+    // falls back to material 0).
+    std::vector<vk::DescriptorSet>      material_sets;
+    // Texture handles kept alive alongside material_sets. The pool's
+    // descriptor sets only hold raw vk::Image / vk::Sampler handles -
+    // we have to retain the ImageView+Sampler+memory through these
+    // shared_ptrs so they don't free while bound.
+    std::vector<std::shared_ptr<Image>> material_textures;
 };
 
 } // namespace mve

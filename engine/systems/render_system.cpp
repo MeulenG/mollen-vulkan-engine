@@ -454,17 +454,26 @@ void RenderSystem::Init() {
         pm_device, shader_dir + "/water.vert.spv", shader_dir + "/water.frag.spv",
         water_config);
 
-    // WMO pipeline (v1: opaque, untextured, vertex-colored). Pushes a
-    // 7*vec4 + 2*mat4 = 224-byte block - we go beyond Vulkan's
-    // guaranteed 128-byte minimum here because every Vulkan driver
-    // shipping in 2026 supports at least 256 bytes (the spec's
-    // optional second tier), and the WMO pass benefits from having
-    // the whole lighting + fog packet in a single push call.
+    // WMO pipeline. Descriptor set per material carries:
+    //   binding 0  SceneUBO (fragment) - shared, but bound once per
+    //              material set since the WMO has its own layout
+    //   binding 1  diffuse sampler (fragment)
+    // Push constants: just mvp + model = 128 bytes, hits Vulkan's
+    // guaranteed minimum exactly.
+    pm_wmo_descriptor_layout = DescriptorSetLayoutBuilder{pm_device}
+        .AddBinding(0, vk::DescriptorType::eUniformBuffer,
+                    vk::ShaderStageFlagBits::eFragment)
+        .AddBinding(1, vk::DescriptorType::eCombinedImageSampler,
+                    vk::ShaderStageFlagBits::eFragment)
+        .Build();
+
     vk::PushConstantRange wmo_push{
         vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-        0, 14 * sizeof(glm::vec4)};
+        0, 2 * sizeof(glm::mat4)};
+    vk::DescriptorSetLayout wmo_layouts[] = {*pm_wmo_descriptor_layout};
     vk::PipelineLayoutCreateInfo wmo_layout_info{};
     wmo_layout_info.setPushConstantRanges(wmo_push);
+    wmo_layout_info.setSetLayouts(wmo_layouts);
     pm_wmo_pipeline_layout =
         pm_device.GetDevice().createPipelineLayout(wmo_layout_info);
 
@@ -729,37 +738,19 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
             });
     }
 
-    // WMO pass. One entity per placed WMO (the abbey, Stormwind keep,
-    // Goldshire inn etc.). Each entity carries N group GPU meshes;
-    // we draw every batch in every group sequentially. v1 has no
-    // portal culling or per-group frustum cull yet - those land once
-    // the textured shader is in and the perf cost is measurable.
+    // WMO pass. One entity per placed WMO; each entity carries N
+    // group GPU meshes; we draw every batch with the material's
+    // descriptor set bound (UBO + diffuse sampler).
     {
         struct WmoPush {
             glm::mat4 mvp;
             glm::mat4 model;
-            glm::vec4 sun_dir;
-            glm::vec4 sun_color;
-            glm::vec4 ambient_color;
-            glm::vec4 fog_color;
-            glm::vec4 fog_params;
-            glm::vec4 camera_pos;
         };
-        WmoPush wpush{};
-        wpush.sun_dir       = glm::vec4{pm_scene_data.pm_light_dir, 0.0f};
-        wpush.sun_color     = glm::vec4{pm_scene_data.pm_direct_color, 0.0f};
-        wpush.ambient_color = glm::vec4{pm_scene_data.pm_ambient_color, 0.0f};
-        wpush.fog_color     = glm::vec4{pm_scene_data.pm_fog_color,
-                                         pm_scene_data.pm_fog_end};
-        wpush.fog_params    = glm::vec4{pm_scene_data.pm_fog_start,
-                                         pm_scene_data.pm_fog_rate,
-                                         0.0f, 0.0f};
-        wpush.camera_pos    = glm::vec4{pm_scene_data.pm_camera_pos, 0.0f};
-
         pm_wmo_pipeline->Bind(cmd);
 
         scene.Each<WmoInstanceComponent>(
             [&](Entity&, WmoInstanceComponent& wmo) {
+                WmoPush wpush{};
                 wpush.model = wmo.model_matrix;
                 wpush.mvp   = view_proj_for_cull * wmo.model_matrix;
                 cmd.pushConstants<WmoPush>(
@@ -772,6 +763,21 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
                     if (!g.mesh) continue;
                     g.mesh->Bind(cmd);
                     for (const auto& b : g.batches) {
+                        vk::DescriptorSet ds = VK_NULL_HANDLE;
+                        if (b.material_id < wmo.material_sets.size()) {
+                            ds = wmo.material_sets[b.material_id];
+                        }
+                        if (!ds && !wmo.material_sets.empty()) {
+                            // Fall back to material 0's set so the
+                            // batch still draws (with the wrong
+                            // texture but visible geometry).
+                            ds = wmo.material_sets[0];
+                        }
+                        if (!ds) continue;  // no textures loaded at all
+                        cmd.bindDescriptorSets(
+                            vk::PipelineBindPoint::eGraphics,
+                            *pm_wmo_pipeline_layout, 0,
+                            ds, nullptr);
                         cmd.drawIndexed(b.num_indices, 1, b.first_index, 0, 0);
                     }
                 }

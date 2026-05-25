@@ -130,7 +130,9 @@ public:
     // creates an entity with WmoInstanceComponent + TransformComponent).
     // Returns the entity on success, nullptr on parse failure (caller
     // can then fall back to the bbox-marker debug overlay).
-    Entity* LoadWmoPlacement(const WmoPlacement& p, Scene& scene);
+    Entity* LoadWmoPlacement(
+        const WmoPlacement& p, Scene& scene,
+        const vk::raii::DescriptorSetLayout& wmo_descriptor_layout);
 
     // Sample the ground height (engine.y) at an engine-space (x, z)
     // position. Returns true and writes out_y on success; returns

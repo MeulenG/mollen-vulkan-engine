@@ -1217,7 +1217,9 @@ void AssetManager::FlushDoodadInstances(Scene& scene) {
     }
 }
 
-Entity* AssetManager::LoadWmoPlacement(const WmoPlacement& p, Scene& scene) {
+Entity* AssetManager::LoadWmoPlacement(
+    const WmoPlacement& p, Scene& scene,
+    const vk::raii::DescriptorSetLayout& wmo_descriptor_layout) {
     if (p.wow_path.empty()) return nullptr;
 
     std::string root_path = ResolveWowAsset(p.wow_path);
@@ -1299,11 +1301,65 @@ Entity* AssetManager::LoadWmoPlacement(const WmoPlacement& p, Scene& scene) {
     auto* tx = entity->AddComponent<TransformComponent>();
     tx->pm_position = p.engine_pos;
     auto* comp = entity->AddComponent<WmoInstanceComponent>();
-    comp->root           = std::shared_ptr<WmoRoot>(root.release());
+    auto root_shared = std::shared_ptr<WmoRoot>(root.release());
     comp->groups         = std::move(group_gpus);
     comp->group_bbox_min = std::move(bbox_mins);
     comp->group_bbox_max = std::move(bbox_maxs);
     comp->model_matrix   = model;
+
+    // Allocate one descriptor set per material with SceneUBO + diffuse
+    // sampler. Texture loading mirrors the M2 load_blp pattern -
+    // resolve through ResolveWowAsset, load via BlpLoader, cache in
+    // pm_texture_cache, wrap in an Image. Missing textures land a
+    // null vk::DescriptorSet so the draw loop falls back gracefully.
+    if (pm_descriptor_pool && pm_scene_ubo) {
+        const auto& wmo_layout = wmo_descriptor_layout;
+        comp->material_sets.resize(root_shared->materials.size(),
+                                    VK_NULL_HANDLE);
+        comp->material_textures.resize(root_shared->materials.size());
+
+        for (size_t mi = 0; mi < root_shared->materials.size(); ++mi) {
+            const std::string& wow_tex = root_shared->texture_paths[mi];
+            if (wow_tex.empty()) continue;
+            std::string fs_path = ResolveWowAsset(wow_tex);
+            if (!fs::exists(fs_path)) continue;
+
+            TextureHandle tex;
+            auto cached = pm_texture_cache.find(fs_path);
+            if (cached != pm_texture_cache.end()) {
+                tex = cached->second;
+            } else {
+                try {
+                    auto blp = BlpLoader::LoadFile(fs_path);
+                    tex = std::make_shared<Image>(pm_device, blp);
+                    pm_texture_cache[fs_path] = tex;
+                } catch (...) {
+                    continue;
+                }
+            }
+            if (!tex) continue;
+
+            vk::DescriptorSet ds =
+                pm_descriptor_pool->AllocateSetRaw(wmo_layout);
+            if (!ds) continue;
+
+            vk::DescriptorBufferInfo ubo_info{
+                *pm_scene_ubo->GetBuffer(), 0, sizeof(SceneUBO)};
+            vk::DescriptorImageInfo img_info{
+                *tex->GetSampler(),
+                *tex->GetImageView(),
+                vk::ImageLayout::eShaderReadOnlyOptimal};
+            DescriptorWriter{}
+                .WriteBuffer(0, ubo_info, vk::DescriptorType::eUniformBuffer)
+                .WriteImage(1, img_info, vk::DescriptorType::eCombinedImageSampler)
+                .Apply(pm_device.GetDevice(), ds);
+
+            comp->material_sets[mi]     = ds;
+            comp->material_textures[mi] = tex;
+        }
+    }
+
+    comp->root = std::move(root_shared);
 
     return entity;
 }

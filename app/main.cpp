@@ -168,7 +168,8 @@ int main() {
         // so the building's position is still visible on screen.
         size_t wmo_ok = 0, wmo_fail = 0;
         for (const auto& w : assets.PendingWmoPlacements()) {
-            if (assets.LoadWmoPlacement(w, scene)) {
+            if (assets.LoadWmoPlacement(w, scene,
+                                         render_system.WmoDescriptorLayout())) {
                 ++wmo_ok;
                 continue;
             }
