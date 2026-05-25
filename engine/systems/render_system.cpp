@@ -70,7 +70,12 @@ namespace mve {
 
 RenderSystem::RenderSystem(Device& device, OffscreenPass& offscreen)
     : pm_device{device}, pm_offscreen{offscreen},
-      pm_ground_mesh{Mesh::CreateGroundPlane(device, 30.0f)} {
+      pm_ground_mesh{Mesh::CreateGroundPlane(device, 30.0f)},
+      // Phase 2B placeholder player: a 1x1x1 yard cube. Purple so it
+      // doesn't visually blend with the canonical green/brown/yellow
+      // Elwynn palette. Will be replaced by a real M2 character in
+      // Phase 2C once skeleton + animation lands.
+      pm_player_mesh{Mesh::CreateCube(device, glm::vec3{0.5f, 0.2f, 0.8f})} {
 
     // Canonical Elwynn Forest "noon clear" values, pulled from the
     // WoW client's Light.dbc / LightParams.dbc / LightIntBand.dbc /
@@ -495,6 +500,27 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
 
         pm_ground_mesh.Bind(cmd);
         pm_ground_mesh.Draw(cmd);
+    }
+
+    // Phase 2B placeholder player marker. Cube scaled to ~1.7 yards
+    // tall (WoW player height) and centered ON the player's feet
+    // (translate up by 0.85 = half-height). Uses the ground pipeline
+    // since this is a primitive untextured colored mesh; gets the
+    // same blended directional light + ambient as terrain so it
+    // visually fits the scene.
+    if (pm_player_visible) {
+        glm::mat4 m = glm::translate(glm::mat4{1.0f},
+                                      pm_player_pos + glm::vec3{0, 0.85f, 0});
+        m = glm::scale(m, glm::vec3{0.6f, 1.7f, 0.6f});
+        PushConstants player_push{};
+        player_push.pm_model = m;
+        player_push.pm_mvp = active_camera.GetProjectionMatrix() *
+                              active_camera.GetViewMatrix() * m;
+        cmd.pushConstants<PushConstants>(
+            *pm_ground_pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, player_push);
+
+        pm_player_mesh.Bind(cmd);
+        pm_player_mesh.Draw(cmd);
     }
 
     // Terrain entities. Drawn before model entities so the depth buffer

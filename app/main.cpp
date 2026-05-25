@@ -116,19 +116,21 @@ int main() {
         // ~91 yards Y (just above the ground at Y=89) so we're
         // standing on the road looking slightly down at our feet.
         // Grass cull radius is 60 yards so foreground blades render.
-        glm::vec3 center{-9014.0f, 89.0f, -2.0f};
-        cam->pm_camera.SetTarget(center);
-        cam->pm_camera.SetOrbit(8.0f, 1.57f, 0.15f);
-
-        // Phase 2B: third-person mode with a player controller. The
-        // player spawns at the Northshire road position; the camera
-        // orbits the player's head (eye height = player.y + 1.7).
+        // Phase 2B: third-person mode with a player controller.
+        // Player spawns at the Northshire road position. Camera orbits
+        // the player's eye (player.y + 1.7) at 12 yards behind, ~22deg
+        // downward look (canonical WoW over-the-shoulder framing).
         // WASD moves the player in camera-relative directions; mouse
-        // right-drag rotates the orbit yaw/pitch around the player;
-        // scroll zooms orbit distance.
+        // right-drag rotates orbit yaw/pitch around the player; scroll
+        // zooms orbit distance.
+        glm::vec3 player_spawn{-9014.0f, 89.0f, -2.0f};
+        glm::vec3 eye_target = player_spawn + glm::vec3{0, 1.7f, 0};
+        cam->pm_camera.SetTarget(eye_target);
+        cam->pm_camera.SetOrbit(12.0f, 1.57f, 0.40f);
         cam->pm_camera.SetMode(mve::CameraMode::ThirdPerson);
+
         mve::PlayerController player;
-        player.SetPosition(center);
+        player.SetPosition(player_spawn);
 
         // Preload around wherever the camera actually sits (which may be
         // a neighboring tile because of the orbit offset). Radius 2 (5x5)
@@ -184,6 +186,12 @@ int main() {
                 bool sprint = ImGui::GetIO().KeyShift;
                 player.Update(dt, cam->pm_camera, w, a, s, d, sprint);
                 cam->pm_camera.SetTarget(player.GetEyePos());
+                // Hand the player position to the renderer so it draws
+                // the placeholder cube at the right spot. Will be
+                // replaced by a real M2 character entity in Phase 2C.
+                render_system.SetPlayerPos(player.GetPosition());
+            } else {
+                render_system.HidePlayerMarker();
             }
 
             // Systems. EditorUISystem owns the dockspace + menu/status

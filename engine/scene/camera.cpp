@@ -72,12 +72,13 @@ void Camera::Move(float dx, float dy, float dz) {
 
 void Camera::SetMode(CameraMode m) {
     if (m == mode_) return;
+    CameraMode prev = mode_;
     if (m == CameraMode::FlyFirstPerson) {
-        // Orbit -> FPS. In orbit, yaw/pitch describe the offset from
-        // target to camera (we look back from there). In FPS they
-        // describe the forward direction. To keep the view continuous
-        // through the toggle, derive new yaw/pitch from the current
-        // look direction (target - position).
+        // Orbit/ThirdPerson -> FPS. In orbit-style modes yaw/pitch
+        // describe the offset from target to camera (we look back
+        // from there). In FPS they describe the forward direction.
+        // To keep the view continuous through the toggle, derive new
+        // yaw/pitch from the current look direction (target - position).
         glm::vec3 fwd = target_ - position_;
         if (glm::length(fwd) > 1e-4f) {
             fwd = glm::normalize(fwd);
@@ -86,11 +87,11 @@ void Camera::SetMode(CameraMode m) {
         }
         mode_ = m;
         updateTargetFromAngles();
-    } else {
-        // FPS -> orbit. Snap the orbit center to ~8 units ahead of the
-        // camera (so the user can rotate around the area they were
-        // looking at). Re-derive orbit yaw/pitch from the inverse of
-        // the look direction.
+    } else if (prev == CameraMode::FlyFirstPerson) {
+        // FPS -> orbit/ThirdPerson. Snap the orbit center to ~8 units
+        // ahead of the camera (so the user can rotate around the area
+        // they were looking at). Re-derive orbit yaw/pitch from the
+        // inverse of the look direction.
         glm::vec3 fwd = target_ - position_;
         if (glm::length(fwd) < 1e-4f) fwd = glm::vec3{0, 0, 1};
         fwd = glm::normalize(fwd);
@@ -99,6 +100,12 @@ void Camera::SetMode(CameraMode m) {
         glm::vec3 back = -fwd;
         pitch_ = std::asin(glm::clamp(back.y, -1.0f, 1.0f));
         yaw_   = std::atan2(back.x, back.z);
+        mode_ = m;
+        updatePosition();
+    } else {
+        // Orbit <-> ThirdPerson: same view math, just a label change.
+        // Preserve target / yaw / pitch / distance exactly as-is so
+        // SetOrbit(...) called right BEFORE SetMode keeps its effect.
         mode_ = m;
         updatePosition();
     }

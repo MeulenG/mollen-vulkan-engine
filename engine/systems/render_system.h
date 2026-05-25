@@ -93,6 +93,17 @@ public:
     void SetLightCycle(LightCycle* cycle) { pm_light_cycle = cycle; }
     LightCycle* GetLightCycle() { return pm_light_cycle; }
 
+    // Phase 2B placeholder-player marker. The app calls SetPlayerPos
+    // each frame with the player controller's world position; the
+    // renderer draws a small colored cube at that position via the
+    // ground pipeline. Visibility default = false, so an app that
+    // doesn't use a player controller draws nothing extra.
+    void SetPlayerPos(const glm::vec3& p) {
+        pm_player_pos = p;
+        pm_player_visible = true;
+    }
+    void HidePlayerMarker() { pm_player_visible = false; }
+
     const vk::raii::DescriptorSetLayout& DescriptorLayout() const { return pm_descriptor_layout; }
     const vk::raii::DescriptorSetLayout& TerrainDescriptorLayout() const { return pm_terrain_descriptor_layout; }
     mve::DescriptorPool& GetDescriptorPool() { return *pm_descriptor_pool; }
@@ -148,6 +159,14 @@ private:
     std::unique_ptr<Buffer> pm_scene_ubo;
 
     Mesh pm_ground_mesh;
+
+    // Phase 2B placeholder player marker. Small colored cube rendered
+    // via the ground pipeline at pm_player_pos each frame (when
+    // pm_player_visible == true). Future replacement: a real M2
+    // character model with skeleton + animation.
+    Mesh pm_player_mesh;
+    glm::vec3 pm_player_pos{0.0f};
+    bool      pm_player_visible = false;
 
     SceneUBO pm_scene_data{};
 
