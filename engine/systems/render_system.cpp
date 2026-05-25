@@ -666,16 +666,16 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
         wp.river_color = glm::vec4{pm_last_snapshot.river_close, 0.0f};
         wp.fog_color  = glm::vec4{pm_scene_data.pm_fog_color,
                                    pm_scene_data.pm_fog_end};
-        // shallow/deep alpha come from LightParams (already sampled into
-        // pm_last_snapshot upstream). Falls back to sensible defaults
-        // when no LightCycle is attached.
-        float shallow_a = 0.45f;
-        float deep_a    = 0.85f;
+        // shallow/deep alpha come from LightParams.dbc via the snapshot.
+        // Without a light cycle attached the snapshot's defaults (0.45 /
+        // 0.85) still produce a reasonable river look.
         float time_sec  = 0.0f;
         if (pm_light_cycle) {
             time_sec = static_cast<float>(pm_light_cycle->GetGameTimeSeconds());
         }
-        wp.params = glm::vec4{shallow_a, deep_a, time_sec,
+        wp.params = glm::vec4{pm_last_snapshot.water_shallow_alpha,
+                              pm_last_snapshot.water_deep_alpha,
+                              time_sec,
                               pm_scene_data.pm_fog_start};
         wp.camera = glm::vec4{pm_scene_data.pm_camera_pos, 0.0f};
 

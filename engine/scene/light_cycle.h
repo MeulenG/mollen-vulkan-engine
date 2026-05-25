@@ -97,6 +97,15 @@ struct LightSnapshot {
     float float_unk4 = 0.95f;             // 4
     float float_unk5 = 1.0f;              // 5
 
+    // From LightParams.dbc (not IntBand/FloatBand). Drives the
+    // shallow/deep alpha mix in the water shader - shallows (depth=0)
+    // use water_shallow_alpha, river center (depth=1) uses _deep_.
+    // Elwynn-noon typical values: shallow ~0.45, deep ~0.85.
+    float water_shallow_alpha  = 0.45f;
+    float water_deep_alpha     = 0.85f;
+    float ocean_shallow_alpha  = 0.55f;
+    float ocean_deep_alpha     = 0.95f;
+
     // Derived: not from the DBCs directly, but from a phi/theta sun
     // table keyed off `t_dbc / 2880`. World-space direction pointing
     // FROM the sun TO the world (i.e. shadow direction). Shaders

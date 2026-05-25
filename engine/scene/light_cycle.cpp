@@ -404,6 +404,14 @@ static LightSnapshot SampleParams(const LightTables& tables,
     snap.float_unk4           = sample_float(4);
     snap.float_unk5           = sample_float(5);
 
+    // LightParams scalars (constant across the day - no time interp).
+    if (const auto* p = tables.GetParams(params_id)) {
+        snap.water_shallow_alpha = p->water_shallow_alpha;
+        snap.water_deep_alpha    = p->water_deep_alpha;
+        snap.ocean_shallow_alpha = p->ocean_shallow_alpha;
+        snap.ocean_deep_alpha    = p->ocean_deep_alpha;
+    }
+
     return snap;
 }
 
@@ -442,6 +450,10 @@ static LightSnapshot LerpSnapshot(const LightSnapshot& a,
     o.cloud_density          = lerp1(a.cloud_density, b.cloud_density);
     o.float_unk4             = lerp1(a.float_unk4, b.float_unk4);
     o.float_unk5             = lerp1(a.float_unk5, b.float_unk5);
+    o.water_shallow_alpha    = lerp1(a.water_shallow_alpha, b.water_shallow_alpha);
+    o.water_deep_alpha       = lerp1(a.water_deep_alpha, b.water_deep_alpha);
+    o.ocean_shallow_alpha    = lerp1(a.ocean_shallow_alpha, b.ocean_shallow_alpha);
+    o.ocean_deep_alpha       = lerp1(a.ocean_deep_alpha, b.ocean_deep_alpha);
     o.light_dir              = a.light_dir;  // derived later, not lerped
     return o;
 }
