@@ -35,25 +35,26 @@ layout(location = 0) out vec4 out_color;
 void main() {
     vec4 tex = texture(u_diffuse, frag_uv1);
 
-    // MOCV1 alpha holds the interior/exterior blend factor (after the
-    // WMO loader's runtime fixup: 0 = pure interior, 1 = pure exterior).
     vec3 N = normalize(frag_normal);
     vec3 L = -normalize(scene.light_dir);
     float NdotL = max(dot(N, L), 0.0);
 
     // Half-Lambert wrap so unlit sides aren't fully black.
     float wrap_lambert = NdotL * 0.5 + 0.5;
-    vec3 exterior_light = scene.ambient_color +
-                          scene.direct_color * wrap_lambert;
+    vec3 sun_term = scene.direct_color * wrap_lambert;
 
-    // Interior: 2x MOCV1 baked lighting + reduced ambient. The 2x
-    // matches wowdev.wiki/WMO/Rendering note that MOCV is stored
-    // half-range.
+    // MOCV1 in WoW is baked lighting: for INTERIOR groups it IS the
+    // lighting; for EXTERIOR it's an AO/tint modulator added on top.
+    // The previous formula multiplied exterior_light by 2*mocv which
+    // produces pure black when mocv.rgb is zero (genuine artist AO).
+    // Instead, treat MOCV as additive ambient: vertex color * 2.0
+    // contributes IN ADDITION to ambient+sun, never replacing them.
+    // ext_blend selects how much real-sun light to include - interior
+    // batches lean entirely on the baked MOCV term, exterior batches
+    // get the full sun + a baked-light additive bonus.
     vec3 mocv = frag_color1.rgb * 2.0;
-    vec3 interior_light = scene.ambient_color * 0.5 + mocv;
-
     float ext_blend = frag_color1.a;
-    vec3 lit = mix(interior_light, exterior_light * mocv, ext_blend);
+    vec3 lit = scene.ambient_color + mocv + sun_term * ext_blend;
 
     vec3 color = tex.rgb * lit;
 

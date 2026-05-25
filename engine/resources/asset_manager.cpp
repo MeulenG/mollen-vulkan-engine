@@ -1318,11 +1318,20 @@ Entity* AssetManager::LoadWmoPlacement(
                                     VK_NULL_HANDLE);
         comp->material_textures.resize(root_shared->materials.size());
 
+        size_t tex_ok = 0, tex_missing_path = 0, tex_missing_file = 0,
+               tex_load_fail = 0;
         for (size_t mi = 0; mi < root_shared->materials.size(); ++mi) {
             const std::string& wow_tex = root_shared->texture_paths[mi];
-            if (wow_tex.empty()) continue;
+            if (wow_tex.empty()) { ++tex_missing_path; continue; }
             std::string fs_path = ResolveWowAsset(wow_tex);
-            if (!fs::exists(fs_path)) continue;
+            if (!fs::exists(fs_path)) {
+                ++tex_missing_file;
+                if (tex_missing_file <= 3) {
+                    std::fprintf(stderr,
+                        "  WMO tex missing on disk: %s\n", fs_path.c_str());
+                }
+                continue;
+            }
 
             TextureHandle tex;
             auto cached = pm_texture_cache.find(fs_path);
@@ -1334,10 +1343,16 @@ Entity* AssetManager::LoadWmoPlacement(
                     tex = std::make_shared<Image>(pm_device, blp);
                     pm_texture_cache[fs_path] = tex;
                 } catch (...) {
+                    ++tex_load_fail;
+                    if (tex_load_fail <= 3) {
+                        std::fprintf(stderr,
+                            "  WMO BLP load threw: %s\n", fs_path.c_str());
+                    }
                     continue;
                 }
             }
-            if (!tex) continue;
+            if (!tex) { ++tex_load_fail; continue; }
+            ++tex_ok;
 
             vk::DescriptorSet ds =
                 pm_descriptor_pool->AllocateSetRaw(wmo_layout);
@@ -1357,6 +1372,11 @@ Entity* AssetManager::LoadWmoPlacement(
             comp->material_sets[mi]     = ds;
             comp->material_textures[mi] = tex;
         }
+        std::fprintf(stderr,
+            "  WMO %s: %zu materials, %zu textured, %zu missing-path, "
+            "%zu missing-file, %zu load-fail\n",
+            p.wow_path.c_str(), root_shared->materials.size(),
+            tex_ok, tex_missing_path, tex_missing_file, tex_load_fail);
     }
 
     comp->root = std::move(root_shared);
