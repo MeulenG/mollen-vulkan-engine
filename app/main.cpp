@@ -162,12 +162,17 @@ int main() {
         // Without this call the doodads never enter the scene.
         assets.FlushDoodadInstances(scene);
 
-        // Phase 2E stage 1: each MODF WMO placement becomes a colored
-        // bounding-box marker. Real WMO geometry rendering is stage 2.
-        // Color cycles deterministically by unique_id so each building
-        // has a distinct hue for easy identification on screen.
-        size_t bbox_count = 0;
+        // Phase 2E: load each MODF WMO placement as a real meshed
+        // entity. On parse failure (missing asset, malformed group
+        // file) we fall back to the colored bbox marker debug overlay
+        // so the building's position is still visible on screen.
+        size_t wmo_ok = 0, wmo_fail = 0;
         for (const auto& w : assets.PendingWmoPlacements()) {
+            if (assets.LoadWmoPlacement(w, scene)) {
+                ++wmo_ok;
+                continue;
+            }
+            ++wmo_fail;
             mve::RenderSystem::WmoBboxMarker m{};
             m.pos     = w.engine_pos;
             m.extents = w.bbox_extents;
@@ -179,13 +184,13 @@ int main() {
             };
             render_system.AddWmoBbox(m);
             std::fprintf(stderr,
-                "  WMO bbox: %s at engine=(%.0f, %.0f, %.0f) extents=(%.0f, %.0f, %.0f)\n",
+                "  WMO (bbox fallback): %s at engine=(%.0f, %.0f, %.0f)\n",
                 w.wow_path.c_str(),
-                w.engine_pos.x, w.engine_pos.y, w.engine_pos.z,
-                w.bbox_extents.x, w.bbox_extents.y, w.bbox_extents.z);
-            ++bbox_count;
+                w.engine_pos.x, w.engine_pos.y, w.engine_pos.z);
         }
-        std::fprintf(stderr, "WMO bbox markers spawned: %zu\n", bbox_count);
+        std::fprintf(stderr,
+            "WMO placements: %zu loaded, %zu fell back to bbox\n",
+            wmo_ok, wmo_fail);
         assets.ClearPendingWmoPlacements();
 
         auto last_time = std::chrono::high_resolution_clock::now();

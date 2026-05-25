@@ -10,8 +10,11 @@
 #include "../scene/components/terrain_tile_component.h"
 #include "../scene/components/doodad_instance_component.h"
 #include "../scene/components/water_component.h"
+#include "../scene/components/wmo_instance_component.h"
 #include "../scene/terrain_mesh.h"
 #include "../scene/water_mesh.h"
+#include "../scene/wmo_mesh.h"
+#include "../formats/wmo_types.h"
 #include "../systems/render_system.h"
 #include "../formats/blp_loader.h"
 #include "../formats/adt_types.h"
@@ -1212,6 +1215,97 @@ void AssetManager::FlushDoodadInstances(Scene& scene) {
             "extended %zu)\n",
             new_instances, new_entities, extended_entities);
     }
+}
+
+Entity* AssetManager::LoadWmoPlacement(const WmoPlacement& p, Scene& scene) {
+    if (p.wow_path.empty()) return nullptr;
+
+    std::string root_path = ResolveWowAsset(p.wow_path);
+    auto root = WmoLoader::LoadRoot(root_path);
+    if (!root) return nullptr;
+
+    // Group files are <stem>_NNN.wmo where NNN is 3-digit zero-padded.
+    // Stem = root path minus the .wmo extension.
+    std::string stem = root_path;
+    size_t dot = stem.find_last_of('.');
+    if (dot != std::string::npos) stem.resize(dot);
+
+    std::vector<WmoGroupGpu> group_gpus;
+    group_gpus.reserve(root->header.n_groups);
+    std::vector<glm::vec4> bbox_mins;
+    std::vector<glm::vec4> bbox_maxs;
+    bbox_mins.reserve(root->header.n_groups);
+    bbox_maxs.reserve(root->header.n_groups);
+
+    for (uint32_t gi = 0; gi < root->header.n_groups; ++gi) {
+        char suffix[16];
+        std::snprintf(suffix, sizeof(suffix), "_%03u.wmo", gi);
+        std::string gpath = stem + suffix;
+        auto grp = WmoLoader::LoadGroup(gpath);
+        if (!grp) continue;
+
+        auto gpu = WmoMesh::Build(pm_device, *grp);
+        if (gpu.mesh) {
+            group_gpus.push_back(std::move(gpu));
+            const auto& gi_info = (gi < root->group_infos.size())
+                                      ? root->group_infos[gi]
+                                      : WmoMogi{};
+            bbox_mins.emplace_back(gi_info.bbox_min[0],
+                                    gi_info.bbox_min[1],
+                                    gi_info.bbox_min[2], 0.0f);
+            bbox_maxs.emplace_back(gi_info.bbox_max[0],
+                                    gi_info.bbox_max[1],
+                                    gi_info.bbox_max[2], 0.0f);
+        }
+    }
+    if (group_gpus.empty()) return nullptr;
+
+    // Build the WMO model matrix. Three components, applied right to
+    // left (so vertex transforms as: B then R_world then T):
+    //
+    //   B = 3-cycle basis permutation taking WMO-local WoW frame
+    //       (X=south, Y=east, Z=up) to engine (X=east, Y=up, Z=south).
+    //       Per WowToEngine: column 0 = (0,0,1), column 1 = (1,0,0),
+    //       column 2 = (0,1,0). Same swap used by terrain + water.
+    //
+    //   R_world = MODF Euler applied in engine-frame axes, using the
+    //       same MDDF axis mapping as M2 doodads but WITHOUT the -90 X
+    //       innermost rotation (WMO MOVT is Y-up post-basis-swap, not
+    //       Z-up like M2 vertices).
+    //         yaw   (rot_y) -> rotate about engine Y = (0,1,0)
+    //         pitch (rot_x) -> rotate about engine Z = (0,0,1)
+    //         roll  (rot_z) -> rotate about engine X = (1,0,0)
+    //         order: YXZ
+    //
+    //   T = translate to engine_pos
+    //
+    glm::mat4 B{0.0f};
+    B[0] = glm::vec4{0, 0, 1, 0};
+    B[1] = glm::vec4{1, 0, 0, 0};
+    B[2] = glm::vec4{0, 1, 0, 0};
+    B[3] = glm::vec4{0, 0, 0, 1};
+
+    glm::quat q_yaw   = glm::angleAxis(glm::radians(p.rot_deg.y), glm::vec3{0, 1, 0});
+    glm::quat q_pitch = glm::angleAxis(glm::radians(p.rot_deg.x), glm::vec3{0, 0, 1});
+    glm::quat q_roll  = glm::angleAxis(glm::radians(p.rot_deg.z), glm::vec3{1, 0, 0});
+    glm::mat4 R = glm::mat4_cast(q_yaw * q_pitch * q_roll);
+
+    glm::mat4 T = glm::translate(glm::mat4{1.0f}, p.engine_pos);
+    glm::mat4 model = T * R * B;
+
+    char entity_name[96];
+    std::snprintf(entity_name, sizeof(entity_name), "WMO_%u", p.unique_id);
+    Entity* entity = scene.CreateEntity(entity_name);
+    auto* tx = entity->AddComponent<TransformComponent>();
+    tx->pm_position = p.engine_pos;
+    auto* comp = entity->AddComponent<WmoInstanceComponent>();
+    comp->root           = std::shared_ptr<WmoRoot>(root.release());
+    comp->groups         = std::move(group_gpus);
+    comp->group_bbox_min = std::move(bbox_mins);
+    comp->group_bbox_max = std::move(bbox_maxs);
+    comp->model_matrix   = model;
+
+    return entity;
 }
 
 } // namespace mve

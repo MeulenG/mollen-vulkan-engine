@@ -6,8 +6,10 @@
 #include "../scene/components/terrain_tile_component.h"
 #include "../scene/components/doodad_instance_component.h"
 #include "../scene/components/water_component.h"
+#include "../scene/components/wmo_instance_component.h"
 #include "../scene/terrain_mesh.h"
 #include "../scene/water_mesh.h"
+#include "../scene/wmo_mesh.h"
 
 #include <algorithm>
 #include <array>
@@ -451,6 +453,31 @@ void RenderSystem::Init() {
     pm_water_pipeline = std::make_unique<Pipeline>(
         pm_device, shader_dir + "/water.vert.spv", shader_dir + "/water.frag.spv",
         water_config);
+
+    // WMO pipeline (v1: opaque, untextured, vertex-colored). Pushes a
+    // 7*vec4 + 2*mat4 = 224-byte block - we go beyond Vulkan's
+    // guaranteed 128-byte minimum here because every Vulkan driver
+    // shipping in 2026 supports at least 256 bytes (the spec's
+    // optional second tier), and the WMO pass benefits from having
+    // the whole lighting + fog packet in a single push call.
+    vk::PushConstantRange wmo_push{
+        vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+        0, 14 * sizeof(glm::vec4)};
+    vk::PipelineLayoutCreateInfo wmo_layout_info{};
+    wmo_layout_info.setPushConstantRanges(wmo_push);
+    pm_wmo_pipeline_layout =
+        pm_device.GetDevice().createPipelineLayout(wmo_layout_info);
+
+    auto wmo_config = PipelineConfig::DefaultConfig();
+    wmo_config.pipeline_layout         = *pm_wmo_pipeline_layout;
+    wmo_config.color_attachment_format = pm_offscreen.ColorFormat();
+    wmo_config.depth_attachment_format = pm_offscreen.DepthFormat();
+    wmo_config.binding_descriptions    = WmoVertex::GetBindingDescriptions();
+    wmo_config.attribute_descriptions  = WmoVertex::GetAttributeDescriptions();
+
+    pm_wmo_pipeline = std::make_unique<Pipeline>(
+        pm_device, shader_dir + "/wmo.vert.spv", shader_dir + "/wmo.frag.spv",
+        wmo_config);
 }
 
 void RenderSystem::UpdateSceneUBO() {
@@ -698,6 +725,55 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
                     if (!inst.mesh) continue;
                     inst.mesh->Bind(cmd);
                     inst.mesh->Draw(cmd);
+                }
+            });
+    }
+
+    // WMO pass. One entity per placed WMO (the abbey, Stormwind keep,
+    // Goldshire inn etc.). Each entity carries N group GPU meshes;
+    // we draw every batch in every group sequentially. v1 has no
+    // portal culling or per-group frustum cull yet - those land once
+    // the textured shader is in and the perf cost is measurable.
+    {
+        struct WmoPush {
+            glm::mat4 mvp;
+            glm::mat4 model;
+            glm::vec4 sun_dir;
+            glm::vec4 sun_color;
+            glm::vec4 ambient_color;
+            glm::vec4 fog_color;
+            glm::vec4 fog_params;
+            glm::vec4 camera_pos;
+        };
+        WmoPush wpush{};
+        wpush.sun_dir       = glm::vec4{pm_scene_data.pm_light_dir, 0.0f};
+        wpush.sun_color     = glm::vec4{pm_scene_data.pm_direct_color, 0.0f};
+        wpush.ambient_color = glm::vec4{pm_scene_data.pm_ambient_color, 0.0f};
+        wpush.fog_color     = glm::vec4{pm_scene_data.pm_fog_color,
+                                         pm_scene_data.pm_fog_end};
+        wpush.fog_params    = glm::vec4{pm_scene_data.pm_fog_start,
+                                         pm_scene_data.pm_fog_rate,
+                                         0.0f, 0.0f};
+        wpush.camera_pos    = glm::vec4{pm_scene_data.pm_camera_pos, 0.0f};
+
+        pm_wmo_pipeline->Bind(cmd);
+
+        scene.Each<WmoInstanceComponent>(
+            [&](Entity&, WmoInstanceComponent& wmo) {
+                wpush.model = wmo.model_matrix;
+                wpush.mvp   = view_proj_for_cull * wmo.model_matrix;
+                cmd.pushConstants<WmoPush>(
+                    *pm_wmo_pipeline_layout,
+                    vk::ShaderStageFlagBits::eVertex |
+                        vk::ShaderStageFlagBits::eFragment,
+                    0, wpush);
+
+                for (auto& g : wmo.groups) {
+                    if (!g.mesh) continue;
+                    g.mesh->Bind(cmd);
+                    for (const auto& b : g.batches) {
+                        cmd.drawIndexed(b.num_indices, 1, b.first_index, 0, 0);
+                    }
                 }
             });
     }

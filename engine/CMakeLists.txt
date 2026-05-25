@@ -29,6 +29,7 @@ add_library(mollen-engine STATIC
     scene/terrain_mesh.cpp
     scene/terrain_streamer.cpp
     scene/water_mesh.cpp
+    scene/wmo_mesh.cpp
     scene/grass_scatter.cpp
     scene/light_cycle.cpp
     scene/player_controller.cpp

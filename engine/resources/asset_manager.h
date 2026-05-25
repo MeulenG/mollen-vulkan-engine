@@ -125,6 +125,13 @@ public:
     }
     void ClearPendingWmoPlacements() { pm_pending_wmo_placements.clear(); }
 
+    // Load one queued WmoPlacement into the scene as a fully-meshed
+    // WMO entity (parses root + group files, builds GPU meshes,
+    // creates an entity with WmoInstanceComponent + TransformComponent).
+    // Returns the entity on success, nullptr on parse failure (caller
+    // can then fall back to the bbox-marker debug overlay).
+    Entity* LoadWmoPlacement(const WmoPlacement& p, Scene& scene);
+
     // Sample the ground height (engine.y) at an engine-space (x, z)
     // position. Returns true and writes out_y on success; returns
     // false when the position falls outside any loaded tile (caller

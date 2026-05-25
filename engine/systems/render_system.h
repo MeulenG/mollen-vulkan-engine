@@ -145,6 +145,7 @@ private:
     std::unique_ptr<Pipeline> pm_ground_pipeline;
     std::unique_ptr<Pipeline> pm_terrain_pipeline;
     std::unique_ptr<Pipeline> pm_water_pipeline;
+    std::unique_ptr<Pipeline> pm_wmo_pipeline;
 
     // Single layout shared by all 4 model-pipeline variants - they
     // differ only in shader+blend-state, not in descriptor layout.
@@ -169,6 +170,7 @@ private:
     vk::raii::PipelineLayout pm_ground_pipeline_layout = nullptr;
     vk::raii::PipelineLayout pm_terrain_pipeline_layout = nullptr;
     vk::raii::PipelineLayout pm_water_pipeline_layout = nullptr;
+    vk::raii::PipelineLayout pm_wmo_pipeline_layout = nullptr;
 
     vk::raii::DescriptorSetLayout pm_descriptor_layout = nullptr;
     vk::raii::DescriptorSetLayout pm_terrain_descriptor_layout = nullptr;
