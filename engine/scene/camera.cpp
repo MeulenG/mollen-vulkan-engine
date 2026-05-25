@@ -20,7 +20,11 @@ void Camera::Rotate(float delta_yaw, float delta_pitch) {
     constexpr float limit = glm::radians(89.0f);
     pitch_ = std::clamp(pitch_, -limit, limit);
 
-    if (mode_ == CameraMode::Orbit) {
+    if (mode_ == CameraMode::Orbit || mode_ == CameraMode::ThirdPerson) {
+        // Orbit + ThirdPerson share view math: camera position is
+        // derived from target + yaw/pitch/distance. The difference is
+        // who updates target - in Orbit, target is fixed; in
+        // ThirdPerson, the player controller drives it each frame.
         updatePosition();
     } else {
         // First-person: position is fixed, recompute target so look
@@ -38,13 +42,13 @@ void Camera::Pan(float dx, float dy) {
     if (mode_ == CameraMode::FlyFirstPerson) {
         position_ += right * dx + up * dy;
     }
-    if (mode_ == CameraMode::Orbit) {
+    if (mode_ == CameraMode::Orbit || mode_ == CameraMode::ThirdPerson) {
         updatePosition();
     }
 }
 
 void Camera::Zoom(float delta) {
-    if (mode_ == CameraMode::Orbit) {
+    if (mode_ == CameraMode::Orbit || mode_ == CameraMode::ThirdPerson) {
         distance_ = std::max(0.1f, distance_ - delta);
         updatePosition();
     } else {

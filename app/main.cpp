@@ -12,6 +12,7 @@
 #include "scene/components/terrain_component.h"
 #include "scene/components/terrain_tile_component.h"
 #include "scene/terrain_streamer.h"
+#include "scene/player_controller.h"
 #include "resources/asset_manager.h"
 #include "resources/buffer.h"
 #include "resources/descriptor.h"
@@ -118,7 +119,16 @@ int main() {
         glm::vec3 center{-9014.0f, 89.0f, -2.0f};
         cam->pm_camera.SetTarget(center);
         cam->pm_camera.SetOrbit(8.0f, 1.57f, 0.15f);
-        cam->pm_camera.SetMode(mve::CameraMode::FlyFirstPerson);
+
+        // Phase 2B: third-person mode with a player controller. The
+        // player spawns at the Northshire road position; the camera
+        // orbits the player's head (eye height = player.y + 1.7).
+        // WASD moves the player in camera-relative directions; mouse
+        // right-drag rotates the orbit yaw/pitch around the player;
+        // scroll zooms orbit distance.
+        cam->pm_camera.SetMode(mve::CameraMode::ThirdPerson);
+        mve::PlayerController player;
+        player.SetPosition(center);
 
         // Preload around wherever the camera actually sits (which may be
         // a neighboring tile because of the orbit offset). Radius 2 (5x5)
@@ -157,6 +167,24 @@ int main() {
             // for stable comparisons and clicks "Real-time" to let
             // it advance.
             light_cycle.Tick(dt);
+
+            // Phase 2B player update. Runs ONLY when the active camera
+            // is in ThirdPerson mode - in Orbit / FlyFirstPerson the
+            // WASD keys still drive the camera via EditorUISystem.
+            //
+            // Read WASD + sprint state straight from ImGui, drive the
+            // controller (which composes camera-relative direction +
+            // walk speed), then anchor the camera's orbit target to
+            // the player's eye position.
+            if (cam->pm_camera.Mode() == mve::CameraMode::ThirdPerson) {
+                bool w = ImGui::IsKeyDown(ImGuiKey_W);
+                bool a = ImGui::IsKeyDown(ImGuiKey_A);
+                bool s = ImGui::IsKeyDown(ImGuiKey_S);
+                bool d = ImGui::IsKeyDown(ImGuiKey_D);
+                bool sprint = ImGui::GetIO().KeyShift;
+                player.Update(dt, cam->pm_camera, w, a, s, d, sprint);
+                cam->pm_camera.SetTarget(player.GetEyePos());
+            }
 
             // Systems. EditorUISystem owns the dockspace + menu/status
             // bars, so the host viewport gets its layout from there.
