@@ -1337,10 +1337,11 @@ Entity* AssetManager::LoadWmoPlacement(
             std::string fs_path = ResolveWowAsset(wow_tex);
             if (!fs::exists(fs_path)) {
                 ++tex_missing_file;
-                if (tex_missing_file <= 3) {
-                    std::fprintf(stderr,
-                        "  WMO tex missing on disk: %s\n", fs_path.c_str());
-                }
+                // Track unique top-level dirs across the whole session
+                // by emitting one line per WMO listing all distinct
+                // texture roots that are missing (caller can sort -u).
+                std::fprintf(stderr,
+                    "  WMO tex missing: %s\n", wow_tex.c_str());
                 continue;
             }
 
