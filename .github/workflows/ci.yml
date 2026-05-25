@@ -1,22 +1,13 @@
 name: CI
 
-# Triggers:
-#   - PRs targeting `devel` (the integration branch) or `master`
-#     (release branch). PRs that target a feature branch are NOT
-#     gated here, so contributors can iterate freely on their own
-#     branches without burning CI minutes.
-#   - Direct pushes to `devel` and `master` (catches anything that
-#     lands without going through a PR - rare, but possible for
-#     hotfix commits with admin override).
 on:
   pull_request:
     branches: [devel, master]
   push:
     branches: [devel, master]
 
-# Cancel an older in-progress run when a new commit lands on the
-# same PR or branch. Without this, force-pushing to a PR queues a
-# build per push and they all run to completion.
+# Cancel older in-progress runs when a new commit lands on the
+# same PR or branch.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -26,34 +17,22 @@ jobs:
     name: Build (Windows, Debug)
     runs-on: windows-latest
 
-    # 30 min upper bound. A from-scratch first build (no cache) takes
-    # ~10-12 min. Cached builds take 2-4 min. 30 min headroom catches
-    # genuine hangs without false positives.
+    # 30 min upper bound.
     timeout-minutes: 30
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Installs the Vulkan SDK from LunarG. The root CMakeLists's
-      # `find_package(Vulkan REQUIRED)` needs this; the SDK also
-      # provides `glslc` which engine shader-compile custom commands
-      # invoke. Pin the SDK minor version so CI doesn't randomly
-      # break when LunarG cuts a release - bumping is opt-in.
+      # Installs the Vulkan SDK from LunarG.
       - name: Install Vulkan SDK
         uses: humbletim/install-vulkan-sdk@v1.2.0
         with:
           version: 1.3.290.0
           cache: true
 
-      # Restore the FetchContent dep tree (Catch2, GLFW, glm, ImGui,
-      # tomlplusplus) so subsequent builds don't re-clone + re-compile
-      # half a gig of third-party code. Hash all CMakeLists.txt files
-      # so a dependency version bump invalidates the cache correctly.
-      #
       # The cache holds the BUILT artifacts too (build/_deps/*-build),
       # not just the sources, so cache hits skip linking large libs
-      # like glfw3.lib and Catch2WithMain.lib.
       - name: Cache CMake _deps
         uses: actions/cache@v4
         with:
@@ -65,26 +44,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cmake-deps-
 
-      # Configure. We deliberately disable the optional knobs that
-      # need extra system deps not worth setting up on the runner:
-      #
-      #   MVE_BUILD_DBC_TOOLS=OFF  - needs mollen-storm (MPQ archive
-      #                              lib) + would also pull bzip2 / zlib.
-      #                              The dbc-extract CLI tool is dev-
-      #                              workflow-only; the engine and DBC
-      #                              library targets build without it.
-      #
-      #   MVE_ENABLE_PSQL=OFF      - needs libpqxx + a running Postgres.
-      #                              The DBC editor's persistence layer
-      #                              is the only PSQL consumer; without
-      #                              it the editor falls back to the
-      #                              in-memory path.
-      #
-      #   MVE_BUILD_TESTS=OFF      - the test target currently requires
-      #                              PSQL (test_psql_connector.cpp).
-      #                              When we add non-PSQL tests, flip
-      #                              this back ON and add a `ctest`
-      #                              step below.
       - name: Configure
         run: >
           cmake -B build -S .
@@ -96,9 +55,7 @@ jobs:
         run: cmake --build build --config Debug --parallel
 
       # Smoke-test: does the app executable actually exist after the
-      # build? `cmake --build` exits 0 in some MSBuild edge cases
-      # even when a target's link step silently produced nothing.
-      # Verifying the file is present on disk catches that.
+      # build?
       - name: Verify build outputs
         shell: pwsh
         run: |
