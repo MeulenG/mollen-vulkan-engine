@@ -419,8 +419,15 @@ void EditorUISystem::DrawViewport(Scene& scene, float delta_time) {
             float dist       = active_cam->Distance();
             float pan_speed  = dist * 0.001f;
             float zoom_speed = dist * 0.05f;
+            // FPS-mode speed knobs. Base = 25 yd/s (a brisk walk).
+            //   Shift = sprint, 5x  -> 125 yd/s
+            //   Ctrl  = noclip warp, 20x -> 500 yd/s, crosses a tile in
+            //          ~1 second; combined with Shift you get 2500 yd/s
+            //          which covers the entire 5x5 preload in under a
+            //          second (useful for "verify the layout" surveys).
             float fps_walk   = 25.0f * delta_time;   // yards per frame
             if (ImGui::GetIO().KeyShift) fps_walk *= 5.0f;
+            if (ImGui::GetIO().KeyCtrl)  fps_walk *= 20.0f;
             float fps_look   = 0.003f;               // radians per pixel
 
             if (ImGui::IsMouseDown(ImGuiMouseButton_Right) || fps) {

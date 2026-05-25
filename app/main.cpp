@@ -206,14 +206,31 @@ int main() {
             // it advance.
             light_cycle.Tick(dt);
 
+            // Noclip toggle (N): swap between ThirdPerson (player-
+            // following) and FlyFirstPerson (free camera). When
+            // re-entering ThirdPerson, re-anchor the camera to the
+            // player so the view snaps back to where the player is
+            // standing (otherwise the orbit target would still point
+            // wherever the free camera was last looking).
+            if (ImGui::IsKeyPressed(ImGuiKey_N, false)) {
+                if (cam->pm_camera.Mode() == mve::CameraMode::ThirdPerson) {
+                    cam->pm_camera.SetMode(mve::CameraMode::FlyFirstPerson);
+                } else if (cam->pm_camera.Mode() ==
+                           mve::CameraMode::FlyFirstPerson) {
+                    cam->pm_camera.SetMode(mve::CameraMode::ThirdPerson);
+                    cam->pm_camera.SetTarget(player.GetEyePos());
+                }
+            }
+
             // Phase 2B player update. Runs ONLY when the active camera
             // is in ThirdPerson mode - in Orbit / FlyFirstPerson the
-            // WASD keys still drive the camera via EditorUISystem.
+            // WASD keys drive the camera via EditorUISystem instead.
             //
-            // Read WASD + sprint state straight from ImGui, drive the
-            // controller (which composes camera-relative direction +
-            // walk speed), then anchor the camera's orbit target to
-            // the player's eye position.
+            // The player marker stays VISIBLE in every mode (rendered
+            // at player.GetPosition()) so noclip users have a "you-
+            // were-here" reference to fly back to.
+            render_system.SetPlayerPos(player.GetPosition());
+
             if (cam->pm_camera.Mode() == mve::CameraMode::ThirdPerson) {
                 bool w = ImGui::IsKeyDown(ImGuiKey_W);
                 bool a = ImGui::IsKeyDown(ImGuiKey_A);
@@ -236,8 +253,6 @@ int main() {
 
                 cam->pm_camera.SetTarget(player.GetEyePos());
                 render_system.SetPlayerPos(player.GetPosition());
-            } else {
-                render_system.HidePlayerMarker();
             }
 
             // Systems. EditorUISystem owns the dockspace + menu/status
