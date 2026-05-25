@@ -1273,42 +1273,38 @@ Entity* AssetManager::LoadWmoPlacement(
         return nullptr;
     }
 
-    // Build the WMO model matrix. Per WebWowViewerCpp
-    //   wowViewerLib/src/engine/objects/wmo/wmoObject.cpp lines 411-470:
-    //   M_canonical = adtToWorldMat4 * T(pos) * S(-1, 1, -1)
-    //                                       * Ry(rot.y - 270)
-    //                                       * Rz(-rot.x)
-    //                                       * Rx(rot.z - 90)
+    // Build the WMO model matrix. Three components, applied right to
+    // left (so vertex transforms as: B then R_world then T):
     //
-    // Translated to our (engine_pos pre-baked, engine basis X=east,
-    // Y=up, Z=south) convention:
+    //   B = 3-cycle basis permutation taking WMO-local WoW frame
+    //       (X=south, Y=east, Z=up) to engine (X=east, Y=up, Z=south).
+    //       Per WowToEngine: column 0 = (0,0,1), column 1 = (1,0,0),
+    //       column 2 = (0,1,0). Same swap used by terrain + water.
     //
-    //   M = T(engine_pos) * R_world * S(-1, 1, -1)
+    //   R_world = MODF Euler applied in engine-frame axes, using the
+    //       same MDDF axis mapping as M2 doodads but WITHOUT the -90 X
+    //       innermost rotation (WMO MOVT is Y-up post-basis-swap, not
+    //       Z-up like M2 vertices).
+    //         yaw   (rot_y) -> rotate about engine Y = (0,1,0)
+    //         pitch (rot_x) -> rotate about engine Z = (0,0,1)
+    //         roll  (rot_z) -> rotate about engine X = (1,0,0)
+    //         order: YXZ
     //
-    // where R_world uses engine-frame axes (yaw around (0,1,0) up,
-    // pitch around (0,0,1) south, roll around (1,0,0) east) AND the
-    // canonical magic offsets that compensate for WoW's stored
-    // rotation frame being 270 deg yaw + 90 deg roll offset from the
-    // renderer-expected orientation.
+    //   T = translate to engine_pos
     //
-    // The previous code used a 3-cycle permutation B in place of
-    // S(-1,1,-1). Both have unit determinant magnitude but B is a
-    // rotation (det +1) and S is a reflection (det -1) - they cannot
-    // be interchanged. The visible symptom was asymmetric WMOs (like
-    // a footbridge) appearing offset by half their bbox diagonal.
-    // Symmetric WMOs (Abbey, Stormwind keep) hid the error.
-    glm::mat4 S = glm::scale(glm::mat4{1.0f}, glm::vec3{-1.0f, 1.0f, -1.0f});
+    glm::mat4 B{0.0f};
+    B[0] = glm::vec4{0, 0, 1, 0};
+    B[1] = glm::vec4{1, 0, 0, 0};
+    B[2] = glm::vec4{0, 1, 0, 0};
+    B[3] = glm::vec4{0, 0, 0, 1};
 
-    glm::quat q_yaw   = glm::angleAxis(glm::radians(p.rot_deg.y - 270.0f),
-                                        glm::vec3{0, 1, 0});
-    glm::quat q_pitch = glm::angleAxis(glm::radians(-p.rot_deg.x),
-                                        glm::vec3{0, 0, 1});
-    glm::quat q_roll  = glm::angleAxis(glm::radians(p.rot_deg.z - 90.0f),
-                                        glm::vec3{1, 0, 0});
+    glm::quat q_yaw   = glm::angleAxis(glm::radians(p.rot_deg.y), glm::vec3{0, 1, 0});
+    glm::quat q_pitch = glm::angleAxis(glm::radians(p.rot_deg.x), glm::vec3{0, 0, 1});
+    glm::quat q_roll  = glm::angleAxis(glm::radians(p.rot_deg.z), glm::vec3{1, 0, 0});
     glm::mat4 R = glm::mat4_cast(q_yaw * q_pitch * q_roll);
 
     glm::mat4 T = glm::translate(glm::mat4{1.0f}, p.engine_pos);
-    glm::mat4 model = T * R * S;
+    glm::mat4 model = T * R * B;
 
     char entity_name[96];
     std::snprintf(entity_name, sizeof(entity_name), "WMO_%u", p.unique_id);
