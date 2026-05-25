@@ -1323,16 +1323,20 @@ Entity* AssetManager::LoadWmoPlacement(
     // Build the WMO model matrix. Three components, applied right to
     // left (so vertex transforms as: B then R_world then T):
     //
-    //   B = 3-cycle basis permutation taking WMO-local WoW frame
-    //       (X=south, Y=east, Z=up) to engine (X=east, Y=up, Z=south).
-    //       Per WowToEngine: column 0 = (0,0,1), column 1 = (1,0,0),
-    //       column 2 = (0,1,0). Same swap used by terrain + water.
+    //   B = basis swap from WMO server frame (Z-up) to engine frame
+    //       (Y-up). Per wowdev.wiki/WMO/v17, MOVT vertices are in
+    //       server frame: X=north-south, Y=east-west, Z=up. Our
+    //       engine frame is: X=server.X, Y=server.Z (up), Z=server.Y.
+    //       So the swap is just Y<->Z, NOT a 3-cycle permutation.
+    //       The previous 3-cycle was rotating every WMO by an extra
+    //       120 degrees around the (1,1,1) diagonal in addition to
+    //       the placement rotation - which is why Stormwind's gate
+    //       didn't face the direction Elwynn extends.
     //
-    //   R_world = MODF Euler applied in engine-frame axes, using the
-    //       same MDDF axis mapping as M2 doodads but WITHOUT the -90 X
-    //       innermost rotation (WMO MOVT is Y-up post-basis-swap, not
-    //       Z-up like M2 vertices).
-    //         yaw   (rot_y) -> rotate about engine Y = (0,1,0)
+    //   R_world = MODF Euler applied in engine-frame axes, matching
+    //       the MDDF/M2 convention since WMOs use the same MDDF
+    //       on-disk rotation convention:
+    //         yaw   (rot_y) -> rotate about engine Y = (0,1,0) up
     //         pitch (rot_x) -> rotate about engine Z = (0,0,1)
     //         roll  (rot_z) -> rotate about engine X = (1,0,0)
     //         order: YXZ
@@ -1340,9 +1344,9 @@ Entity* AssetManager::LoadWmoPlacement(
     //   T = translate to engine_pos
     //
     glm::mat4 B{0.0f};
-    B[0] = glm::vec4{0, 0, 1, 0};
-    B[1] = glm::vec4{1, 0, 0, 0};
-    B[2] = glm::vec4{0, 1, 0, 0};
+    B[0] = glm::vec4{1, 0, 0, 0};   // MOVT.x -> engine.X (server.X)
+    B[1] = glm::vec4{0, 0, 1, 0};   // MOVT.y -> engine.Z (server.Y)
+    B[2] = glm::vec4{0, 1, 0, 0};   // MOVT.z -> engine.Y (server.Z up)
     B[3] = glm::vec4{0, 0, 0, 1};
 
     glm::quat q_yaw   = glm::angleAxis(glm::radians(p.rot_deg.y), glm::vec3{0, 1, 0});
