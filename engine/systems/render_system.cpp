@@ -7,6 +7,7 @@
 #include "../scene/components/doodad_instance_component.h"
 #include "../scene/components/water_component.h"
 #include "../scene/components/wmo_instance_component.h"
+#include "../resources/wmo_debug_tuning.h"
 #include "../scene/terrain_mesh.h"
 #include "../scene/water_mesh.h"
 #include "../scene/wmo_mesh.h"
@@ -757,6 +758,40 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
 
         scene.Each<WmoInstanceComponent>(
             [&](Entity&, WmoInstanceComponent& wmo) {
+                // Rebuild model_matrix per frame from raw MODF data,
+                // using the editor's runtime WMO tuning. Lets the user
+                // slide yaw offsets and toggle sign flips live until
+                // we find the visually-correct combination.
+                const auto& dbg = g_wmo_debug;
+                float yaw = (dbg.yaw_sign_flip ? -wmo.raw_rot_deg.y : wmo.raw_rot_deg.y)
+                          + dbg.yaw_offset_deg;
+                float pitch = dbg.pitch_sign_flip ? -wmo.raw_rot_deg.x : wmo.raw_rot_deg.x;
+                float roll  = dbg.roll_sign_flip  ? -wmo.raw_rot_deg.z : wmo.raw_rot_deg.z;
+                glm::vec3 pitch_axis = dbg.swap_pitch_roll_axes
+                                            ? glm::vec3{1, 0, 0}
+                                            : glm::vec3{0, 0, 1};
+                glm::vec3 roll_axis  = dbg.swap_pitch_roll_axes
+                                            ? glm::vec3{0, 0, 1}
+                                            : glm::vec3{1, 0, 0};
+                glm::quat q_yaw   = glm::angleAxis(glm::radians(yaw),
+                                                    glm::vec3{0, 1, 0});
+                glm::quat q_pitch = glm::angleAxis(glm::radians(pitch), pitch_axis);
+                glm::quat q_roll  = glm::angleAxis(glm::radians(roll),  roll_axis);
+                glm::mat4 R = glm::mat4_cast(q_yaw * q_pitch * q_roll);
+                glm::mat4 swapYZ{1.0f};
+                swapYZ[1] = glm::vec4{0, 0, 1, 0};
+                swapYZ[2] = glm::vec4{0, 1, 0, 0};
+                // Extra mirror to un-do the SwapYZ reflection. Combining
+                // two reflections gives a rotation (det = +1), removing
+                // the left-right mirror that's currently visible on
+                // asymmetric WMOs like Stormwind's flight-master tower.
+                glm::mat4 extra_mirror = glm::scale(glm::mat4{1.0f},
+                    glm::vec3{dbg.mirror_x ? -1.0f : 1.0f,
+                              dbg.mirror_y ? -1.0f : 1.0f,
+                              dbg.mirror_z ? -1.0f : 1.0f});
+                glm::mat4 T = glm::translate(glm::mat4{1.0f}, wmo.raw_engine_pos);
+                wmo.model_matrix = T * R * swapYZ * extra_mirror;
+
                 WmoPush wpush{};
                 wpush.model = wmo.model_matrix;
                 wpush.mvp   = view_proj_for_cull * wmo.model_matrix;

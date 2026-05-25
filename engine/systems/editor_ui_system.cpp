@@ -6,6 +6,7 @@
 #include "../scene/components/terrain_tile_component.h"
 #include "../scene/components/transform_component.h"
 #include "../scene/components/mesh_component.h"
+#include "../resources/wmo_debug_tuning.h"
 
 #include <imgui_internal.h>
 
@@ -23,6 +24,12 @@
 namespace fs = std::filesystem;
 
 namespace mve {
+
+// Process-wide WMO transform tuning. The render system reads this
+// every frame; the inspector slider writes to it. Default values are
+// the brute-force starting point - all zeros, as we're searching for
+// the correct combination.
+WmoDebugTuning g_wmo_debug{};
 
 namespace {
 
@@ -541,6 +548,30 @@ void EditorUISystem::DrawInspector(Scene& scene, RenderSystem& render_system) {
         // (most fog accumulates near the far edge). 2.875 is Elwynn's
         // canonical client-computed value.
         ImGui::SliderFloat("Fog Rate",           &ubo.pm_fog_rate,  0.5f, 7.0f);
+
+        // Live tuning for the WMO model-matrix construction. Used to
+        // brute-force the correct combination of magic offset + sign
+        // flips needed to make Stormwind/Northshire/etc face the right
+        // direction. Changes take effect next frame.
+        ImGui::SeparatorText("WMO Transform Tuning (debug)");
+        ImGui::SliderFloat("WMO Yaw Offset",
+                            &g_wmo_debug.yaw_offset_deg, -360.0f, 360.0f);
+        if (ImGui::Button("0"))    g_wmo_debug.yaw_offset_deg = 0.0f;
+        ImGui::SameLine();
+        if (ImGui::Button("+90"))  g_wmo_debug.yaw_offset_deg = 90.0f;
+        ImGui::SameLine();
+        if (ImGui::Button("-90"))  g_wmo_debug.yaw_offset_deg = -90.0f;
+        ImGui::SameLine();
+        if (ImGui::Button("+180")) g_wmo_debug.yaw_offset_deg = 180.0f;
+        ImGui::Checkbox("Yaw sign flip",   &g_wmo_debug.yaw_sign_flip);
+        ImGui::Checkbox("Pitch sign flip", &g_wmo_debug.pitch_sign_flip);
+        ImGui::Checkbox("Roll sign flip",  &g_wmo_debug.roll_sign_flip);
+        ImGui::Checkbox("Swap pitch/roll axes", &g_wmo_debug.swap_pitch_roll_axes);
+        ImGui::Separator();
+        ImGui::TextDisabled("Extra mirror (un-mirror the SwapYZ reflection)");
+        ImGui::Checkbox("Mirror X (negate engine.X)", &g_wmo_debug.mirror_x);
+        ImGui::Checkbox("Mirror Y (negate engine.Y)", &g_wmo_debug.mirror_y);
+        ImGui::Checkbox("Mirror Z (negate engine.Z)", &g_wmo_debug.mirror_z);
 
         ImGui::End();
         return;

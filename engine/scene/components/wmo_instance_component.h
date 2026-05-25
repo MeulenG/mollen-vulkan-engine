@@ -29,6 +29,13 @@ struct WmoInstanceComponent : Component {
     std::vector<glm::vec4>        group_bbox_max;
     glm::mat4                     model_matrix{1.0f};
 
+    // Raw MODF data preserved so the render system can rebuild
+    // model_matrix per frame when the editor changes WMO debug tuning
+    // (yaw offset, sign flips, swap matrix). Without this we'd need
+    // a full WMO reload every time a slider moves.
+    glm::vec3                     raw_engine_pos{0.0f};
+    glm::vec3                     raw_rot_deg{0.0f};
+
     // Per-material descriptor sets, indexed by MOMT slot. Each set
     // has SceneUBO at binding 0 and the material's diffuse sampler at
     // binding 1. NULL handle = missing texture (the draw loop skips or

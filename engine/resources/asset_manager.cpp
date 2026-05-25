@@ -532,53 +532,6 @@ Entity* AssetManager::LoadAdtTileIntoScene(
         p.rot_deg      = glm::vec3{w.rot_x_deg, w.rot_y_deg, w.rot_z_deg};
         p.unique_id    = w.unique_id;
         pm_pending_wmo_placements.push_back(std::move(p));
-
-        // Diagnostic: dump raw MODF + computed positions for the first
-        // few placements per session. Goal: prove (or disprove) that
-        // (a) engine_pos is correctly derived, (b) bbox center in
-        // engine frame coincides with engine_pos for centered models,
-        // and (c) figure out the local-origin offset for asymmetric
-        // ones (like the footbridge).
-        static int diag_count = 0;
-        if (diag_count < 12) {
-            ++diag_count;
-            float bc_x_wow = 0.5f * (w.bbox_lo[0] + w.bbox_hi[0]);
-            float bc_y_wow = 0.5f * (w.bbox_lo[1] + w.bbox_hi[1]);
-            float bc_z_wow = 0.5f * (w.bbox_lo[2] + w.bbox_hi[2]);
-            // Note: MODF bbox per wowdev is "the WMO bbox already in
-            // server-space coords, NOT in MDDF on-disk coords". So we
-            // do NOT apply the kAdtMaxCoord flip to the bbox - the
-            // raw bbox values ARE the world-space AABB. Just apply
-            // WowToEngine axis swap.
-            glm::vec3 bbox_center_engine_servercoord{
-                bc_y_wow, bc_z_wow, bc_x_wow};
-            // Also compute "treating bbox like MDDF on-disk" for
-            // comparison. Whichever interpretation makes bbox_center
-            // match engine_pos for symmetric WMOs is the right one.
-            glm::vec3 bbox_center_engine_mddfcoord{
-                kAdtMaxCoord - bc_z_wow,
-                bc_y_wow,
-                kAdtMaxCoord - bc_x_wow};
-            glm::vec3 delta_server = bbox_center_engine_servercoord - engine_pos;
-            glm::vec3 delta_mddf   = bbox_center_engine_mddfcoord - engine_pos;
-            std::fprintf(stderr,
-                "WMO_DIAG [%s] u=%u\n"
-                "  raw_pos = (%.2f, %.2f, %.2f)  rot_deg = (%.2f, %.2f, %.2f)\n"
-                "  raw_bbox lo=(%.2f, %.2f, %.2f) hi=(%.2f, %.2f, %.2f)\n"
-                "  engine_pos                = (%.2f, %.2f, %.2f)\n"
-                "  bbox_center_engine_server = (%.2f, %.2f, %.2f)  delta=(%.2f, %.2f, %.2f) |%.2f|\n"
-                "  bbox_center_engine_mddf   = (%.2f, %.2f, %.2f)  delta=(%.2f, %.2f, %.2f) |%.2f|\n",
-                wmo_path.c_str(), w.unique_id,
-                w.pos_x, w.pos_y, w.pos_z,
-                w.rot_x_deg, w.rot_y_deg, w.rot_z_deg,
-                w.bbox_lo[0], w.bbox_lo[1], w.bbox_lo[2],
-                w.bbox_hi[0], w.bbox_hi[1], w.bbox_hi[2],
-                engine_pos.x, engine_pos.y, engine_pos.z,
-                bbox_center_engine_servercoord.x, bbox_center_engine_servercoord.y, bbox_center_engine_servercoord.z,
-                delta_server.x, delta_server.y, delta_server.z, glm::length(delta_server),
-                bbox_center_engine_mddfcoord.x, bbox_center_engine_mddfcoord.y, bbox_center_engine_mddfcoord.z,
-                delta_mddf.x, delta_mddf.y, delta_mddf.z, glm::length(delta_mddf));
-        }
     }
 
     // Cache the heightmap before the AdtTile gets dropped at end of
@@ -1357,17 +1310,23 @@ Entity* AssetManager::LoadWmoPlacement(
     swapYZ[1] = glm::vec4{0, 0, 1, 0};   // input.y -> output.z
     swapYZ[2] = glm::vec4{0, 1, 0, 0};   // input.z -> output.y
 
-    // Axis mapping from WoWee (Z-up) to our (Y-up) engine via the
-    // similarity transform P * R_wowee * P^-1 where P swaps Y and Z
-    // components:
-    //   WoWee Rz around (0,0,1) -> our R around (0,1,0)  [up]
-    //   WoWee Ry around (0,1,0) -> our R around (0,0,1)
-    //   WoWee Rx around (1,0,0) -> our R around (1,0,0)
-    // Previously I had pitch/roll axes swapped, which doesn't affect
-    // Stormwind (rot_x = rot_z = 0) but mis-rotates other WMOs that
-    // have non-zero pitch or roll (KeepWall pieces, towers, etc).
+    // Brute-force candidate selector for the WMO yaw magic offset.
+    // WoWee's research said +180; that math should be correct for our
+    // basis but visuals say otherwise. Iterating possible values:
+    //   0   = no offset
+    //   90  = +pi/2
+    //  -90  = -pi/2
+    //   180 = +pi  (WoWee's value)
+    // Sign-flip candidates also available via kYawSignFlip:
+    //   false = use +rot_y
+    //   true  = use -rot_y
+    constexpr float kYawMagicOffset = 0.0f;     // <-- TRY 0 FIRST
+    constexpr bool  kYawSignFlip    = false;
+
+    float yaw_deg = (kYawSignFlip ? -p.rot_deg.y : p.rot_deg.y) + kYawMagicOffset;
+
     glm::quat q_z_outer = glm::angleAxis(
-        glm::radians(p.rot_deg.y + 180.0f), glm::vec3{0, 1, 0});
+        glm::radians(yaw_deg),               glm::vec3{0, 1, 0});
     glm::quat q_y_mid   = glm::angleAxis(
         glm::radians(-p.rot_deg.x),         glm::vec3{0, 0, 1});
     glm::quat q_x_inner = glm::angleAxis(
@@ -1389,6 +1348,10 @@ Entity* AssetManager::LoadWmoPlacement(
     comp->group_bbox_min = std::move(bbox_mins);
     comp->group_bbox_max = std::move(bbox_maxs);
     comp->model_matrix   = model;
+    // Preserve raw MODF values so the render system can rebuild
+    // model_matrix per frame as the editor adjusts WMO debug tuning.
+    comp->raw_engine_pos = p.engine_pos;
+    comp->raw_rot_deg    = p.rot_deg;
 
     // Allocate one descriptor set per material with SceneUBO + diffuse
     // sampler. Texture loading mirrors the M2 load_blp pattern -
@@ -1407,15 +1370,7 @@ Entity* AssetManager::LoadWmoPlacement(
             const std::string& wow_tex = root_shared->texture_paths[mi];
             if (wow_tex.empty()) { ++tex_missing_path; continue; }
             std::string fs_path = ResolveWowAsset(wow_tex);
-            if (!fs::exists(fs_path)) {
-                ++tex_missing_file;
-                // Track unique top-level dirs across the whole session
-                // by emitting one line per WMO listing all distinct
-                // texture roots that are missing (caller can sort -u).
-                std::fprintf(stderr,
-                    "  WMO tex missing: %s\n", wow_tex.c_str());
-                continue;
-            }
+            if (!fs::exists(fs_path)) { ++tex_missing_file; continue; }
 
             TextureHandle tex;
             auto cached = pm_texture_cache.find(fs_path);
@@ -1428,10 +1383,6 @@ Entity* AssetManager::LoadWmoPlacement(
                     pm_texture_cache[fs_path] = tex;
                 } catch (...) {
                     ++tex_load_fail;
-                    if (tex_load_fail <= 3) {
-                        std::fprintf(stderr,
-                            "  WMO BLP load threw: %s\n", fs_path.c_str());
-                    }
                     continue;
                 }
             }
@@ -1456,11 +1407,14 @@ Entity* AssetManager::LoadWmoPlacement(
             comp->material_sets[mi]     = ds;
             comp->material_textures[mi] = tex;
         }
-        std::fprintf(stderr,
-            "  WMO %s: %zu materials, %zu textured, %zu missing-path, "
-            "%zu missing-file, %zu load-fail\n",
-            p.wow_path.c_str(), root_shared->materials.size(),
-            tex_ok, tex_missing_path, tex_missing_file, tex_load_fail);
+        // Only log when something went wrong - happy-path WMOs stay quiet.
+        size_t missing = tex_missing_path + tex_missing_file + tex_load_fail;
+        if (missing > 0) {
+            std::fprintf(stderr,
+                "  WMO %s: %zu materials, %zu textured, %zu missing\n",
+                p.wow_path.c_str(), root_shared->materials.size(),
+                tex_ok, missing);
+        }
     }
 
     comp->root = std::move(root_shared);
