@@ -117,16 +117,26 @@ int main() {
         // standing on the road looking slightly down at our feet.
         // Grass cull radius is 60 yards so foreground blades render.
         // Phase 2B: third-person mode with a player controller.
-        // Player spawns at the Northshire road position. Camera orbits
-        // the player's eye (player.y + 1.7) at 12 yards behind, ~22deg
-        // downward look (canonical WoW over-the-shoulder framing).
-        // WASD moves the player in camera-relative directions; mouse
-        // right-drag rotates orbit yaw/pitch around the player; scroll
-        // zooms orbit distance.
-        glm::vec3 player_spawn{-9014.0f, 89.0f, -2.0f};
+        // Player spawns just south of Northshire Abbey on the road,
+        // facing NORTH so the Abbey bbox (engine -8897, 80, -178) is
+        // dead ahead. Stormwind sits far south behind the camera.
+        // Camera orbits the player's eye (player.y + 1.7) at 12 yards
+        // behind, ~22deg downward look.
+        //
+        // Orbit yaw convention (from Camera::updatePosition):
+        //   position = target + R * (cos(pitch)*sin(yaw),
+        //                            sin(pitch),
+        //                            cos(pitch)*cos(yaw))
+        // So:
+        //   yaw=0    -> camera at target + (0, 0, R)   = south of target  (looks N)
+        //   yaw=pi/2 -> camera at target + (R, 0, 0)   = east of target   (looks W)
+        //   yaw=pi   -> camera at target + (0, 0, -R)  = north of target  (looks S)
+        // Abbey is north of player (engine.z -178 vs player -30), so we
+        // want camera SOUTH of player looking NORTH -> yaw=0.
+        glm::vec3 player_spawn{-9000.0f, 89.0f, -30.0f};
         glm::vec3 eye_target = player_spawn + glm::vec3{0, 1.7f, 0};
         cam->pm_camera.SetTarget(eye_target);
-        cam->pm_camera.SetOrbit(12.0f, 1.57f, 0.40f);
+        cam->pm_camera.SetOrbit(12.0f, 0.0f, 0.30f);
         cam->pm_camera.SetMode(mve::CameraMode::ThirdPerson);
 
         mve::PlayerController player;
