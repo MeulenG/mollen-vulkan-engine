@@ -532,6 +532,53 @@ Entity* AssetManager::LoadAdtTileIntoScene(
         p.rot_deg      = glm::vec3{w.rot_x_deg, w.rot_y_deg, w.rot_z_deg};
         p.unique_id    = w.unique_id;
         pm_pending_wmo_placements.push_back(std::move(p));
+
+        // Diagnostic: dump raw MODF + computed positions for the first
+        // few placements per session. Goal: prove (or disprove) that
+        // (a) engine_pos is correctly derived, (b) bbox center in
+        // engine frame coincides with engine_pos for centered models,
+        // and (c) figure out the local-origin offset for asymmetric
+        // ones (like the footbridge).
+        static int diag_count = 0;
+        if (diag_count < 12) {
+            ++diag_count;
+            float bc_x_wow = 0.5f * (w.bbox_lo[0] + w.bbox_hi[0]);
+            float bc_y_wow = 0.5f * (w.bbox_lo[1] + w.bbox_hi[1]);
+            float bc_z_wow = 0.5f * (w.bbox_lo[2] + w.bbox_hi[2]);
+            // Note: MODF bbox per wowdev is "the WMO bbox already in
+            // server-space coords, NOT in MDDF on-disk coords". So we
+            // do NOT apply the kAdtMaxCoord flip to the bbox - the
+            // raw bbox values ARE the world-space AABB. Just apply
+            // WowToEngine axis swap.
+            glm::vec3 bbox_center_engine_servercoord{
+                bc_y_wow, bc_z_wow, bc_x_wow};
+            // Also compute "treating bbox like MDDF on-disk" for
+            // comparison. Whichever interpretation makes bbox_center
+            // match engine_pos for symmetric WMOs is the right one.
+            glm::vec3 bbox_center_engine_mddfcoord{
+                kAdtMaxCoord - bc_z_wow,
+                bc_y_wow,
+                kAdtMaxCoord - bc_x_wow};
+            glm::vec3 delta_server = bbox_center_engine_servercoord - engine_pos;
+            glm::vec3 delta_mddf   = bbox_center_engine_mddfcoord - engine_pos;
+            std::fprintf(stderr,
+                "WMO_DIAG [%s] u=%u\n"
+                "  raw_pos = (%.2f, %.2f, %.2f)  rot_deg = (%.2f, %.2f, %.2f)\n"
+                "  raw_bbox lo=(%.2f, %.2f, %.2f) hi=(%.2f, %.2f, %.2f)\n"
+                "  engine_pos                = (%.2f, %.2f, %.2f)\n"
+                "  bbox_center_engine_server = (%.2f, %.2f, %.2f)  delta=(%.2f, %.2f, %.2f) |%.2f|\n"
+                "  bbox_center_engine_mddf   = (%.2f, %.2f, %.2f)  delta=(%.2f, %.2f, %.2f) |%.2f|\n",
+                wmo_path.c_str(), w.unique_id,
+                w.pos_x, w.pos_y, w.pos_z,
+                w.rot_x_deg, w.rot_y_deg, w.rot_z_deg,
+                w.bbox_lo[0], w.bbox_lo[1], w.bbox_lo[2],
+                w.bbox_hi[0], w.bbox_hi[1], w.bbox_hi[2],
+                engine_pos.x, engine_pos.y, engine_pos.z,
+                bbox_center_engine_servercoord.x, bbox_center_engine_servercoord.y, bbox_center_engine_servercoord.z,
+                delta_server.x, delta_server.y, delta_server.z, glm::length(delta_server),
+                bbox_center_engine_mddfcoord.x, bbox_center_engine_mddfcoord.y, bbox_center_engine_mddfcoord.z,
+                delta_mddf.x, delta_mddf.y, delta_mddf.z, glm::length(delta_mddf));
+        }
     }
 
     // Cache the heightmap before the AdtTile gets dropped at end of
