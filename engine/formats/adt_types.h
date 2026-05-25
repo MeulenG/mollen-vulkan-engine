@@ -162,6 +162,47 @@ struct AdtDoodadPlacement {
     uint16_t flags        = 0;
 };
 
+// One liquid (water/ocean/magma/slime) instance parsed from a single
+// SMLiquidInstance inside the top-level MH2O chunk. WotLK 3.3.5a uses
+// MH2O exclusively; the legacy per-MCNK MCLQ format is not parsed here.
+//
+// Coordinate frame: positions are computed at mesh-build time from
+// (chunk_index, x_offset, y_offset). The chunk_index references which
+// MCNK (0..255, row-major iy*16+ix) the liquid is anchored to; the
+// offsets and dimensions then carve out a (width x height) cell
+// rectangle inside that MCNK, where each cell is kAdtChunkSize / 8 =
+// 4.1666... yards on a side. So the patch spans width*cell_size by
+// height*cell_size yards starting at the MCNK's NW + offset cells.
+//
+// LVF (LiquidVertexFormat) selected per liquid_object_or_lvf in the
+// on-disk SMLiquidInstance (when <= 41, it IS the LVF directly):
+//   0 = Height + Depth   (Elwynn rivers, lakes - standard)
+//   1 = Height + UV      (magma/slime with painted UVs)
+//   2 = Depth only       (ocean - flat, height = min_height_level)
+//   3 = Height + UV + Depth
+// Vertex count is always (width+1) * (height+1) regardless of LVF.
+struct AdtLiquidInstance {
+    uint16_t chunk_index = 0;        // 0..255, iy*16+ix into AdtTile::chunks
+    uint16_t liquid_type = 0;        // FK -> LiquidType.dbc; 1=Slow Water (Elwynn)
+    uint16_t lvf         = 0;        // 0..3 per LVF table above
+    uint8_t  x_offset    = 0;        // 0..7 cells from MCNK NW
+    uint8_t  y_offset    = 0;
+    uint8_t  width       = 0;        // 1..8 cells wide
+    uint8_t  height      = 0;        // 1..8 cells tall
+    float    min_height  = 0.0f;     // WoW Z min/max (used for LVF=2 flat ocean)
+    float    max_height  = 0.0f;
+    // Per-vertex height in WoW absolute Z. (width+1)*(height+1) entries
+    // row-major. For LVF=2 (ocean), populated to min_height for all verts.
+    std::vector<float> heights;
+    // Per-vertex depth in [0,1]. Drives the shallow/deep alpha blend.
+    // Same packing as heights. For LVF=1 (no depth on disk), all 1.0.
+    std::vector<float> depths;
+    // Existence bitmap: bit (y*width + x) set means the cell at local
+    // (x, y) is rendered. Empty vector = "all cells exist" (the wiki's
+    // convention when offset_exists_bitmap == 0 in the on-disk struct).
+    std::vector<uint8_t> exists_bits;
+};
+
 // Parsed ADT terrain content.
 struct AdtTile {
     int tile_x = 0;             // 0..63 along WoW X axis
@@ -193,6 +234,11 @@ struct AdtTile {
     // 256 MCNK chunks, indexed as [y * 16 + x] where x and y are the chunk
     // coordinates within the tile (0..15).
     AdtChunk chunks[kAdtChunksPerTile];
+
+    // Parsed MH2O liquid instances (water/ocean/magma/slime patches).
+    // Typical Elwynn tile: 0-30 instances mostly along Crystal Brook
+    // and the Stormwind moat. Empty for tiles with no water.
+    std::vector<AdtLiquidInstance> liquids;
 };
 
 class AdtLoader {

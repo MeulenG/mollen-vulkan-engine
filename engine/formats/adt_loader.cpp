@@ -525,6 +525,110 @@ bool AdtLoader::LoadFile(const std::string& path, AdtTile& out) {
                     (ReadU32(buf.data(), off + 60) >> 16) & 0xFFFF);
                 out.wmos.push_back(w);
             }
+        } else if (id == FourCC("MH2O")) {
+            // Top-level liquid chunk (TBC+ format, used by all WotLK ADTs).
+            // Layout (per wowdev.wiki/ADT/v18#MH2O and WebWowViewerCpp
+            // adtFileHeader.h SMLiquidChunk):
+            //
+            //   [0 .. 256 * 12)         = 256 SMLiquidChunk headers
+            //   [variable .. variable)  = SMLiquidInstance[] (24 B each)
+            //   [variable .. variable)  = mh2o_chunk_attributes (16 B)
+            //   [variable .. variable)  = exists bitmaps (variable B)
+            //   [variable .. variable)  = vertex data (LVF-dependent)
+            //
+            // All sub-offsets in the headers are RELATIVE to the start of
+            // the MH2O payload (not file-relative).
+            const uint8_t* base = buf.data() + pos;
+            size_t base_size    = payload_size;
+            for (uint32_t ci = 0; ci < 256u; ++ci) {
+                if (ci * 12u + 12u > base_size) break;
+                uint32_t ofs_inst = ReadU32(base, ci * 12u + 0);
+                uint32_t n_layers = ReadU32(base, ci * 12u + 4);
+                // ofs_attributes at +8 - we skip attributes (fishable/deep
+                // bitmasks) for v1; depth comes from vertex data instead.
+                for (uint32_t li = 0; li < n_layers; ++li) {
+                    size_t io = ofs_inst + li * 24u;
+                    if (io + 24u > base_size) break;
+                    AdtLiquidInstance inst{};
+                    inst.chunk_index = static_cast<uint16_t>(ci);
+                    inst.liquid_type = static_cast<uint16_t>(
+                        ReadU32(base, io + 0) & 0xFFFFu);
+                    uint16_t lvf_or_obj = static_cast<uint16_t>(
+                        (ReadU32(base, io + 0) >> 16) & 0xFFFFu);
+                    // In WotLK Elwynn, this is always the LVF directly
+                    // (values <= 41). LiquidObject.dbc lookups only kick
+                    // in at >= 42 which Cata+ used.
+                    inst.lvf        = lvf_or_obj <= 41 ? lvf_or_obj : 0;
+                    inst.min_height = ReadF32(base, io + 4);
+                    inst.max_height = ReadF32(base, io + 8);
+                    inst.x_offset   = base[io + 12];
+                    inst.y_offset   = base[io + 13];
+                    inst.width      = base[io + 14];
+                    inst.height     = base[io + 15];
+                    uint32_t ofs_exists = ReadU32(base, io + 16);
+                    uint32_t ofs_verts  = ReadU32(base, io + 20);
+
+                    // Clamp width/height defensively. The spec allows up
+                    // to 8; malformed values would overflow our buffers.
+                    if (inst.width  > 8) inst.width  = 8;
+                    if (inst.height > 8) inst.height = 8;
+                    if (inst.width  == 0 || inst.height == 0) continue;
+
+                    uint32_t n_verts = static_cast<uint32_t>(inst.width + 1) *
+                                       static_cast<uint32_t>(inst.height + 1);
+                    inst.heights.resize(n_verts, inst.min_height);
+                    inst.depths.resize(n_verts, 1.0f);
+
+                    // LVF=0 (Elwynn): float[N] heights, then uint8[N] depths.
+                    // LVF=1: float[N] heights, then int16[N*2] UVs. No depth.
+                    // LVF=2 (ocean): uint8[N] depths only, height = min.
+                    // LVF=3: float[N] heights, then int16[N*2] UVs, then uint8[N] depths.
+                    if (ofs_verts != 0 && ofs_verts < base_size) {
+                        size_t vo = ofs_verts;
+                        if (inst.lvf == 0 || inst.lvf == 1 || inst.lvf == 3) {
+                            if (vo + n_verts * 4u <= base_size) {
+                                for (uint32_t i = 0; i < n_verts; ++i) {
+                                    inst.heights[i] = ReadF32(base, vo + i * 4u);
+                                }
+                                vo += n_verts * 4u;
+                            }
+                            if (inst.lvf == 1 || inst.lvf == 3) {
+                                vo += n_verts * 4u;  // skip int16 s,t UVs
+                            }
+                            if (inst.lvf == 0 || inst.lvf == 3) {
+                                if (vo + n_verts <= base_size) {
+                                    for (uint32_t i = 0; i < n_verts; ++i) {
+                                        inst.depths[i] = base[vo + i] / 255.0f;
+                                    }
+                                }
+                            }
+                        } else if (inst.lvf == 2) {
+                            if (vo + n_verts <= base_size) {
+                                for (uint32_t i = 0; i < n_verts; ++i) {
+                                    inst.depths[i] = base[vo + i] / 255.0f;
+                                }
+                            }
+                        }
+                    }
+
+                    // Exists bitmap: (width*height + 7) / 8 bytes. When
+                    // ofs_exists == 0 the wiki convention is "all cells
+                    // exist" - we leave inst.exists_bits empty and the
+                    // mesh builder treats that as a full bitmap.
+                    if (ofs_exists != 0) {
+                        size_t n_bits  = static_cast<size_t>(inst.width) *
+                                         static_cast<size_t>(inst.height);
+                        size_t n_bytes = (n_bits + 7u) / 8u;
+                        if (ofs_exists + n_bytes <= base_size) {
+                            inst.exists_bits.assign(
+                                base + ofs_exists,
+                                base + ofs_exists + n_bytes);
+                        }
+                    }
+
+                    out.liquids.push_back(std::move(inst));
+                }
+            }
         } else if (id == FourCC("MCNK")) {
             // Up to 256 MCNK chunks. Order in the file is row-major (the
             // index_x and index_y inside the header give the canonical

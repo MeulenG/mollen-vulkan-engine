@@ -9,7 +9,9 @@
 #include "../scene/components/terrain_component.h"
 #include "../scene/components/terrain_tile_component.h"
 #include "../scene/components/doodad_instance_component.h"
+#include "../scene/components/water_component.h"
 #include "../scene/terrain_mesh.h"
+#include "../scene/water_mesh.h"
 #include "../systems/render_system.h"
 #include "../formats/blp_loader.h"
 #include "../formats/adt_types.h"
@@ -659,6 +661,22 @@ Entity* AssetManager::LoadAdtTileIntoScene(
     tile_comp->pm_tile_y = tile_y;
     tile_comp->pm_centroid_engine = centroid;
     tile_comp->pm_radius = radius;
+
+    // Build per-instance water meshes. Each AdtLiquidInstance becomes
+    // one Mesh; tiles with no liquids skip the component entirely.
+    // Meshes are owned by the tile entity, so eviction drops them.
+    if (!tile->liquids.empty()) {
+        auto* water_comp = entity->AddComponent<WaterComponent>();
+        water_comp->instances.reserve(tile->liquids.size());
+        for (const auto& li : tile->liquids) {
+            auto m = WaterMesh::Build(pm_device, *tile, li);
+            if (!m) continue;
+            WaterInstanceMesh wm{};
+            wm.mesh = std::move(m);
+            wm.liquid_type = li.liquid_type;
+            water_comp->instances.push_back(std::move(wm));
+        }
+    }
 
     // Spawn MDDF doodads. Each entry references a path via name_id ->
     // tile->doodad_paths. Dedupe by unique_id across tiles so a prop

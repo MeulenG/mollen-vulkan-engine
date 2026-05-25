@@ -5,7 +5,9 @@
 #include "../scene/components/terrain_component.h"
 #include "../scene/components/terrain_tile_component.h"
 #include "../scene/components/doodad_instance_component.h"
+#include "../scene/components/water_component.h"
 #include "../scene/terrain_mesh.h"
+#include "../scene/water_mesh.h"
 
 #include <algorithm>
 #include <array>
@@ -400,6 +402,48 @@ void RenderSystem::Init() {
     pm_terrain_pipeline = std::make_unique<Pipeline>(
         pm_device, shader_dir + "/terrain.vert.spv", shader_dir + "/terrain.frag.spv",
         terrain_config);
+
+    // Water pipeline. No descriptor set - all per-instance data rides
+    // in a 128-byte push range shared between vertex and fragment.
+    // Layout:
+    //   bytes 0..63    mvp                    (vertex)
+    //   bytes 64..79   river_color (rgb, w=unused)         (fragment)
+    //   bytes 80..95   fog_color   (rgb, w=fog_end yards)  (fragment)
+    //   bytes 96..111  params (shallow_a, deep_a, time_sec, fog_start)
+    //   bytes 112..127 camera (xyz=world cam pos, w=unused)
+    //
+    // Alpha-blend + depth-write ON + cull-none, per WebWowViewerCpp's
+    // canonical water pipeline state. Depth-write is on so anything
+    // submerged in a future pass is correctly occluded; cull-none lets
+    // an underwater camera still see the surface from below.
+    vk::PushConstantRange water_push{
+        vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+        0, 8 * sizeof(glm::vec4)};
+    vk::PipelineLayoutCreateInfo water_layout_info{};
+    water_layout_info.setPushConstantRanges(water_push);
+    pm_water_pipeline_layout =
+        pm_device.GetDevice().createPipelineLayout(water_layout_info);
+
+    auto water_config = PipelineConfig::DefaultConfig();
+    water_config.pipeline_layout         = *pm_water_pipeline_layout;
+    water_config.color_attachment_format = pm_offscreen.ColorFormat();
+    water_config.depth_attachment_format = pm_offscreen.DepthFormat();
+    water_config.binding_descriptions    = WaterVertex::GetBindingDescriptions();
+    water_config.attribute_descriptions  = WaterVertex::GetAttributeDescriptions();
+    water_config.rasterization_info.cullMode = vk::CullModeFlagBits::eNone;
+    water_config.depth_stencil_info.depthTestEnable  = vk::True;
+    water_config.depth_stencil_info.depthWriteEnable = vk::True;
+    water_config.color_blend_attachment.blendEnable         = vk::True;
+    water_config.color_blend_attachment.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha;
+    water_config.color_blend_attachment.dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
+    water_config.color_blend_attachment.colorBlendOp        = vk::BlendOp::eAdd;
+    water_config.color_blend_attachment.srcAlphaBlendFactor = vk::BlendFactor::eOne;
+    water_config.color_blend_attachment.dstAlphaBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
+    water_config.color_blend_attachment.alphaBlendOp        = vk::BlendOp::eAdd;
+
+    pm_water_pipeline = std::make_unique<Pipeline>(
+        pm_device, shader_dir + "/water.vert.spv", shader_dir + "/water.frag.spv",
+        water_config);
 }
 
 void RenderSystem::UpdateSceneUBO() {
@@ -603,6 +647,53 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
             mesh_comp.pm_mesh->Bind(cmd);
             mesh_comp.pm_mesh->Draw(cmd);
         });
+
+    // Water pass. Drawn after opaque terrain (terrain writes the
+    // riverbed depth; water samples blend over it) and before alpha
+    // M2 doodads (leaves on overhanging trees still composite correctly
+    // because they draw last). Per-tile WaterComponent carries N
+    // per-instance meshes; we issue one draw per instance.
+    {
+        struct WaterPush {
+            glm::mat4 mvp;
+            glm::vec4 river_color;
+            glm::vec4 fog_color;
+            glm::vec4 params;
+            glm::vec4 camera;
+        };
+        WaterPush wp{};
+        wp.mvp        = view_proj_for_cull;
+        wp.river_color = glm::vec4{pm_last_snapshot.river_close, 0.0f};
+        wp.fog_color  = glm::vec4{pm_scene_data.pm_fog_color,
+                                   pm_scene_data.pm_fog_end};
+        // shallow/deep alpha come from LightParams (already sampled into
+        // pm_last_snapshot upstream). Falls back to sensible defaults
+        // when no LightCycle is attached.
+        float shallow_a = 0.45f;
+        float deep_a    = 0.85f;
+        float time_sec  = 0.0f;
+        if (pm_light_cycle) {
+            time_sec = static_cast<float>(pm_light_cycle->GetGameTimeSeconds());
+        }
+        wp.params = glm::vec4{shallow_a, deep_a, time_sec,
+                              pm_scene_data.pm_fog_start};
+        wp.camera = glm::vec4{pm_scene_data.pm_camera_pos, 0.0f};
+
+        pm_water_pipeline->Bind(cmd);
+        cmd.pushConstants<WaterPush>(
+            *pm_water_pipeline_layout,
+            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+            0, wp);
+
+        scene.Each<WaterComponent>(
+            [&](Entity&, WaterComponent& wc) {
+                for (auto& inst : wc.instances) {
+                    if (!inst.mesh) continue;
+                    inst.mesh->Bind(cmd);
+                    inst.mesh->Draw(cmd);
+                }
+            });
+    }
 
     // M2 pipeline. Bind once, then issue two passes over the scene:
     //
