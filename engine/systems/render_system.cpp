@@ -313,18 +313,26 @@ void RenderSystem::Init() {
             cfg);
     }
 
-    // Background pipeline (fullscreen gradient, no vertex input, no depth).
-    // Takes the canonical Elwynn 6-band sky-cone colors as push
-    // constants. The pipeline doesn't need a descriptor set (the
-    // shader is purely a procedural gradient), so push-constants are
-    // cheaper than a UBO binding for the ~80 bytes we need. Layout:
-    //   bytes 0..15:  sky_top    (zenith)
-    //   bytes 16..31: sky_middle (sky body)
-    //   bytes 32..47: sky_band1  (just above horizon)
-    //   bytes 48..63: sky_band2  (right at horizon)
-    //   bytes 64..79: fog_color  (below horizon - matches scene fog)
+    // Background pipeline (fullscreen gradient + procedural clouds,
+    // no vertex input, no depth). Takes the canonical Elwynn 5-band
+    // sky-cone colors PLUS two cloud-layer ambient tints + a vec4
+    // animation packet, all as push constants. No descriptor set
+    // needed because clouds are procedural fbm noise. Layout:
+    //   bytes 0..15:    sky_top    (zenith)
+    //   bytes 16..31:   sky_middle (sky body)
+    //   bytes 32..47:   sky_band1  (just above horizon)
+    //   bytes 48..63:   sky_band2  (right at horizon)
+    //   bytes 64..79:   fog_color  (below horizon - matches scene fog)
+    //   bytes 80..95:   cloud_layer1_ambient (LightIntBand row 11)
+    //   bytes 96..111:  cloud_layer2_ambient (LightIntBand row 12)
+    //   bytes 112..127: cloud_anim
+    //                     .x = cloud_density (LightFloatBand row 3)
+    //                     .y = game time seconds (cloud scroll)
+    //                     .z = celestial_glow_through (LightFloatBand 2)
+    //                     .w = unused
+    // 128 bytes total - hits Vulkan's guaranteed minimum exactly.
     vk::PushConstantRange bg_push_range{
-        vk::ShaderStageFlagBits::eFragment, 0, 5 * sizeof(glm::vec4)};
+        vk::ShaderStageFlagBits::eFragment, 0, 8 * sizeof(glm::vec4)};
     vk::PipelineLayoutCreateInfo bg_layout_info{};
     bg_layout_info.setPushConstantRanges(bg_push_range);
     pm_bg_pipeline_layout = pm_device.GetDevice().createPipelineLayout(bg_layout_info);
@@ -469,14 +477,26 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
         glm::vec4 sky_band1;
         glm::vec4 sky_band2;
         glm::vec4 fog_color;
+        glm::vec4 cloud_layer1_ambient;
+        glm::vec4 cloud_layer2_ambient;
+        glm::vec4 cloud_anim;
     };
-    BgPush bg_push;
+    BgPush bg_push{};
     if (pm_light_cycle) {
         bg_push.sky_top    = glm::vec4{pm_last_snapshot.sky_top,    0.0f};
         bg_push.sky_middle = glm::vec4{pm_last_snapshot.sky_middle, 0.0f};
         bg_push.sky_band1  = glm::vec4{pm_last_snapshot.sky_band1,  0.0f};
         bg_push.sky_band2  = glm::vec4{pm_last_snapshot.sky_band2,  0.0f};
         bg_push.fog_color  = glm::vec4{pm_last_snapshot.sky_fog,    0.0f};
+        bg_push.cloud_layer1_ambient =
+            glm::vec4{pm_last_snapshot.cloud_layer1_ambient, 0.0f};
+        bg_push.cloud_layer2_ambient =
+            glm::vec4{pm_last_snapshot.cloud_layer2_ambient, 0.0f};
+        bg_push.cloud_anim = glm::vec4{
+            pm_last_snapshot.cloud_density,
+            static_cast<float>(pm_light_cycle->GetGameTimeSeconds()),
+            pm_last_snapshot.celestial_glow_through,
+            0.0f};
     } else {
         bg_push = BgPush{
             glm::vec4{0.000f, 0.122f, 0.286f, 0.0f},
@@ -484,6 +504,9 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
             glm::vec4{0.600f, 0.863f, 0.961f, 0.0f},
             glm::vec4{0.686f, 0.855f, 0.878f, 0.0f},
             glm::vec4{pm_scene_data.pm_fog_color, 0.0f},
+            glm::vec4{0.95f, 0.95f, 0.95f, 0.0f},   // canonical noon cloud ambients
+            glm::vec4{0.85f, 0.85f, 0.85f, 0.0f},
+            glm::vec4{0.55f, 0.0f, 1.0f, 0.0f},     // density, time, glow
         };
     }
     pm_bg_pipeline->Bind(cmd);

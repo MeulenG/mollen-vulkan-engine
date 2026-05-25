@@ -185,6 +185,13 @@ public:
     bool  IsPaused() const        { return pm_paused; }
     void  SetPaused(bool p)       { pm_paused = p; }
 
+    // Continuous game-time accumulator in seconds. Monotonically
+    // increasing (does NOT wrap at 86400) so it can drive shader
+    // animations (cloud scroll, water UV scroll) without discontinuity
+    // at the day boundary. Cast to float at the use site; precision
+    // stays good for ~48 hours of continuous play.
+    double GetGameTimeSeconds() const { return pm_t_seconds; }
+
 private:
     const LightTables* pm_tables = nullptr;
     double pm_t_seconds = 12.0 * 3600.0;     // start at noon
