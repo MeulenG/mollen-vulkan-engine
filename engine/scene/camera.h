@@ -65,7 +65,7 @@ private:
 
     glm::vec3 target_{0.0f, 0.0f, 0.0f};
     glm::vec3 position_{0.0f, 0.0f, 3.0f};
-    glm::vec3 up_{0.0f, 1.0f, 0.0f};
+    glm::vec3 up_{0.0f, 0.0f, 1.0f};   // engine is Z-up
 
     float distance_ = 3.0f;
     float yaw_ = 0.0f;       // radians

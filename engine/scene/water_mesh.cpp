@@ -72,8 +72,12 @@ std::unique_ptr<Mesh> WaterMesh::Build(Device& device,
             float wow_z = inst.heights[ly * vw + lx];
 
             WaterVertex v{};
-            // WowToEngine: (south, east, up) -> (east, up, south).
-            v.position = glm::vec3{wow_y, wow_z, wow_x};
+            // Engine render basis: renderX=canonical.X (north),
+            // renderY=canonical.Y (west), renderZ=up (matches
+            // AdtToWorld output). The MCNK parser stores canonical.X
+            // in wow_y and canonical.Y in wow_x, so swap the two to
+            // land in render basis.
+            v.position = glm::vec3{wow_y, wow_x, wow_z};
             // Planar UV from world x/y. Using WoW-space coords here so
             // the texture stays world-aligned regardless of camera.
             v.uv    = glm::vec2{wow_x * kPlanarUvScale,

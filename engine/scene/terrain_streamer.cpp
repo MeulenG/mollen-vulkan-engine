@@ -62,11 +62,12 @@ bool TerrainStreamer::TileExists(int tile_x, int tile_y) const {
 
 void TerrainStreamer::EngineToTile(const glm::vec3& engine_pos,
                                     int& tile_x, int& tile_y) const {
-    // Engine.x = WoW Y (east). Engine.z = WoW X (south).
-    // For any WoW coord w, the tile index is 32 - w / kAdtTileSize.
-    // That's because tile 32 sits at the world's WoW origin and tile
-    // indices grow toward NEGATIVE WoW coords (per the file format).
-    float tx_f = 32.0f - engine_pos.z / kAdtTileSize;
+    // Engine is Z-up: renderX = canonical.X (north), renderY =
+    // canonical.Y (west). ADT filename convention is
+    // Azeroth_<col>_<row>.adt where col = floor(32 - canonical.Y/TILE)
+    // and row = floor(32 - canonical.X/TILE), so tile_x comes from
+    // renderY and tile_y from renderX.
+    float tx_f = 32.0f - engine_pos.y / kAdtTileSize;
     float ty_f = 32.0f - engine_pos.x / kAdtTileSize;
     tile_x = Clamp63(static_cast<int>(std::floor(tx_f)));
     tile_y = Clamp63(static_cast<int>(std::floor(ty_f)));

@@ -56,7 +56,7 @@ WmoGroupGpu WmoMesh::Build(Device& device, const WmoGroup& g) {
     for (size_t i = 0; i < n_verts; ++i) {
         WmoVertex v{};
         v.position = g.positions[i];
-        v.normal   = (i < g.normals.size()) ? g.normals[i] : glm::vec3{0, 1, 0};
+        v.normal   = (i < g.normals.size()) ? g.normals[i] : glm::vec3{0, 0, 1};
         v.uv1      = (i < g.uvs1.size())    ? g.uvs1[i]    : glm::vec2{0, 0};
         v.uv2      = (g.has_uvs2 && i < g.uvs2.size())
                          ? g.uvs2[i] : glm::vec2{0, 0};

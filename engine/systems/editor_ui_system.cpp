@@ -65,14 +65,14 @@ const char* GroupForPath(const std::string& path) {
 // reference (the editor UI is rendered every frame and the streamer
 // is owned by main, not the scene).
 //
-// wow_x = engine.z, wow_y = engine.x, tile size = 533.33 yards,
-// tile 32 sits at wow=0.
+// Engine is Z-up: renderX = canonical.Y (west), renderY = canonical.X
+// (north). Tile (tile_x, tile_y) covers canonical.X = renderY in
+// [(32-tile_x-1)*TILE, (32-tile_x)*TILE] and canonical.Y = renderX
+// likewise. tile 32 sits at the world origin.
 void CamToTile(const glm::vec3& engine_pos, int& tile_x, int& tile_y) {
     constexpr float kTileSize = 533.3333f;
-    float wow_x = engine_pos.z;
-    float wow_y = engine_pos.x;
-    int tx = static_cast<int>(32.0f - wow_x / kTileSize);
-    int ty = static_cast<int>(32.0f - wow_y / kTileSize);
+    int tx = static_cast<int>(32.0f - engine_pos.y / kTileSize);
+    int ty = static_cast<int>(32.0f - engine_pos.x / kTileSize);
     tile_x = std::clamp(tx, 0, 63);
     tile_y = std::clamp(ty, 0, 63);
 }

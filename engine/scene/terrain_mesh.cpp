@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <glm/glm.hpp>
 
@@ -13,9 +14,16 @@ namespace {
 // chunk; the 8-vert inner grid is centered between them, half a cell off.
 constexpr float kCellSize = kAdtChunkSize / 8.0f;   // distance between adjacent outer verts
 
-// Convert WoW (south X, east Y, up Z) into engine (east X, up Y, south Z).
+// Convert MCNK chunk position triple to engine render coords. Engine
+// is Z-up with renderX = canonical.X (north), renderY = canonical.Y
+// (west), renderZ = up - matching the AdtToWorld output basis used by
+// every MDDF/MODF placement in this engine (verified against the
+// known canonical position of Northshire Abbey). The MCNK parser
+// stores pos[0] (offset 104, canonical.X) in ch.wow_y and pos[1]
+// (offset 108, canonical.Y) in ch.wow_x, so we swap the first two
+// fields to land in render basis.
 inline glm::vec3 WowToEngine(float wx, float wy, float wz) {
-    return glm::vec3(wy, wz, wx);
+    return glm::vec3(wy, wx, wz);
 }
 
 // Compute a flat-shaded normal from three vertex positions in engine space.
@@ -132,7 +140,7 @@ TerrainBuildResult TerrainMesh::Build(
                                              ch.normals.n_outer[idx * 3 + 1],
                                              ch.normals.n_outer[idx * 3 + 2]);
                     } else {
-                        v.normal = glm::vec3(0, 1, 0);  // refined below
+                        v.normal = glm::vec3(0, 0, 1);  // refined below; Z-up
                     }
                     // chunk_uv.x along east (oy), chunk_uv.y along south (ox).
                     // Matches MCAL's row/col convention so per-chunk alpha
@@ -169,7 +177,7 @@ TerrainBuildResult TerrainMesh::Build(
                                              ch.normals.n_inner[idx * 3 + 1],
                                              ch.normals.n_inner[idx * 3 + 2]);
                     } else {
-                        v.normal = glm::vec3(0, 1, 0);
+                        v.normal = glm::vec3(0, 0, 1);
                     }
                     v.chunk_uv    = glm::vec2((iy + 0.5f) / 8.0f,
                                               (ix + 0.5f) / 8.0f);
@@ -206,10 +214,16 @@ TerrainBuildResult TerrainMesh::Build(
                     uint32_t br = base_v + (uint32_t)((oy + 1) * 9 + ox + 1);
                     uint32_t in = base_v + 81 + (uint32_t)(oy * 8 + ox);
 
-                    indices.push_back(in); indices.push_back(tl); indices.push_back(tr);
-                    indices.push_back(in); indices.push_back(tr); indices.push_back(br);
-                    indices.push_back(in); indices.push_back(br); indices.push_back(bl);
-                    indices.push_back(in); indices.push_back(bl); indices.push_back(tl);
+                    // WowToEngine swaps X<->Y (a reflection, det=-1)
+                    // which flips winding. The terrain pipeline uses
+                    // backface culling (CCW front face), so we emit the
+                    // fan in REVERSED order here to land CCW-front after
+                    // the reflection. Otherwise every flat triangle is
+                    // back-facing and gets culled (terrain vanishes).
+                    indices.push_back(in); indices.push_back(tr); indices.push_back(tl);
+                    indices.push_back(in); indices.push_back(br); indices.push_back(tr);
+                    indices.push_back(in); indices.push_back(bl); indices.push_back(br);
+                    indices.push_back(in); indices.push_back(tl); indices.push_back(bl);
                 }
             }
         }
@@ -241,7 +255,7 @@ TerrainBuildResult TerrainMesh::Build(
             if (glm::dot(v.normal, v.normal) > 0.0001f) {
                 v.normal = glm::normalize(v.normal);
             } else {
-                v.normal = glm::vec3(0, 1, 0);
+                v.normal = glm::vec3(0, 0, 1);
             }
         }
     }

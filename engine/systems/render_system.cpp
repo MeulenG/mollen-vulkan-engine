@@ -108,7 +108,9 @@ RenderSystem::RenderSystem(Device& device, OffscreenPass& offscreen)
     // We want lightDir to point AT the surface (so dot(N, lightDir) is
     // negative for lit faces), so the shader uses -lightDir as L. We
     // store sunPos directly; the shaders negate.
-    pm_scene_data.pm_light_dir = glm::normalize(glm::vec3{-0.566f, -0.566f, -0.601f});
+    // Engine is Z-up: x = west, y = north, z = up. Sun in the southwest
+    // afternoon sky points toward (+west, -south=-Y, down=-Z) ish.
+    pm_scene_data.pm_light_dir = glm::normalize(glm::vec3{-0.566f, -0.601f, -0.566f});
     pm_scene_data.pm_light_intensity = 1.0f;
 
     // LightIntBand row 0 "DirectColor" noon = #FF8800 BGRA -> RGB.
@@ -485,13 +487,10 @@ void RenderSystem::Init() {
     wmo_config.depth_attachment_format = pm_offscreen.DepthFormat();
     wmo_config.binding_descriptions    = WmoVertex::GetBindingDescriptions();
     wmo_config.attribute_descriptions  = WmoVertex::GetAttributeDescriptions();
-    // The WMO model matrix contains an inner Y-Z swap (a reflection,
-    // det = -1) to convert Z-up MOVT vertices to our Y-up engine.
-    // The reflection inverts triangle winding, so backface culling
-    // would discard the visible faces. Disable culling for WMO until
-    // we switch the conversion to a pure rotation or pre-swap MOVT at
-    // load time (and flip indices).
-    wmo_config.rasterization_info.cullMode = vk::CullModeFlagBits::eNone;
+    // Engine is now Z-up matching WoWee's canonical render frame so
+    // MOVT vertices flow through unchanged - no inner basis swap, no
+    // reflection in the model matrix. Backface culling is the
+    // standard back-faces-only with default CCW front-face winding.
 
     pm_wmo_pipeline = std::make_unique<Pipeline>(
         pm_device, shader_dir + "/wmo.vert.spv", shader_dir + "/wmo.frag.spv",
@@ -631,9 +630,11 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
     // same blended directional light + ambient as terrain so it
     // visually fits the scene.
     if (pm_player_visible) {
+        // Engine is Z-up: the player's 1.7-yard height runs along +Z,
+        // centered by lifting half-height (0.85) in Z.
         glm::mat4 m = glm::translate(glm::mat4{1.0f},
-                                      pm_player_pos + glm::vec3{0, 0.85f, 0});
-        m = glm::scale(m, glm::vec3{0.6f, 1.7f, 0.6f});
+                                      pm_player_pos + glm::vec3{0, 0, 0.85f});
+        m = glm::scale(m, glm::vec3{0.6f, 0.6f, 1.7f});
         PushConstants player_push{};
         player_push.pm_model = m;
         player_push.pm_mvp = active_camera.GetProjectionMatrix() *
@@ -760,38 +761,11 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
         scene.Each<WmoInstanceComponent>(
             [&](Entity&, WmoInstanceComponent& wmo) {
                 // Rebuild model_matrix per frame from raw MODF data,
-                // using the editor's runtime WMO tuning. Lets the user
-                // slide yaw offsets and toggle sign flips live until
-                // we find the visually-correct combination.
-                const auto& dbg = g_wmo_debug;
-                float yaw = (dbg.yaw_sign_flip ? -wmo.raw_rot_deg.y : wmo.raw_rot_deg.y)
-                          + dbg.yaw_offset_deg;
-                float pitch = dbg.pitch_sign_flip ? -wmo.raw_rot_deg.x : wmo.raw_rot_deg.x;
-                float roll  = dbg.roll_sign_flip  ? -wmo.raw_rot_deg.z : wmo.raw_rot_deg.z;
-                glm::vec3 pitch_axis = dbg.swap_pitch_roll_axes
-                                            ? glm::vec3{1, 0, 0}
-                                            : glm::vec3{0, 0, 1};
-                glm::vec3 roll_axis  = dbg.swap_pitch_roll_axes
-                                            ? glm::vec3{0, 0, 1}
-                                            : glm::vec3{1, 0, 0};
-                glm::quat q_yaw   = glm::angleAxis(glm::radians(yaw),
-                                                    glm::vec3{0, 1, 0});
-                glm::quat q_pitch = glm::angleAxis(glm::radians(pitch), pitch_axis);
-                glm::quat q_roll  = glm::angleAxis(glm::radians(roll),  roll_axis);
-                glm::mat4 R = glm::mat4_cast(q_yaw * q_pitch * q_roll);
-                glm::mat4 swapYZ{1.0f};
-                swapYZ[1] = glm::vec4{0, 0, 1, 0};
-                swapYZ[2] = glm::vec4{0, 1, 0, 0};
-                // Extra mirror to un-do the SwapYZ reflection. Combining
-                // two reflections gives a rotation (det = +1), removing
-                // the left-right mirror that's currently visible on
-                // asymmetric WMOs like Stormwind's flight-master tower.
-                glm::mat4 extra_mirror = glm::scale(glm::mat4{1.0f},
-                    glm::vec3{dbg.mirror_x ? -1.0f : 1.0f,
-                              dbg.mirror_y ? -1.0f : 1.0f,
-                              dbg.mirror_z ? -1.0f : 1.0f});
-                glm::mat4 T = glm::translate(glm::mat4{1.0f}, wmo.raw_engine_pos);
-                wmo.model_matrix = T * R * swapYZ * extra_mirror;
+                // Z-up engine: WMO model matrix is built once at load
+                // time in LoadWmoPlacement using the WoWee form
+                //   T * Rz(rot_y + pi) * Ry(-rot_x) * Rx(-rot_z)
+                // No per-frame rebuild needed. Just consume the stored
+                // model_matrix.
 
                 WmoPush wpush{};
                 wpush.model = wmo.model_matrix;
@@ -810,7 +784,7 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
                     // Stormwind-like fortress WMOs, "interior" covers
                     // the entire city behind the walls - so skipping
                     // here can destroy whole districts. Off by default.
-                    if (dbg.skip_interior_groups &&
+                    if (g_wmo_debug.skip_interior_groups &&
                         (g.group_flags & WmoMogpFlag_Interior)) continue;
                     g.mesh->Bind(cmd);
                     for (const auto& b : g.batches) {

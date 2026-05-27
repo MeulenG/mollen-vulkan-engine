@@ -112,12 +112,14 @@ void Camera::SetMode(CameraMode m) {
 }
 
 void Camera::updateTargetFromAngles() {
-    // Reconstruct a forward vector from yaw/pitch and place target
-    // 1 unit ahead of position. (The actual length doesn't matter -
-    // GetViewMatrix only uses the direction.)
-    float x = std::cos(pitch_) * std::sin(yaw_);
-    float y = std::sin(pitch_);
-    float z = std::cos(pitch_) * std::cos(yaw_);
+    // Engine is Z-up. yaw rotates around +Z (vertical), pitch tilts
+    // up/down. yaw=0 points along +Y (north in our render frame).
+    //   horizontal_xy: ( sin yaw, cos yaw )
+    //   vertical_z:    sin pitch
+    float ch = std::cos(pitch_);
+    float x = ch * std::sin(yaw_);
+    float y = ch * std::cos(yaw_);
+    float z = std::sin(pitch_);
     target_ = position_ + glm::vec3{x, y, z};
 }
 
@@ -136,10 +138,13 @@ glm::vec3 Camera::GetPosition() const {
 }
 
 void Camera::updatePosition() {
-    float x = distance_ * std::cos(pitch_) * std::sin(yaw_);
-    float y = distance_ * std::sin(pitch_);
-    float z = distance_ * std::cos(pitch_) * std::cos(yaw_);
-
+    // Orbit position in Z-up basis. yaw rotates around +Z; pitch
+    // tilts up/down. The orbiter sits BEHIND the target along the
+    // look direction, so we offset by +(opposite forward).
+    float ch = std::cos(pitch_);
+    float x = distance_ * ch * std::sin(yaw_);
+    float y = distance_ * ch * std::cos(yaw_);
+    float z = distance_ * std::sin(pitch_);
     position_ = target_ + glm::vec3{x, y, z};
 }
 

@@ -26,8 +26,9 @@ public:
     glm::vec3 GetPosition() const         { return pm_position; }
 
     // Camera target = player head height (1.7 yards above feet, which
-    // is the WoW player height). Orbit camera looks at this.
-    glm::vec3 GetEyePos() const           { return pm_position + glm::vec3{0, 1.7f, 0}; }
+    // is the WoW player height). Engine is Z-up so head height is +Z.
+    // Orbit camera looks at this.
+    glm::vec3 GetEyePos() const           { return pm_position + glm::vec3{0, 0, 1.7f}; }
 
     // Tunable walk speed (yards per second). Held-shift sprint
     // multiplier is in the input handler, not here.

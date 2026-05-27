@@ -110,7 +110,7 @@ struct LightSnapshot {
     // table keyed off `t_dbc / 2880`. World-space direction pointing
     // FROM the sun TO the world (i.e. shadow direction). Shaders
     // negate to get L.
-    glm::vec3 light_dir{0.0f, -1.0f, 0.0f};
+    glm::vec3 light_dir{0.0f, 0.0f, -1.0f};
 };
 
 // In-memory lookup tables loaded once at startup from

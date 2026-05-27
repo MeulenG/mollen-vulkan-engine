@@ -117,26 +117,22 @@ int main() {
         // standing on the road looking slightly down at our feet.
         // Grass cull radius is 60 yards so foreground blades render.
         // Phase 2B: third-person mode with a player controller.
-        // Player spawns just south of Northshire Abbey on the road,
-        // facing NORTH so the Abbey bbox (engine -8897, 80, -178) is
-        // dead ahead. Stormwind sits far south behind the camera.
-        // Camera orbits the player's eye (player.y + 1.7) at 12 yards
-        // behind, ~22deg downward look.
+        // Player spawns on the road in tile (32, 48) at Northshire Valley.
+        // Engine is Z-up: renderX = canonical.Y (west), renderY =
+        // canonical.X (north), renderZ = height. Spawn coords below
+        // place the player in tile (32, 48) at canonical X ~ -30 and
+        // canonical Y ~ -9000, eye height 89.
         //
-        // Orbit yaw convention (from Camera::updatePosition):
-        //   position = target + R * (cos(pitch)*sin(yaw),
-        //                            sin(pitch),
-        //                            cos(pitch)*cos(yaw))
+        // Orbit yaw convention (Camera::updatePosition in Z-up):
+        //   position = target + R * (ch*sin(yaw), ch*cos(yaw), sin(pitch))
         // So:
-        //   yaw=0    -> camera at target + (0, 0, R)   = south of target  (looks N)
-        //   yaw=pi/2 -> camera at target + (R, 0, 0)   = east of target   (looks W)
-        //   yaw=pi   -> camera at target + (0, 0, -R)  = north of target  (looks S)
-        // Abbey is north of player (engine.z -178 vs player -30), so we
-        // want camera SOUTH of player looking NORTH -> yaw=0.
-        glm::vec3 player_spawn{-9000.0f, 89.0f, -30.0f};
-        glm::vec3 eye_target = player_spawn + glm::vec3{0, 1.7f, 0};
+        //   yaw=0    -> camera at target + (0, R, 0) = +Y side of target
+        //   yaw=pi/2 -> camera at target + (R, 0, 0) = +X side of target
+        //   yaw=pi   -> camera at target + (0,-R, 0) = -Y side of target
+        glm::vec3 player_spawn{-9000.0f, -30.0f, 89.0f};
+        glm::vec3 eye_target = player_spawn + glm::vec3{0, 0, 1.7f};
         cam->pm_camera.SetTarget(eye_target);
-        cam->pm_camera.SetOrbit(12.0f, 0.0f, 0.30f);
+        cam->pm_camera.SetOrbit(15.0f, 0.0f, 0.35f);
         cam->pm_camera.SetMode(mve::CameraMode::ThirdPerson);
 
         mve::PlayerController player;
@@ -245,15 +241,16 @@ int main() {
                 bool sprint = ImGui::GetIO().KeyShift;
                 player.Update(dt, cam->pm_camera, w, a, s, d, sprint);
 
-                // Snap the player's Y to the terrain. Without this
-                // the player floats at fixed Y while the ground slopes
+                // Snap the player's height to the terrain. Engine is
+                // Z-up so height is the Z component. Without this the
+                // player floats at fixed height while the ground slopes
                 // underneath. GetGroundY returns false off-tile, in
-                // which case we leave the previous Y alone (player
+                // which case we leave the previous height alone (player
                 // glides off the loaded region instead of falling).
                 glm::vec3 pos = player.GetPosition();
-                float ground_y;
-                if (assets.GetGroundY(pos, &ground_y)) {
-                    pos.y = ground_y;
+                float ground_z;
+                if (assets.GetGroundY(pos, &ground_z)) {
+                    pos.z = ground_z;
                     player.SetPosition(pos);
                 }
 

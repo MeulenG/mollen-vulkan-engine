@@ -161,19 +161,17 @@ void FixAlphaEdges(uint8_t out_alpha[64 * 64]) {
 // row layout as MCVT. Each signed byte in [-127, 127] divided by 127 gives
 // the [-1, 1] component.
 //
-// The on-disk axes are WoW (X south, Y east, Z up). We remap to engine
-// space (X east, Y up, Z south) at parse time so the mesh builder can use
-// the values directly.
+// The on-disk axes are WoW (nx=south, ny=east, nz=up). Engine render is
+// Z-up: renderX=canonical.X (north) = -south, renderY=canonical.Y
+// (west) = -east, renderZ=canonical.Z (up).
 void DecodeMcnr(const uint8_t* mcnr_body, AdtChunkNormals& out) {
     auto read_one = [&](size_t base, float* dst) {
         int8_t nx = static_cast<int8_t>(mcnr_body[base + 0]);
         int8_t nz = static_cast<int8_t>(mcnr_body[base + 1]);
         int8_t ny = static_cast<int8_t>(mcnr_body[base + 2]);
-        // WoW: (nx=south, ny=east, nz=up).
-        // Engine: (X=east, Y=up, Z=south) -> (ny, nz, nx) / 127.
-        dst[0] = static_cast<float>(ny) / 127.0f;
-        dst[1] = static_cast<float>(nz) / 127.0f;
-        dst[2] = static_cast<float>(nx) / 127.0f;
+        dst[0] = -static_cast<float>(nx) / 127.0f;   // renderX (north)
+        dst[1] = -static_cast<float>(ny) / 127.0f;   // renderY (west)
+        dst[2] =  static_cast<float>(nz) / 127.0f;   // renderZ (up)
     };
 
     int outer_i = 0, inner_i = 0;

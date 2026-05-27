@@ -146,16 +146,17 @@ glm::vec3 SunDirection(float t_day) {
     // Tilt of the sun's path from straight overhead. ~30 deg.
     const float tilt = 0.52f;  // ~30 deg in radians
 
-    // Sun position: rotate around east-west axis (engine X), tilted
-    // south (positive Z) by `tilt`.
+    // Sun position in engine Z-up: renderX (east-west) = 0,
+    // renderY (north-south, +Y = north) tilted SOUTH (-Y) by `tilt`,
+    // renderZ (up) = sin(angle) sweeping below->above->below.
     glm::vec3 sun_pos{
-         std::cos(angle) * std::cos(tilt) * 0.0f - 0.0f,
-         std::sin(angle),
-         std::cos(angle) * std::sin(tilt)
+         0.0f,
+        -std::cos(angle) * std::sin(tilt),
+         std::sin(angle)
     };
-    // The above produces sun_pos.y = sin(angle):
+    // sun_pos.z = sin(angle):
     //   t=0.5 (noon)     angle =  pi/2  sin = +1  -> sun overhead
-    //   t=0.25 (sunrise) angle =  0     sin =  0  -> horizon east
+    //   t=0.25 (sunrise) angle =  0     sin =  0  -> horizon
     //   t=0   (midnight) angle = -pi/2  sin = -1  -> sun under world
     //
     // light_dir points FROM sun TO world center = -sun_pos

@@ -15,6 +15,7 @@
 #include "../scene/water_mesh.h"
 #include "../scene/wmo_mesh.h"
 #include "../formats/wmo_types.h"
+#include "../core/coordinates.h"
 #include "../systems/render_system.h"
 #include "../formats/blp_loader.h"
 #include "../formats/adt_types.h"
@@ -501,11 +502,10 @@ Entity* AssetManager::LoadAdtTileIntoScene(
         if (pm_wmo_seen_unique_ids.count(w.unique_id)) continue;
         pm_wmo_seen_unique_ids.insert(w.unique_id);
 
-        // MDDF -> MCNK frame -> engine frame (same convention as doodads).
-        float mcnk_x = kAdtMaxCoord - w.pos_x;
-        float mcnk_y = kAdtMaxCoord - w.pos_z;
-        float mcnk_z =                w.pos_y;
-        glm::vec3 engine_pos(mcnk_y, mcnk_z, mcnk_x);
+        // MDDF/MODF on-disk -> engine render coords via the single
+        // canonical adtToWorld conversion (engine/core/coordinates.h).
+        // Z-up basis: renderX = west, renderY = north, renderZ = up.
+        glm::vec3 engine_pos = coords::AdtToWorld(w.pos_x, w.pos_y, w.pos_z);
 
         // Bbox extents from MODF bbox_lo/hi. The bbox is in WoW MDDF
         // coords too, so the extents (hi - lo) are valid yard sizes
@@ -516,9 +516,11 @@ Entity* AssetManager::LoadAdtTileIntoScene(
         if (ex < 1.0f) ex = 5.0f;
         if (ey < 1.0f) ey = 5.0f;
         if (ez < 1.0f) ez = 5.0f;
-        // Swap Y and Z extents to match the WoW->engine axis remap
-        // (WoW Z up -> engine Y up; WoW Y east -> engine X east).
-        glm::vec3 extents{ex, ez, ey};
+        // Map MODF bbox extents (adt-disk frame: x=south-north,
+        // y=up, z=east-west) into our Z-up engine basis (x=west,
+        // y=north, z=up). adtZ goes to engine.X; adtX goes to
+        // engine.Y; adtY goes to engine.Z.
+        glm::vec3 extents{ez, ex, ey};
 
         std::string wmo_path;
         if (w.name_id < tile->wmo_paths.size()) {
@@ -602,7 +604,12 @@ Entity* AssetManager::LoadAdtTileIntoScene(
             sum_wow.y += ch.wow_y;
             sum_wow.z += ch.wow_z_base;
             counted++;
-            glm::vec3 corner(ch.wow_y, ch.wow_z_base, ch.wow_x);
+            // Engine render basis: renderX=canonical.X (north),
+            // renderY=canonical.Y (west), renderZ=up. Parser stores
+            // canonical.X in ch.wow_y and canonical.Y in ch.wow_x, so
+            // swap the first two fields to land in render basis (same
+            // swap as WowToEngine in terrain_mesh.cpp).
+            glm::vec3 corner(ch.wow_y, ch.wow_x, ch.wow_z_base);
             vmin = glm::min(vmin, corner);
             vmax = glm::max(vmax, corner);
         }
@@ -610,8 +617,7 @@ Entity* AssetManager::LoadAdtTileIntoScene(
     glm::vec3 centroid{0.0f};
     if (counted > 0) {
         glm::dvec3 avg = sum_wow / double(counted);
-        // WowToEngine: (wow_x, wow_y, wow_z) -> (wow_y, wow_z, wow_x)
-        centroid = glm::vec3(avg.y, avg.z, avg.x);
+        centroid = glm::vec3(avg.y, avg.x, avg.z);
     }
     float radius = glm::length(vmax - vmin) * 0.5f;
 
@@ -711,47 +717,28 @@ Entity* AssetManager::LoadAdtTileIntoScene(
         // identical mesh loads).
         fs_path = ResolveM2Extension(fs_path);
 
-        // MDDF stores positions in a different coordinate origin than
-        // MCNK. MCNK puts the world origin at the map center (tile 32,
-        // 32); MDDF puts it at the south-west corner of the 64x64 grid
-        // (so values are 0..17066). Convert MDDF -> MCNK first, then
-        // do the WoW->engine axis remap.
-        //
-        // The flip math: in MCNK coords, X is south-positive and Y is
-        // east-positive but both axes grow toward NEGATIVE values when
-        // you move toward higher tile indices (because tile 32 is at
-        // origin and indices grow with WoW negation). MDDF values count
-        // up from the SW corner the same direction, so the conversion
-        // is just (kAdtMaxCoord - mddf_value) on each horizontal axis.
-        float mcnk_x = kAdtMaxCoord - d.pos_x;   // south axis
-        float mcnk_y = kAdtMaxCoord - d.pos_z;   // east axis
-        float mcnk_z =                d.pos_y;   // up (unchanged)
-        // WoW -> engine: (east, up, south).
-        glm::vec3 engine_pos(mcnk_y, mcnk_z, mcnk_x);
+        // MDDF on-disk -> engine render coords via coords::AdtToWorld
+        // (Z-up basis: renderX=west, renderY=north, renderZ=up).
+        glm::vec3 engine_pos = coords::AdtToWorld(d.pos_x, d.pos_y, d.pos_z);
 
-        // MDDF on-disk frame is (X=south, Y=UP, Z=east); M2 vertices are
-        // stored Z-up. The MDDF Euler is applied in WORLD frame after
-        // the model has been axis-swapped from M2-local to engine basis.
-        // The axis correspondences MDDF -> engine are:
-        //   MDDF Y (up)    -> engine Y (up)    -> yaw axis  (0,1,0)
-        //   MDDF X (south) -> engine Z (south) -> pitch axis (0,0,1)
-        //   MDDF Z (east)  -> engine X (east)  -> roll axis  (1,0,0)
-        // YXZ application order matches the MDDF spec.
-        glm::quat q_yaw   = glm::angleAxis(glm::radians(d.rot_y_deg), glm::vec3{0, 1, 0});
-        glm::quat q_pitch = glm::angleAxis(glm::radians(d.rot_x_deg), glm::vec3{0, 0, 1});
-        glm::quat q_roll  = glm::angleAxis(glm::radians(d.rot_z_deg), glm::vec3{1, 0, 0});
-        glm::quat q_world = q_yaw * q_pitch * q_roll;
-        // M2 axis swap: -90 around engine X brings M2 +Z (up) to engine
-        // +Y (up). Applied as the INNERMOST rotation so the placement
-        // rotation operates on an already-engine-oriented model.
-        glm::quat q_m2_axis = glm::angleAxis(glm::radians(-90.0f), glm::vec3{1, 0, 0});
+        // MDDF rotation, ported directly from WoWee's M2 placement
+        // (src/rendering/terrain_manager.cpp:611-625 +
+        // src/rendering/m2_renderer.cpp:50-61). Scrambled Euler triple
+        // in radians = (-rot_z, -rot_x, rot_y + pi), applied as
+        // Rx * Ry * Rz (Rz innermost, vertex hit by Rz first). The
+        // +pi on yaw compensates for the double-mirror in AdtToWorld;
+        // the sign flips compensate for the same mirror landing on
+        // the pitch/roll axes.
+        float deg = 0.01745329252f;   // pi/180
+        float rx = -d.rot_z_deg * deg;
+        float ry = -d.rot_x_deg * deg;
+        float rz = (d.rot_y_deg + 180.0f) * deg;
 
-        glm::vec3 scale_vec(d.scale);
-
-        // M = T(engine_pos) * R(q_world) * R(q_m2_axis) * S(scale)
         glm::mat4 m = glm::translate(glm::mat4{1.0f}, engine_pos);
-        m = m * glm::mat4_cast(q_world * q_m2_axis);
-        m = glm::scale(m, scale_vec);
+        m = glm::rotate(m, rx, glm::vec3{1, 0, 0});
+        m = glm::rotate(m, ry, glm::vec3{0, 1, 0});
+        m = glm::rotate(m, rz, glm::vec3{0, 0, 1});
+        m = glm::scale(m, glm::vec3{d.scale});
 
         PendingDoodadInstance pending{};
         pending.model_matrix = m;
@@ -793,12 +780,13 @@ bool AssetManager::LoadGroundEffectTables() {
 
 bool AssetManager::GetGroundY(const glm::vec3& engine_pos,
                                 float* out_y) const {
-    // Engine -> WoW frame:
-    //   engine.x = wow_y (east-axis)
-    //   engine.z = wow_x (south-axis)
-    //   engine.y = wow_z (up)
-    const float wow_x = engine_pos.z;
-    const float wow_y = engine_pos.x;
+    // Engine is Z-up: renderX = canonical.X (north), renderY =
+    // canonical.Y (west), renderZ = height. The height cache stores
+    // per-chunk ch.wow_x = canonical.Y and ch.wow_y = canonical.X (same
+    // as the MCNK parser). So match the player's canonical.Y against
+    // ch.wow_x and canonical.X against ch.wow_y.
+    const float wow_x = engine_pos.y;   // canonical.Y (matches ch.wow_x)
+    const float wow_y = engine_pos.x;   // canonical.X (matches ch.wow_y)
 
     // Tile coords. Tile (32, 32) sits at WoW origin; both axes count
     // up TOWARD the southern/eastern edge with each tile spanning
@@ -1273,69 +1261,25 @@ Entity* AssetManager::LoadWmoPlacement(
         return nullptr;
     }
 
-    // Build the WMO model matrix per the WoWee reference impl
-    // (Kelsidavis/WoWee src/rendering/wmo_renderer.cpp:2237-2253).
-    // Their model: WoW Ry(B)*Rx(A)*Rz(C) becomes GL Rz(B)*Ry(-A)*Rx(-C)
-    // applied to MOVT vertices that are consumed RAW (no basis swap).
+    // WMO model matrix, ported directly from WoWee
+    // (src/rendering/wmo_renderer.cpp:2237-2253). Our engine is now
+    // Z-up matching WoWee's render frame exactly, so this is a 1:1
+    // port - no SwapYZ, no mirror_x, no debug toggles.
     //
-    // Scrambled Euler triple (radians): (-rot_z, -rot_x, rot_y + pi).
-    // The +pi on yaw is because adtToWorld mirrors both horizontal
-    // axes (K - pos.x and K - pos.z), which flips heading by 180 deg.
-    // The sign flips on pitch and roll compensate for the same mirror
-    // landing on the pitch/roll axes.
+    //   M = T * Rz(rot_y + pi) * Ry(-rot_x) * Rx(-rot_z)
     //
-    // Axis correspondence WoWee renderXYZ -> our engine basis:
-    //   WoWee renderX (their "west")  -> our engine.Z (server.Y)
-    //   WoWee renderY (their "north") -> our engine.X (server.X)
-    //   WoWee renderZ (up)            -> our engine.Y (up)
-    //
-    // So WoWee's Rx_their(angle) = our R(angle, (0,0,1)),
-    //    WoWee's Ry_their(angle) = our R(angle, (1,0,0)),
-    //    WoWee's Rz_their(angle) = our R(angle, (0,1,0)).
-    //
-    // Composition with Rx innermost (vertex hit by Rx first):
-    //   M = T * Rz_their * Ry_their * Rx_their
-    //     = T * R(rot_y+180, Y_up) * R(-rot_x, X_north) * R(-rot_z, Z_west)
-    //
-    // No basis matrix B. The previous T*R*B with a permutation matrix
-    // was applying an extra 120-deg rotation around (1,1,1) on top of
-    // the placement, which is why Stormwind didn't face Elwynn.
-    // Innermost: Y-Z swap. MOVT vertices are Z-up (server frame). Our
-    // engine is Y-up. Without this swap, the up component lands in
-    // engine.Z (a horizontal axis) - putting Stormwind on its side.
-    // The swap is a REFLECTION (det = -1) which flips triangle winding,
-    // so the WMO pipeline must run with cullMode=eNone (set in
-    // render_system.cpp).
-    glm::mat4 swapYZ{1.0f};
-    swapYZ[1] = glm::vec4{0, 0, 1, 0};   // input.y -> output.z
-    swapYZ[2] = glm::vec4{0, 1, 0, 0};   // input.z -> output.y
+    // applied to MOVT vertices that are in Z-up server frame and
+    // consumed raw. Verified to render Stormwind, Northshire abbey,
+    // and the footbridge with correct orientation.
+    float deg = 0.01745329252f;
+    float rx = -p.rot_deg.z * deg;
+    float ry = -p.rot_deg.x * deg;
+    float rz = (p.rot_deg.y + 180.0f) * deg;
 
-    // Brute-force candidate selector for the WMO yaw magic offset.
-    // WoWee's research said +180; that math should be correct for our
-    // basis but visuals say otherwise. Iterating possible values:
-    //   0   = no offset
-    //   90  = +pi/2
-    //  -90  = -pi/2
-    //   180 = +pi  (WoWee's value)
-    // Sign-flip candidates also available via kYawSignFlip:
-    //   false = use +rot_y
-    //   true  = use -rot_y
-    constexpr float kYawMagicOffset = 0.0f;     // <-- TRY 0 FIRST
-    constexpr bool  kYawSignFlip    = false;
-
-    float yaw_deg = (kYawSignFlip ? -p.rot_deg.y : p.rot_deg.y) + kYawMagicOffset;
-
-    glm::quat q_z_outer = glm::angleAxis(
-        glm::radians(yaw_deg),               glm::vec3{0, 1, 0});
-    glm::quat q_y_mid   = glm::angleAxis(
-        glm::radians(-p.rot_deg.x),         glm::vec3{0, 0, 1});
-    glm::quat q_x_inner = glm::angleAxis(
-        glm::radians(-p.rot_deg.z),         glm::vec3{1, 0, 0});
-    glm::quat q_world = q_z_outer * q_y_mid * q_x_inner;
-    glm::mat4 R = glm::mat4_cast(q_world);
-
-    glm::mat4 T = glm::translate(glm::mat4{1.0f}, p.engine_pos);
-    glm::mat4 model = T * R * swapYZ;
+    glm::mat4 model = glm::translate(glm::mat4{1.0f}, p.engine_pos);
+    model = glm::rotate(model, rz, glm::vec3{0, 0, 1});
+    model = glm::rotate(model, ry, glm::vec3{0, 1, 0});
+    model = glm::rotate(model, rx, glm::vec3{1, 0, 0});
 
     char entity_name[96];
     std::snprintf(entity_name, sizeof(entity_name), "WMO_%u", p.unique_id);
