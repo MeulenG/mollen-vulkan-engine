@@ -5,6 +5,15 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Hot-reload (HOTRELOAD_PLAN.md) requires the host exe and the future engine
+# module DLL to share ONE C runtime, so heap allocations made by module code
+# survive a FreeLibrary/LoadLibrary cycle. Lock every target to the dynamic
+# (DLL) CRT explicitly rather than relying on the CMake default, so the host
+# and module can never drift onto different runtimes. Set before any target
+# (including FetchContent deps) is created so they all inherit it.
+cmake_policy(SET CMP0091 NEW)
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+
 # Options
 option(MVE_BUILD_DBC_TOOLS "Build dbc-extract CLI tool (requires mollen-storm + pqxx)" OFF)
 option(MVE_BUILD_TESTS "Build unit tests" ON)
