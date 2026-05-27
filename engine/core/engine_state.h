@@ -61,9 +61,10 @@ struct EngineState {
 // main() setup block.
 void EngineInit(EngineState& s);
 
-// One frame: input, player update, system updates, streaming, and render.
-// Does NOT poll OS events or compute dt - that stays in the host loop.
-void EngineFrame(EngineState& s, float dt);
+// One frame: pump OS events, compute dt from the stored timestamp, then run
+// input, player update, system updates, streaming, and render. Self-contained
+// so the host loop is just `while (!should_close) frame();`.
+void EngineFrame(EngineState& s);
 
 // Release GPU-resident scene state while the systems are still alive. Called
 // once before the EngineState blob is destroyed.

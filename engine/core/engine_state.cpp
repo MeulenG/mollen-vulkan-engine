@@ -1,7 +1,9 @@
 #include "engine_state.h"
 
 #include <imgui.h>
+#include <GLFW/glfw3.h>
 
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <iostream>
@@ -108,7 +110,13 @@ void EngineInit(EngineState& s) {
     s.last_time = std::chrono::high_resolution_clock::now();
 }
 
-void EngineFrame(EngineState& s, float dt) {
+void EngineFrame(EngineState& s) {
+    glfwPollEvents();
+
+    auto now = std::chrono::high_resolution_clock::now();
+    float dt = std::chrono::duration<float>(now - s.last_time).count();
+    s.last_time = now;
+
     CameraComponent* cam = s.cam;
 
     s.imgui_ctx->NewFrame();

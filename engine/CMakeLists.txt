@@ -1,9 +1,10 @@
-add_library(mollen-engine STATIC
+add_library(mollen-engine SHARED
     core/window.cpp
     core/device.cpp
     core/swapchain.cpp
     core/renderer.cpp
     core/engine_state.cpp
+    core/engine_api.cpp
     resources/pipeline.cpp
     resources/buffer.cpp
     resources/descriptor.cpp
@@ -40,7 +41,13 @@ target_include_directories(mollen-engine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-target_link_libraries(mollen-engine PUBLIC
+# Exported as a module DLL. Only the engine_* C entry points (marked with
+# MVE_API / dllexport via MVE_ENGINE_BUILD) cross the boundary; everything
+# below is baked into the DLL and kept PRIVATE so it does not propagate into
+# the host exe (which would duplicate ImGui/GLFW global state).
+target_compile_definitions(mollen-engine PRIVATE MVE_ENGINE_BUILD)
+
+target_link_libraries(mollen-engine PRIVATE
     Vulkan::Vulkan
     glfw
     glm::glm
