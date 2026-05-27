@@ -3,6 +3,7 @@ add_library(mollen-engine STATIC
     core/device.cpp
     core/swapchain.cpp
     core/renderer.cpp
+    core/engine_state.cpp
     resources/pipeline.cpp
     resources/buffer.cpp
     resources/descriptor.cpp
