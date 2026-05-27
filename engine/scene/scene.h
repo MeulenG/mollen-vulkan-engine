@@ -2,6 +2,7 @@
 #define MVE_SCENE_H
 
 #include "entity.h"
+#include "component_store.h"
 
 #include <functional>
 #include <memory>
@@ -45,6 +46,7 @@ public:
     void ClearSelection() { pm_selected = NULL_ENTITY; }
 
 private:
+    ComponentStore pm_store;
     std::vector<std::unique_ptr<Entity>> pm_entities;
     std::vector<EntityId> pm_pending_destroy;
     EntityId pm_next_id = 1;
