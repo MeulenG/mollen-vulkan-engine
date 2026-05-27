@@ -1,31 +1,23 @@
-#include "core/engine_state.h"
+#include "core/engine_api.h"
 
-#include <GLFW/glfw3.h>
-
-#include <chrono>
 #include <cstdlib>
 #include <iostream>
-#include <memory>
 
-// Thin host. Owns the EngineState blob and the OS event/timing loop; all
-// engine logic lives in EngineInit / EngineFrame / EngineShutdown. This split
-// is the foundation for the host/module DLL reload (HOTRELOAD_PLAN.md).
+// Thin host. It knows nothing about the engine's C++ types - only the opaque
+// EngineState pointer and the C entry points. For now the engine module is
+// linked implicitly (import lib); phase 5 swaps this for an explicit
+// LoadLibrary so the module can be rebuilt and reloaded while the host runs.
 int main() {
     try {
-        auto state = std::make_unique<mve::EngineState>();
-        mve::EngineInit(*state);
+        mve::EngineState* state = engine_create();
+        engine_init(state);
 
-        while (!state->window->ShouldClose()) {
-            glfwPollEvents();
-
-            auto now = std::chrono::high_resolution_clock::now();
-            float dt = std::chrono::duration<float>(now - state->last_time).count();
-            state->last_time = now;
-
-            mve::EngineFrame(*state, dt);
+        while (!engine_should_close(state)) {
+            engine_frame(state);
         }
 
-        mve::EngineShutdown(*state);
+        engine_shutdown(state);
+        engine_destroy(state);
 
     } catch (const std::exception& e) {
         std::cerr << e.what() << '\n';
