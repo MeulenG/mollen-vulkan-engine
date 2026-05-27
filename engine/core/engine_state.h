@@ -70,6 +70,11 @@ struct EngineState {
     // Stable across frames (only one camera entity exists).
     CameraComponent* cam = nullptr;
 
+    // Saved ImGui context pointer (::ImGuiContext*) so it survives a module
+    // reload, which resets the new module's ImGui global. Stored as void* to
+    // keep imgui.h out of this header.
+    void* imgui_context = nullptr;
+
     std::chrono::high_resolution_clock::time_point last_time{};
 };
 
