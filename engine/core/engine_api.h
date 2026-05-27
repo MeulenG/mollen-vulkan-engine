@@ -39,4 +39,14 @@ MVE_API void engine_shutdown(mve::EngineState* s);
 // Destroy the state blob.
 MVE_API void engine_destroy(mve::EngineState* s);
 
+// Called on the OLD module immediately before it is unloaded for a reload.
+// Must NOT free GPU resources (the state blob persists). Saves library globals
+// that live in module data (the ImGui context pointer) into the state so the
+// reloaded module can restore them.
+MVE_API void engine_on_unload(mve::EngineState* s);
+
+// Called on the NEW module immediately after a reload. Restores the library
+// globals saved by engine_on_unload so ImGui keeps working across the swap.
+MVE_API void engine_on_reload(mve::EngineState* s);
+
 #endif // MVE_ENGINE_API_H

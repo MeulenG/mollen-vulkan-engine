@@ -55,6 +55,16 @@ target_link_libraries(mollen-engine PRIVATE
     mollen-dbc
 )
 
+# Deploy the engine DLL next to the host exe on every engine build. The host
+# watches this file and hot-reloads when it changes, so deploying on an
+# engine-only rebuild is what makes the reload loop work. (Generator
+# expression for the app dir is resolved after all targets are defined, even
+# though the engine subdirectory is processed before the app's.)
+add_custom_command(TARGET mollen-engine POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:mollen-engine> $<TARGET_FILE_DIR:mollen-wow-tools>
+)
+
 # Compile GLSL shaders to SPIR-V
 find_program(GLSLC glslc HINTS "$ENV{VULKAN_SDK}/Bin" "${Vulkan_GLSLC_EXECUTABLE}")
 
