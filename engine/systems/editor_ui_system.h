@@ -100,6 +100,11 @@ private:
     // F12 screenshot counter. Bumped per capture so we keep a history
     // under screenshots/ (in addition to overwriting screenshots/latest.png).
     int pm_screenshot_counter = 0;
+
+    // Transform-gizmo operation for the selected entity: 0=translate,
+    // 1=rotate, 2=scale. Mapped to the ImGuizmo operation in DrawViewport;
+    // switched with the 1/2/3 keys while the viewport is hovered.
+    int pm_gizmo_op = 0;
 };
 
 } // namespace mve

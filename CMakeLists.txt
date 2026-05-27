@@ -76,8 +76,19 @@ if(MVE_BUILD_TESTS)
     )
 endif()
 
+# ImGuizmo (translate/rotate/scale gizmo for the editor viewport). We only
+# want its two source files, not its example-building CMakeLists, so point
+# SOURCE_SUBDIR at a nonexistent dir - MakeAvailable then just downloads the
+# source without add_subdirectory. We compile ImGuizmo.cpp into imgui_lib.
+FetchContent_Declare(
+    imguizmo
+    GIT_REPOSITORY https://github.com/CedricGuillemet/ImGuizmo.git
+    GIT_TAG        master
+    SOURCE_SUBDIR  _no_cmake_here_
+)
+
 # Make all declared dependencies available
-set(FETCH_TARGETS glfw glm imgui tomlplusplus)
+set(FETCH_TARGETS glfw glm imgui tomlplusplus imguizmo)
 if(MVE_BUILD_DBC_TOOLS)
     list(APPEND FETCH_TARGETS mollen_storm)
 endif()
@@ -95,10 +106,12 @@ add_library(imgui_lib STATIC
     ${imgui_SOURCE_DIR}/imgui_widgets.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
+    ${imguizmo_SOURCE_DIR}/src/ImGuizmo.cpp
 )
 target_include_directories(imgui_lib PUBLIC
     ${imgui_SOURCE_DIR}
     ${imgui_SOURCE_DIR}/backends
+    ${imguizmo_SOURCE_DIR}/src
 )
 target_link_libraries(imgui_lib PUBLIC Vulkan::Vulkan glfw)
 

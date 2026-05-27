@@ -9,6 +9,9 @@
 #include "../resources/wmo_debug_tuning.h"
 
 #include <imgui_internal.h>
+#include <ImGuizmo.h>
+
+#include <glm/gtc/type_ptr.hpp>
 
 #include <GLFW/glfw3.h>
 
@@ -112,6 +115,10 @@ void EditorUISystem::Update(Scene& scene, RenderSystem& render_system, float del
                       "screenshots/shot_%04d.png", pm_screenshot_counter++);
         pm_offscreen.SaveColorToPng(numbered);
     }
+
+    // Start an ImGuizmo frame (must follow ImGui::NewFrame, which the
+    // host already called). DrawViewport issues the actual gizmo.
+    ImGuizmo::BeginFrame();
 
     // Order matters here. The viewport-side menu bar and status bar
     // claim space from the host viewport's work area; if we drew the
@@ -403,6 +410,7 @@ void EditorUISystem::DrawViewport(Scene& scene, float delta_time) {
         }
 
         ImGui::Image(pm_viewport_tex, viewport_size);
+        const ImVec2 image_min = ImGui::GetItemRectMin();
 
         // Camera input - find active camera
         Camera* active_cam = nullptr;
@@ -490,6 +498,51 @@ void EditorUISystem::DrawViewport(Scene& scene, float delta_time) {
             // Combined with distance fog (see scene UBO), the visible
             // far cutoff is hidden by the fog gradient.
             active_cam->SetPerspective(45.0f, aspect, 1.0f, 3000.0f);
+        }
+
+        // Transform gizmo for the selected entity. ImGuizmo draws over the
+        // viewport image and edits the entity's TransformComponent in place.
+        // Always draws when an entity with a transform is selected; returns
+        // true only while the user is dragging a handle.
+        if (active_cam && scene.SelectedEntity() != NULL_ENTITY) {
+            Entity* sel = scene.FindEntity(scene.SelectedEntity());
+            TransformComponent* tf =
+                sel ? sel->GetComponent<TransformComponent>() : nullptr;
+            if (tf) {
+                if (ImGui::IsWindowHovered()) {
+                    if (ImGui::IsKeyPressed(ImGuiKey_1, false)) pm_gizmo_op = 0;
+                    if (ImGui::IsKeyPressed(ImGuiKey_2, false)) pm_gizmo_op = 1;
+                    if (ImGui::IsKeyPressed(ImGuiKey_3, false)) pm_gizmo_op = 2;
+                }
+                ImGuizmo::OPERATION op =
+                    pm_gizmo_op == 1 ? ImGuizmo::ROTATE :
+                    pm_gizmo_op == 2 ? ImGuizmo::SCALE  : ImGuizmo::TRANSLATE;
+
+                ImGuizmo::SetOrthographic(false);
+                ImGuizmo::SetDrawlist();
+                ImGuizmo::SetRect(image_min.x, image_min.y,
+                                  viewport_size.x, viewport_size.y);
+
+                glm::mat4 view = active_cam->GetViewMatrix();
+                glm::mat4 proj = active_cam->GetProjectionMatrix();
+                // The render projection flips Y for Vulkan clip space; undo
+                // that here so ImGuizmo's screen-space mapping matches the
+                // upright image displayed by ImGui::Image.
+                proj[1][1] *= -1.0f;
+
+                glm::mat4 model = tf->ModelMatrix();
+                if (ImGuizmo::Manipulate(glm::value_ptr(view),
+                                         glm::value_ptr(proj), op,
+                                         ImGuizmo::WORLD,
+                                         glm::value_ptr(model))) {
+                    glm::vec3 t, r, s;
+                    ImGuizmo::DecomposeMatrixToComponents(
+                        glm::value_ptr(model), &t.x, &r.x, &s.x);
+                    tf->pm_position = t;
+                    tf->pm_scale    = s;
+                    tf->pm_rotation = glm::quat(glm::radians(r));
+                }
+            }
         }
     }
     ImGui::End();
