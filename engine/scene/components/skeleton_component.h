@@ -1,7 +1,6 @@
 #ifndef MVE_SKELETON_COMPONENT_H
 #define MVE_SKELETON_COMPONENT_H
 
-#include "../entity.h"
 #include "../../animation/skeleton.h"
 #include "../../animation/animation_clip.h"
 #include "../../animation/animator.h"
@@ -11,7 +10,7 @@
 
 namespace mve {
 
-struct SkeletonComponent : Component {
+struct SkeletonComponent {
     const Skeleton* pm_skeleton = nullptr;
     std::unique_ptr<Animator> pm_animator;
     std::vector<const AnimationClip*> pm_clips;

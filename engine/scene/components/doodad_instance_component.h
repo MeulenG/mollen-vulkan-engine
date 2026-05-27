@@ -1,7 +1,6 @@
 #ifndef MVE_DOODAD_INSTANCE_COMPONENT_H
 #define MVE_DOODAD_INSTANCE_COMPONENT_H
 
-#include "../entity.h"
 #include "../../resources/buffer.h"
 
 #include <cstdint>
@@ -63,7 +62,7 @@ struct DoodadSubmesh {
     uint16_t          pm_render_flags = 0;
 };
 
-struct DoodadInstanceComponent : Component {
+struct DoodadInstanceComponent {
     std::unique_ptr<Buffer>    pm_instance_buffer;  // SSBO of mat4 transforms
     uint32_t                   pm_instance_count = 0;
     std::vector<DoodadSubmesh> pm_submeshes;

@@ -1,7 +1,6 @@
 #ifndef MVE_TERRAIN_COMPONENT_H
 #define MVE_TERRAIN_COMPONENT_H
 
-#include "../entity.h"
 #include "../../resources/buffer.h"
 #include "../../resources/texture_array.h"
 
@@ -19,7 +18,7 @@ namespace mve {
 //   set=0 binding=1  pm_chunk_meta_ssbo           - SSBO (256 * 4 uints)
 //   set=0 binding=2  pm_diffuse_array             - 2D-array sampler
 //   set=0 binding=3  pm_alpha_array               - 2D-array sampler
-struct TerrainComponent : Component {
+struct TerrainComponent {
     std::shared_ptr<TextureArray> pm_diffuse_array;
     std::shared_ptr<TextureArray> pm_alpha_array;
     std::unique_ptr<Buffer>       pm_chunk_meta_ssbo;
