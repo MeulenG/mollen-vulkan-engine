@@ -35,6 +35,7 @@ add_library(mollen-engine SHARED
     scene/grass_scatter.cpp
     scene/light_cycle.cpp
     scene/player_controller.cpp
+    scene/picking.cpp
 )
 
 target_include_directories(mollen-engine PUBLIC

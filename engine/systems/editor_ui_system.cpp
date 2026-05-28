@@ -6,6 +6,7 @@
 #include "../scene/components/terrain_tile_component.h"
 #include "../scene/components/transform_component.h"
 #include "../scene/components/mesh_component.h"
+#include "../scene/picking.h"
 #include "../resources/wmo_debug_tuning.h"
 
 #include <imgui_internal.h>
@@ -515,6 +516,23 @@ void EditorUISystem::DrawViewport(Scene& scene, float delta_time) {
             // Combined with distance fog (see scene UBO), the visible
             // far cutoff is hidden by the fog gradient.
             active_cam->SetPerspective(45.0f, aspect, 1.0f, 3000.0f);
+        }
+
+        // Click-to-select. IsItemClicked fires on a left mouse tap (press
+        // and release without significant drag), so it coexists with the
+        // existing left-drag-to-rotate camera control. Suppress when the
+        // cursor is over a gizmo handle or while a gizmo drag is in
+        // progress, so the gizmo's own input wins.
+        if (active_cam &&
+            ImGui::IsItemClicked(ImGuiMouseButton_Left) &&
+            !ImGuizmo::IsOver() && !ImGuizmo::IsUsing()) {
+            ImVec2 mouse = ImGui::GetMousePos();
+            EntityId picked = PickEntity(scene, *active_cam,
+                                         mouse.x - image_min.x,
+                                         mouse.y - image_min.y,
+                                         viewport_size.x, viewport_size.y);
+            if (picked != NULL_ENTITY) scene.SelectEntity(picked);
+            else                       scene.ClearSelection();
         }
 
         // Transform gizmo for the selected entity. ImGuizmo draws over the
