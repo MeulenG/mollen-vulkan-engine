@@ -18,6 +18,7 @@
 #include "../systems/editor_ui_system.h"
 
 #include <chrono>
+#include <filesystem>
 #include <memory>
 
 namespace mve {
@@ -58,6 +59,14 @@ struct EngineState {
     // reload, which resets the new module's ImGui global. Stored as void* to
     // keep imgui.h out of this header.
     void* imgui_context = nullptr;
+
+    // Newest mtime across all .spv files in MVE_SHADER_DIR at the last check.
+    // EngineFrame rescans each frame; if any .spv timestamp moves past this
+    // baseline, it calls render_system->ReloadPipelines() and updates the
+    // baseline. Living in EngineState (not a function-local static) means it
+    // also survives a C++ hot-reload, so a combined rebuild that touches both
+    // C++ and shaders correctly picks up the shader change.
+    std::filesystem::file_time_type last_spv_mtime{};
 
     std::chrono::high_resolution_clock::time_point last_time{};
 };
