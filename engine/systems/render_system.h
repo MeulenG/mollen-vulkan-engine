@@ -78,6 +78,13 @@ public:
 
     void Init();
 
+    // Rebuild every graphics pipeline from the current .spv files on disk.
+    // Used by the shader-hot-reload watcher: when a .spv timestamp changes,
+    // the engine waitIdles and calls this, which destroys the old Pipeline
+    // objects and recreates them. Layouts/descriptors are NOT touched, so
+    // existing descriptor sets and bound buffers remain valid.
+    void ReloadPipelines();
+
     void Render(Scene& scene, const Camera& active_camera,
                 const vk::raii::CommandBuffer& cmd);
 
@@ -126,6 +133,17 @@ public:
     const vk::raii::DescriptorSetLayout& WmoDescriptorLayout() const { return pm_wmo_descriptor_layout; }
 
 private:
+    // Per-pipeline (re)creation helpers. Each rebuilds just its
+    // `pm_*_pipeline` member from the current .spv on disk, leaving the
+    // pipeline_layout (and any descriptor-set-layout) members untouched -
+    // those are shader-independent and stay across reloads.
+    void CreateModelPipelines();
+    void CreateBgPipeline();
+    void CreateGroundPipeline();
+    void CreateTerrainPipeline();
+    void CreateWaterPipeline();
+    void CreateWmoPipeline();
+
     Device& pm_device;
     OffscreenPass& pm_offscreen;
 
