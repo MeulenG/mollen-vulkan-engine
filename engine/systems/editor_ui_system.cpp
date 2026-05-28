@@ -302,6 +302,23 @@ void EditorUISystem::DrawMenuBar(Scene& scene) {
         ImGui::EndMenu();
     }
 
+    if (ImGui::BeginMenu("Build")) {
+        // Synchronously rebuild the engine module. The host's DLL watcher
+        // (and the shader watcher) then auto-reload the new binaries on the
+        // next frame, so the running app picks up code AND shader changes
+        // without a restart. The UI freezes during the build (~5-15s on a
+        // warm build); an async + status-panel version is a future polish.
+        if (ImGui::MenuItem("Rebuild Engine + Shaders")) {
+            std::system("cmake --build build --config Debug "
+                        "--target mollen-engine");
+        }
+        if (ImGui::MenuItem("Rebuild Shaders Only")) {
+            std::system("cmake --build build --config Debug "
+                        "--target compile-shaders");
+        }
+        ImGui::EndMenu();
+    }
+
     if (ImGui::BeginMenu("Window")) {
         ImGui::MenuItem("Scene",         nullptr, &pm_show_scene);
         ImGui::MenuItem("Inspector",     nullptr, &pm_show_inspector);
