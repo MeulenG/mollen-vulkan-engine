@@ -10,6 +10,27 @@
 
 namespace mve {
 
+namespace {
+
+// Newest write-time across all .spv files in the engine's shader output
+// directory. Used by the shader-hot-reload watcher: a change here means
+// CMake's compile-shaders step (re)ran and a pipeline rebuild is needed.
+std::filesystem::file_time_type MaxSpvMtime() {
+    namespace fs = std::filesystem;
+    fs::file_time_type best{};
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(MVE_SHADER_DIR, ec)) {
+        if (ec) break;
+        if (entry.path().extension() == ".spv") {
+            auto t = fs::last_write_time(entry.path(), ec);
+            if (!ec && t > best) best = t;
+        }
+    }
+    return best;
+}
+
+} // namespace
+
 void EngineInit(EngineState& s) {
     s.window    = std::make_unique<Window>(1280, 720, "Mollen Wow Tools");
     s.device    = std::make_unique<Device>(*s.window);
@@ -119,6 +140,11 @@ void EngineInit(EngineState& s) {
         wmo_ok, wmo_fail);
     s.assets->ClearPendingWmoPlacements();
 
+    // Seed the shader-watcher baseline so the very first frame doesn't see a
+    // bogus delta (current mtime > default-constructed) and rebuild pipelines
+    // for nothing.
+    s.last_spv_mtime = MaxSpvMtime();
+
     s.last_time = std::chrono::high_resolution_clock::now();
 }
 
@@ -128,6 +154,18 @@ void EngineFrame(EngineState& s) {
     auto now = std::chrono::high_resolution_clock::now();
     float dt = std::chrono::duration<float>(now - s.last_time).count();
     s.last_time = now;
+
+    // Shader hot-reload: any .spv timestamp moving past the baseline means
+    // CMake's compile-shaders step just ran; rebuild the affected pipelines
+    // in-place. Baseline lives in EngineState so it survives C++ reloads too.
+    {
+        auto m = MaxSpvMtime();
+        if (m > s.last_spv_mtime) {
+            s.last_spv_mtime = m;
+            s.render_system->ReloadPipelines();
+            std::fprintf(stderr, "[shader] pipelines reloaded\n");
+        }
+    }
 
     CameraComponent* cam = s.cam;
 
