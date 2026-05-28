@@ -157,8 +157,6 @@ RenderSystem::RenderSystem(Device& device, OffscreenPass& offscreen)
 }
 
 void RenderSystem::Init() {
-    std::string shader_dir = MVE_SHADER_DIR;
-
     // Descriptor layout (M2 pipeline):
     //   binding 0  scene UBO        (fragment)
     //   binding 1  diffuse texture  (fragment)
@@ -221,105 +219,7 @@ void RenderSystem::Init() {
     model_layout_info.setSetLayouts(layouts);
     pm_model_pipeline_layout = pm_device.GetDevice().createPipelineLayout(model_layout_info);
 
-    // M2 pipeline variants: one per blend mode. The Vulkan pipeline
-    // state for each mode is set per wowserhq's Wrath-Blending table
-    // (reverse-engineered from the WoW client). All variants share:
-    //   - pipeline layout
-    //   - vertex input bindings (Vertex)
-    //   - cullMode = eNone (M2 leaf-plane material flag 0x04
-    //     two-sided semantics; trunks lose nothing from running
-    //     un-culled because their back faces are occluded by front
-    //     faces and fail the depth test anyway)
-    //   - depth-test enabled
-    // They differ in:
-    //   - fragment shader (opaque uses basic_opaque.frag without
-    //     discard; the rest use basic.frag with discard)
-    //   - depth-write (true for opaque/alpha-key, false for
-    //     translucent so back-to-front draws don't occlude each
-    //     other)
-    //   - color blend state (off for opaque/alpha-key, src-alpha
-    //     blend for mode 2, additive for mode 3)
-    auto common_config = PipelineConfig::DefaultConfig();
-    common_config.pipeline_layout = *pm_model_pipeline_layout;
-    common_config.color_attachment_format = pm_offscreen.ColorFormat();
-    common_config.depth_attachment_format = pm_offscreen.DepthFormat();
-    common_config.binding_descriptions = Vertex::GetBindingDescriptions();
-    common_config.attribute_descriptions = Vertex::GetAttributeDescriptions();
-    common_config.rasterization_info.cullMode = vk::CullModeFlagBits::eNone;
-
-    // Blend mode 0: Opaque. No alpha test, no blend, depth write on.
-    // Used by trunks, rocks, building parts.
-    {
-        auto cfg = common_config;
-        cfg.color_blend_attachment.blendEnable = vk::False;
-        cfg.depth_stencil_info.depthWriteEnable = vk::True;
-        pm_model_pipeline_opaque = std::make_unique<Pipeline>(
-            pm_device,
-            shader_dir + "/basic.vert.spv",
-            shader_dir + "/basic_opaque.frag.spv",
-            cfg);
-    }
-
-    // Blend mode 1: AlphaKey. Discard at 128/255 in shader, no
-    // blend, depth write on. Used by tree canopies, fences, alpha-
-    // cut foliage.
-    {
-        auto cfg = common_config;
-        cfg.color_blend_attachment.blendEnable = vk::False;
-        cfg.depth_stencil_info.depthWriteEnable = vk::True;
-        pm_model_pipeline_alpha_key = std::make_unique<Pipeline>(
-            pm_device,
-            shader_dir + "/basic.vert.spv",
-            shader_dir + "/basic.frag.spv",
-            cfg);
-    }
-
-    // Blend mode 2: Alpha. SrcAlpha / OneMinusSrcAlpha. Depth write
-    // off (translucents must accumulate). Used by smoke, particles,
-    // some glow halos.
-    {
-        auto cfg = common_config;
-        cfg.color_blend_attachment.blendEnable = vk::True;
-        cfg.color_blend_attachment.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha;
-        cfg.color_blend_attachment.dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
-        cfg.color_blend_attachment.colorBlendOp        = vk::BlendOp::eAdd;
-        cfg.color_blend_attachment.srcAlphaBlendFactor = vk::BlendFactor::eOne;
-        cfg.color_blend_attachment.dstAlphaBlendFactor = vk::BlendFactor::eZero;
-        cfg.color_blend_attachment.alphaBlendOp        = vk::BlendOp::eAdd;
-        cfg.depth_stencil_info.depthWriteEnable = vk::False;
-        // We reuse basic.frag here so the shader still does the
-        // discard at 128/255. For pure alpha blending that's a
-        // slight precision quirk (alpha just above threshold
-        // contributes faintly) but it's the WoW client behaviour
-        // for mode 2 submeshes that happen to have hard-edged
-        // alpha textures, and harmless for smooth-alpha textures.
-        pm_model_pipeline_alpha = std::make_unique<Pipeline>(
-            pm_device,
-            shader_dir + "/basic.vert.spv",
-            shader_dir + "/basic.frag.spv",
-            cfg);
-    }
-
-    // Blend mode 3: Add. SrcAlpha / One. Pure additive accumulation;
-    // useful for glow / magic effects / fairy sparkles. Depth write
-    // off; depth-test still on so geometry behind opaque occluders
-    // doesn't bleed through.
-    {
-        auto cfg = common_config;
-        cfg.color_blend_attachment.blendEnable = vk::True;
-        cfg.color_blend_attachment.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha;
-        cfg.color_blend_attachment.dstColorBlendFactor = vk::BlendFactor::eOne;
-        cfg.color_blend_attachment.colorBlendOp        = vk::BlendOp::eAdd;
-        cfg.color_blend_attachment.srcAlphaBlendFactor = vk::BlendFactor::eOne;
-        cfg.color_blend_attachment.dstAlphaBlendFactor = vk::BlendFactor::eOne;
-        cfg.color_blend_attachment.alphaBlendOp        = vk::BlendOp::eAdd;
-        cfg.depth_stencil_info.depthWriteEnable = vk::False;
-        pm_model_pipeline_add = std::make_unique<Pipeline>(
-            pm_device,
-            shader_dir + "/basic.vert.spv",
-            shader_dir + "/basic.frag.spv",
-            cfg);
-    }
+    CreateModelPipelines();
 
     // Background pipeline (fullscreen gradient + procedural clouds,
     // no vertex input, no depth). Takes the canonical Elwynn 5-band
@@ -345,19 +245,7 @@ void RenderSystem::Init() {
     bg_layout_info.setPushConstantRanges(bg_push_range);
     pm_bg_pipeline_layout = pm_device.GetDevice().createPipelineLayout(bg_layout_info);
 
-    auto bg_config = PipelineConfig::DefaultConfig();
-    bg_config.pipeline_layout = *pm_bg_pipeline_layout;
-    bg_config.color_attachment_format = pm_offscreen.ColorFormat();
-    bg_config.depth_attachment_format = pm_offscreen.DepthFormat();
-    bg_config.depth_stencil_info.depthTestEnable = vk::False;
-    bg_config.depth_stencil_info.depthWriteEnable = vk::False;
-    bg_config.rasterization_info.cullMode = vk::CullModeFlagBits::eNone;
-    bg_config.binding_descriptions.clear();
-    bg_config.attribute_descriptions.clear();
-
-    pm_bg_pipeline = std::make_unique<Pipeline>(
-        pm_device, shader_dir + "/background.vert.spv", shader_dir + "/background.frag.spv",
-        bg_config);
+    CreateBgPipeline();
 
     // Ground pipeline (alpha blended grid)
     vk::PushConstantRange ground_push{vk::ShaderStageFlagBits::eVertex, 0, sizeof(PushConstants)};
@@ -365,28 +253,7 @@ void RenderSystem::Init() {
     ground_layout_info.setPushConstantRanges(ground_push);
     pm_ground_pipeline_layout = pm_device.GetDevice().createPipelineLayout(ground_layout_info);
 
-    auto ground_config = PipelineConfig::DefaultConfig();
-    ground_config.pipeline_layout = *pm_ground_pipeline_layout;
-    ground_config.color_attachment_format = pm_offscreen.ColorFormat();
-    ground_config.depth_attachment_format = pm_offscreen.DepthFormat();
-    // Ground shader only consumes position - declare just that to avoid
-    // "Vertex attribute not consumed" validation warnings.
-    ground_config.binding_descriptions = Vertex::GetBindingDescriptions();
-    ground_config.attribute_descriptions = {
-        {0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, position)},
-    };
-    ground_config.rasterization_info.cullMode = vk::CullModeFlagBits::eNone;
-    ground_config.color_blend_attachment.blendEnable = vk::True;
-    ground_config.color_blend_attachment.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha;
-    ground_config.color_blend_attachment.dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
-    ground_config.color_blend_attachment.colorBlendOp = vk::BlendOp::eAdd;
-    ground_config.color_blend_attachment.srcAlphaBlendFactor = vk::BlendFactor::eOne;
-    ground_config.color_blend_attachment.dstAlphaBlendFactor = vk::BlendFactor::eZero;
-    ground_config.color_blend_attachment.alphaBlendOp = vk::BlendOp::eAdd;
-
-    pm_ground_pipeline = std::make_unique<Pipeline>(
-        pm_device, shader_dir + "/ground.vert.spv", shader_dir + "/ground.frag.spv",
-        ground_config);
+    CreateGroundPipeline();
 
     // Terrain pipeline. Shares the model pipeline's push-constant layout
     // (mvp + model) since the per-fragment splat work happens off the
@@ -398,16 +265,7 @@ void RenderSystem::Init() {
     terrain_layout_info.setSetLayouts(terrain_layouts);
     pm_terrain_pipeline_layout = pm_device.GetDevice().createPipelineLayout(terrain_layout_info);
 
-    auto terrain_config = PipelineConfig::DefaultConfig();
-    terrain_config.pipeline_layout         = *pm_terrain_pipeline_layout;
-    terrain_config.color_attachment_format = pm_offscreen.ColorFormat();
-    terrain_config.depth_attachment_format = pm_offscreen.DepthFormat();
-    terrain_config.binding_descriptions    = TerrainVertex::GetBindingDescriptions();
-    terrain_config.attribute_descriptions  = TerrainVertex::GetAttributeDescriptions();
-
-    pm_terrain_pipeline = std::make_unique<Pipeline>(
-        pm_device, shader_dir + "/terrain.vert.spv", shader_dir + "/terrain.frag.spv",
-        terrain_config);
+    CreateTerrainPipeline();
 
     // Water pipeline. No descriptor set - all per-instance data rides
     // in a 128-byte push range shared between vertex and fragment.
@@ -430,33 +288,7 @@ void RenderSystem::Init() {
     pm_water_pipeline_layout =
         pm_device.GetDevice().createPipelineLayout(water_layout_info);
 
-    auto water_config = PipelineConfig::DefaultConfig();
-    water_config.pipeline_layout         = *pm_water_pipeline_layout;
-    water_config.color_attachment_format = pm_offscreen.ColorFormat();
-    water_config.depth_attachment_format = pm_offscreen.DepthFormat();
-    water_config.binding_descriptions    = WaterVertex::GetBindingDescriptions();
-    water_config.attribute_descriptions  = WaterVertex::GetAttributeDescriptions();
-    water_config.rasterization_info.cullMode = vk::CullModeFlagBits::eNone;
-    water_config.depth_stencil_info.depthTestEnable  = vk::True;
-    // Depth-write OFF: keeping it on caused waterfall M2 doodads (and
-    // anything else alpha-blended behind the water surface in screen
-    // space) to fail the depth test against the water polygon and
-    // disappear. The WebWowViewerCpp reference enables depth-write
-    // because it pairs with a later opaque underwater pass (fish, kelp)
-    // that should be occluded by the surface; we don't have that pass
-    // yet, so depth-write off is the right v1 trade-off.
-    water_config.depth_stencil_info.depthWriteEnable = vk::False;
-    water_config.color_blend_attachment.blendEnable         = vk::True;
-    water_config.color_blend_attachment.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha;
-    water_config.color_blend_attachment.dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
-    water_config.color_blend_attachment.colorBlendOp        = vk::BlendOp::eAdd;
-    water_config.color_blend_attachment.srcAlphaBlendFactor = vk::BlendFactor::eOne;
-    water_config.color_blend_attachment.dstAlphaBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
-    water_config.color_blend_attachment.alphaBlendOp        = vk::BlendOp::eAdd;
-
-    pm_water_pipeline = std::make_unique<Pipeline>(
-        pm_device, shader_dir + "/water.vert.spv", shader_dir + "/water.frag.spv",
-        water_config);
+    CreateWaterPipeline();
 
     // WMO pipeline. Descriptor set per material carries:
     //   binding 0  SceneUBO (fragment) - shared, but bound once per
@@ -481,20 +313,184 @@ void RenderSystem::Init() {
     pm_wmo_pipeline_layout =
         pm_device.GetDevice().createPipelineLayout(wmo_layout_info);
 
-    auto wmo_config = PipelineConfig::DefaultConfig();
-    wmo_config.pipeline_layout         = *pm_wmo_pipeline_layout;
-    wmo_config.color_attachment_format = pm_offscreen.ColorFormat();
-    wmo_config.depth_attachment_format = pm_offscreen.DepthFormat();
-    wmo_config.binding_descriptions    = WmoVertex::GetBindingDescriptions();
-    wmo_config.attribute_descriptions  = WmoVertex::GetAttributeDescriptions();
-    // Engine is now Z-up matching WoWee's canonical render frame so
-    // MOVT vertices flow through unchanged - no inner basis swap, no
-    // reflection in the model matrix. Backface culling is the
-    // standard back-faces-only with default CCW front-face winding.
+    CreateWmoPipeline();
+}
 
+// ---------------------------------------------------------------------
+// Pipeline (re)creation helpers. Each rebuilds just its pm_*_pipeline
+// member from the current .spv on disk. The pipeline_layouts and
+// descriptor-set-layouts referenced here are NOT recreated; they were
+// built once in Init and stay across shader-hot-reloads, so existing
+// descriptor sets and bound buffers remain valid through a swap.
+// ---------------------------------------------------------------------
+
+void RenderSystem::CreateModelPipelines() {
+    const std::string shader_dir = MVE_SHADER_DIR;
+
+    auto common_config = PipelineConfig::DefaultConfig();
+    common_config.pipeline_layout = *pm_model_pipeline_layout;
+    common_config.color_attachment_format = pm_offscreen.ColorFormat();
+    common_config.depth_attachment_format = pm_offscreen.DepthFormat();
+    common_config.binding_descriptions = Vertex::GetBindingDescriptions();
+    common_config.attribute_descriptions = Vertex::GetAttributeDescriptions();
+    common_config.rasterization_info.cullMode = vk::CullModeFlagBits::eNone;
+
+    // Blend mode 0: Opaque.
+    {
+        auto cfg = common_config;
+        cfg.color_blend_attachment.blendEnable = vk::False;
+        cfg.depth_stencil_info.depthWriteEnable = vk::True;
+        pm_model_pipeline_opaque = std::make_unique<Pipeline>(
+            pm_device,
+            shader_dir + "/basic.vert.spv",
+            shader_dir + "/basic_opaque.frag.spv",
+            cfg);
+    }
+    // Blend mode 1: AlphaKey.
+    {
+        auto cfg = common_config;
+        cfg.color_blend_attachment.blendEnable = vk::False;
+        cfg.depth_stencil_info.depthWriteEnable = vk::True;
+        pm_model_pipeline_alpha_key = std::make_unique<Pipeline>(
+            pm_device,
+            shader_dir + "/basic.vert.spv",
+            shader_dir + "/basic.frag.spv",
+            cfg);
+    }
+    // Blend mode 2: Alpha.
+    {
+        auto cfg = common_config;
+        cfg.color_blend_attachment.blendEnable = vk::True;
+        cfg.color_blend_attachment.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha;
+        cfg.color_blend_attachment.dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
+        cfg.color_blend_attachment.colorBlendOp        = vk::BlendOp::eAdd;
+        cfg.color_blend_attachment.srcAlphaBlendFactor = vk::BlendFactor::eOne;
+        cfg.color_blend_attachment.dstAlphaBlendFactor = vk::BlendFactor::eZero;
+        cfg.color_blend_attachment.alphaBlendOp        = vk::BlendOp::eAdd;
+        cfg.depth_stencil_info.depthWriteEnable = vk::False;
+        pm_model_pipeline_alpha = std::make_unique<Pipeline>(
+            pm_device,
+            shader_dir + "/basic.vert.spv",
+            shader_dir + "/basic.frag.spv",
+            cfg);
+    }
+    // Blend mode 3: Add.
+    {
+        auto cfg = common_config;
+        cfg.color_blend_attachment.blendEnable = vk::True;
+        cfg.color_blend_attachment.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha;
+        cfg.color_blend_attachment.dstColorBlendFactor = vk::BlendFactor::eOne;
+        cfg.color_blend_attachment.colorBlendOp        = vk::BlendOp::eAdd;
+        cfg.color_blend_attachment.srcAlphaBlendFactor = vk::BlendFactor::eOne;
+        cfg.color_blend_attachment.dstAlphaBlendFactor = vk::BlendFactor::eOne;
+        cfg.color_blend_attachment.alphaBlendOp        = vk::BlendOp::eAdd;
+        cfg.depth_stencil_info.depthWriteEnable = vk::False;
+        pm_model_pipeline_add = std::make_unique<Pipeline>(
+            pm_device,
+            shader_dir + "/basic.vert.spv",
+            shader_dir + "/basic.frag.spv",
+            cfg);
+    }
+}
+
+void RenderSystem::CreateBgPipeline() {
+    const std::string shader_dir = MVE_SHADER_DIR;
+    auto cfg = PipelineConfig::DefaultConfig();
+    cfg.pipeline_layout = *pm_bg_pipeline_layout;
+    cfg.color_attachment_format = pm_offscreen.ColorFormat();
+    cfg.depth_attachment_format = pm_offscreen.DepthFormat();
+    cfg.depth_stencil_info.depthTestEnable = vk::False;
+    cfg.depth_stencil_info.depthWriteEnable = vk::False;
+    cfg.rasterization_info.cullMode = vk::CullModeFlagBits::eNone;
+    cfg.binding_descriptions.clear();
+    cfg.attribute_descriptions.clear();
+    pm_bg_pipeline = std::make_unique<Pipeline>(
+        pm_device, shader_dir + "/background.vert.spv",
+        shader_dir + "/background.frag.spv", cfg);
+}
+
+void RenderSystem::CreateGroundPipeline() {
+    const std::string shader_dir = MVE_SHADER_DIR;
+    auto cfg = PipelineConfig::DefaultConfig();
+    cfg.pipeline_layout = *pm_ground_pipeline_layout;
+    cfg.color_attachment_format = pm_offscreen.ColorFormat();
+    cfg.depth_attachment_format = pm_offscreen.DepthFormat();
+    cfg.binding_descriptions = Vertex::GetBindingDescriptions();
+    cfg.attribute_descriptions = {
+        {0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, position)},
+    };
+    cfg.rasterization_info.cullMode = vk::CullModeFlagBits::eNone;
+    cfg.color_blend_attachment.blendEnable = vk::True;
+    cfg.color_blend_attachment.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha;
+    cfg.color_blend_attachment.dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
+    cfg.color_blend_attachment.colorBlendOp = vk::BlendOp::eAdd;
+    cfg.color_blend_attachment.srcAlphaBlendFactor = vk::BlendFactor::eOne;
+    cfg.color_blend_attachment.dstAlphaBlendFactor = vk::BlendFactor::eZero;
+    cfg.color_blend_attachment.alphaBlendOp = vk::BlendOp::eAdd;
+    pm_ground_pipeline = std::make_unique<Pipeline>(
+        pm_device, shader_dir + "/ground.vert.spv",
+        shader_dir + "/ground.frag.spv", cfg);
+}
+
+void RenderSystem::CreateTerrainPipeline() {
+    const std::string shader_dir = MVE_SHADER_DIR;
+    auto cfg = PipelineConfig::DefaultConfig();
+    cfg.pipeline_layout         = *pm_terrain_pipeline_layout;
+    cfg.color_attachment_format = pm_offscreen.ColorFormat();
+    cfg.depth_attachment_format = pm_offscreen.DepthFormat();
+    cfg.binding_descriptions    = TerrainVertex::GetBindingDescriptions();
+    cfg.attribute_descriptions  = TerrainVertex::GetAttributeDescriptions();
+    pm_terrain_pipeline = std::make_unique<Pipeline>(
+        pm_device, shader_dir + "/terrain.vert.spv",
+        shader_dir + "/terrain.frag.spv", cfg);
+}
+
+void RenderSystem::CreateWaterPipeline() {
+    const std::string shader_dir = MVE_SHADER_DIR;
+    auto cfg = PipelineConfig::DefaultConfig();
+    cfg.pipeline_layout         = *pm_water_pipeline_layout;
+    cfg.color_attachment_format = pm_offscreen.ColorFormat();
+    cfg.depth_attachment_format = pm_offscreen.DepthFormat();
+    cfg.binding_descriptions    = WaterVertex::GetBindingDescriptions();
+    cfg.attribute_descriptions  = WaterVertex::GetAttributeDescriptions();
+    cfg.rasterization_info.cullMode = vk::CullModeFlagBits::eNone;
+    cfg.depth_stencil_info.depthTestEnable  = vk::True;
+    cfg.depth_stencil_info.depthWriteEnable = vk::False;
+    cfg.color_blend_attachment.blendEnable         = vk::True;
+    cfg.color_blend_attachment.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha;
+    cfg.color_blend_attachment.dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
+    cfg.color_blend_attachment.colorBlendOp        = vk::BlendOp::eAdd;
+    cfg.color_blend_attachment.srcAlphaBlendFactor = vk::BlendFactor::eOne;
+    cfg.color_blend_attachment.dstAlphaBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
+    cfg.color_blend_attachment.alphaBlendOp        = vk::BlendOp::eAdd;
+    pm_water_pipeline = std::make_unique<Pipeline>(
+        pm_device, shader_dir + "/water.vert.spv",
+        shader_dir + "/water.frag.spv", cfg);
+}
+
+void RenderSystem::CreateWmoPipeline() {
+    const std::string shader_dir = MVE_SHADER_DIR;
+    auto cfg = PipelineConfig::DefaultConfig();
+    cfg.pipeline_layout         = *pm_wmo_pipeline_layout;
+    cfg.color_attachment_format = pm_offscreen.ColorFormat();
+    cfg.depth_attachment_format = pm_offscreen.DepthFormat();
+    cfg.binding_descriptions    = WmoVertex::GetBindingDescriptions();
+    cfg.attribute_descriptions  = WmoVertex::GetAttributeDescriptions();
     pm_wmo_pipeline = std::make_unique<Pipeline>(
-        pm_device, shader_dir + "/wmo.vert.spv", shader_dir + "/wmo.frag.spv",
-        wmo_config);
+        pm_device, shader_dir + "/wmo.vert.spv",
+        shader_dir + "/wmo.frag.spv", cfg);
+}
+
+void RenderSystem::ReloadPipelines() {
+    // Quiesce the GPU before swapping pipeline handles - any in-flight
+    // command buffer may still reference the old ones.
+    pm_device.GetDevice().waitIdle();
+    CreateModelPipelines();
+    CreateBgPipeline();
+    CreateGroundPipeline();
+    CreateTerrainPipeline();
+    CreateWaterPipeline();
+    CreateWmoPipeline();
 }
 
 void RenderSystem::UpdateSceneUBO() {
