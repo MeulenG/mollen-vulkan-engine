@@ -684,6 +684,27 @@ void EditorUISystem::DrawInspector(Scene& scene, RenderSystem& render_system) {
             }
 
             ImGui::DragFloat3("Scale", &xf->pm_scale.x, 0.01f, 0.001f, 100.0f);
+
+            // Code-first workflow: position interactively with the gizmo,
+            // then copy the current transform as a pastable C++ snippet
+            // for permanent placement in source. Replaces a scene save/load
+            // workflow we deliberately skipped (HOTRELOAD_PLAN.md).
+            if (ImGui::Button("Copy as C++")) {
+                char buf[512];
+                std::snprintf(buf, sizeof(buf),
+                    "// %s\n"
+                    "tf->pm_position = glm::vec3{%.3ff, %.3ff, %.3ff};\n"
+                    "tf->pm_rotation = glm::quat{%.4ff, %.4ff, %.4ff, %.4ff};\n"
+                    "tf->pm_scale    = glm::vec3{%.3ff, %.3ff, %.3ff};\n",
+                    selected->Name().c_str(),
+                    xf->pm_position.x, xf->pm_position.y, xf->pm_position.z,
+                    xf->pm_rotation.w, xf->pm_rotation.x,
+                    xf->pm_rotation.y, xf->pm_rotation.z,
+                    xf->pm_scale.x, xf->pm_scale.y, xf->pm_scale.z);
+                ImGui::SetClipboardText(buf);
+            }
+            ImGui::SameLine();
+            ImGui::TextDisabled("(clipboard: pm_position/rotation/scale)");
         }
     }
 
