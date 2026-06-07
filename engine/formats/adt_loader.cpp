@@ -1,4 +1,5 @@
 #include "adt_types.h"
+#include "chunk_handler.h"
 
 #include <cstdio>
 #include <cstring>
@@ -8,19 +9,6 @@ namespace mve {
 
 namespace {
 
-// See wdt_loader.cpp for the rationale on FourCC matching - WoW chunk IDs
-// are stored reversed on disk and a naive FourCC literal matches the
-// little-endian read.
-constexpr uint32_t FourCC(const char* s) {
-    return (uint32_t)(uint8_t)s[0]
-         | ((uint32_t)(uint8_t)s[1] << 8)
-         | ((uint32_t)(uint8_t)s[2] << 16)
-         | ((uint32_t)(uint8_t)s[3] << 24);
-}
-
-// Layout of the MCNK header for ADT v18. Only the fields R1 needs are
-// extracted; everything else is skipped via offsets. References:
-// https://wowdev.wiki/ADT/v18#MCNK_header
 struct McnkHeader {
     uint32_t flags;
     uint32_t index_x;
@@ -87,8 +75,9 @@ bool ParseMcnk(const uint8_t* mcnk_data, size_t mcnk_payload_size,
     size_t mcvt_off = (size_t)ofs_mcvt - 8;
     if (mcvt_off + 8 + kAdtVertsPerChunk * 4 > mcnk_payload_size) return false;
 
-    uint32_t mcvt_id   = ReadU32(mcnk_data, mcvt_off);
-    if (mcvt_id != FourCC("MCVT")) return false;
+    // "MCVT" is stored reversed on disk as T,V,C,M (0x54,0x56,0x43,0x4D)
+    const uint8_t* mcvt_id_p = mcnk_data + mcvt_off;
+    if (!(mcvt_id_p[0]==0x54 && mcvt_id_p[1]==0x56 && mcvt_id_p[2]==0x43 && mcvt_id_p[3]==0x4D)) return false;
 
     const uint8_t* mcvt_body = mcnk_data + mcvt_off + 8;
     // MCVT layout: 145 floats, interleaved as 9, 8, 9, 8, 9, 8, 9, 8, 9.
@@ -115,9 +104,10 @@ bool ParseMcnk(const uint8_t* mcnk_data, size_t mcnk_payload_size,
     if (ofs_mcly > 0 && n_layers > 0) {
         size_t mcly_off = (size_t)ofs_mcly - 8;
         if (mcly_off + 8 <= mcnk_payload_size) {
-            uint32_t mcly_id   = ReadU32(mcnk_data, mcly_off);
+            // "MCLY" is stored reversed on disk as Y,L,C,M (0x59,0x4C,0x43,0x4D)
+            const uint8_t* mcly_id_p = mcnk_data + mcly_off;
             uint32_t mcly_size = ReadU32(mcnk_data, mcly_off + 4);
-            if (mcly_id == FourCC("MCLY") &&
+            if (mcly_id_p[0]==0x59 && mcly_id_p[1]==0x4C && mcly_id_p[2]==0x43 && mcly_id_p[3]==0x4D &&
                 mcly_off + 8 + mcly_size <= mcnk_payload_size) {
                 const uint8_t* mcly_body = mcnk_data + mcly_off + 8;
                 for (int l = 0; l < out.layer_count; l++) {
@@ -149,17 +139,10 @@ bool AdtLoader::LoadFile(const std::string& path, AdtTile& out) {
 
     int mcnk_seen = 0;
 
-    // Walk top-level chunks.
-    size_t pos = 0;
-    while (pos + 8 <= buf.size()) {
-        uint32_t id           = ReadU32(buf.data(), pos);
-        uint32_t payload_size = ReadU32(buf.data(), pos + 4);
-        pos += 8;
-        if (pos + payload_size > buf.size()) break;
-
-        if (id == FourCC("MTEX")) {
+    WalkChunks(buf.data(), buf.size(), {
+        { ChunkId::MTEX, [&](const uint8_t* data, uint32_t payload_size) {
             // Null-separated strings. Last string is also null-terminated.
-            const char* p   = reinterpret_cast<const char*>(&buf[pos]);
+            const char* p   = reinterpret_cast<const char*>(data);
             const char* end = p + payload_size;
             while (p < end) {
                 size_t len = std::strlen(p);
@@ -167,28 +150,28 @@ bool AdtLoader::LoadFile(const std::string& path, AdtTile& out) {
                 out.textures.emplace_back(p, len);
                 p += len + 1;
             }
-        } else if (id == FourCC("MCNK")) {
+            return true;
+        }},
+        { ChunkId::MCNK, [&](const uint8_t* data, uint32_t payload_size) {
             // Up to 256 MCNK chunks. Order in the file is row-major (the
             // index_x and index_y inside the header give the canonical
             // location to store the parsed result).
             if (mcnk_seen < kAdtChunksPerTile) {
                 AdtChunk parsed{};
-                if (ParseMcnk(&buf[pos], payload_size, parsed)) {
-                    // index_x / index_y come from the MCNK header (offsets 4/8).
-                    uint32_t ix = ReadU32(&buf[pos], 4);
-                    uint32_t iy = ReadU32(&buf[pos], 8);
+                if (ParseMcnk(data, payload_size, parsed)) {
+                    uint32_t ix = ReadU32(data, 4);
+                    uint32_t iy = ReadU32(data, 8);
                     if (ix < 16 && iy < 16) {
                         out.chunks[iy * 16 + ix] = parsed;
                     }
                 }
             }
             mcnk_seen++;
-        }
+            return true;
+        }},
         // MVER / MHDR / MCIN / MMDX / MMID / MWMO / MWID / MDDF / MODF /
         // MH2O / MFBO / MTXF: ignored for R1.
-
-        pos += payload_size;
-    }
+    });
 
     return mcnk_seen > 0;
 }

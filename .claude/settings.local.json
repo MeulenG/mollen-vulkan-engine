@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(ls -1 src/schemas/wotlk/schema_*.h)",
-      "Bash(findstr \"typedef.*ImTextureID\\\\|#define.*ImTextureID\\\\|using ImTextureID\" \"C:\\\\Users\\\\Molle\\\\source\\\\repos\\\\mollen-wow-tools\\\\build\\\\_deps\\\\imgui-src\\\\imgui.h\")"
-    ]
-  }
-}
