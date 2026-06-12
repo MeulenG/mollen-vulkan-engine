@@ -22,6 +22,7 @@ add_library(mollen-engine STATIC
     core/imgui_context.cpp
     formats/blp_loader.cpp
     formats/m2_loader.cpp
+    formats/chunk_handler.cpp
     formats/wdt_loader.cpp
     formats/adt_loader.cpp
     scene/terrain_mesh.cpp
