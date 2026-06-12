@@ -167,8 +167,15 @@ bool AdtLoader::LoadFile(const std::string& path, AdtTile& out) {
             const char* p   = reinterpret_cast<const char*>(data);
             const char* end = p + payload_size;
             while (p < end) {
-                size_t len = std::strlen(p);
-                if (len == 0) { p++; continue; }
+                size_t remaining = static_cast<size_t>(end - p);
+                const void* nul = std::memchr(p, '\0', remaining);
+                if (!nul) {
+                    break;
+                }
+                size_t len = static_cast<const char*>(nul) - p;
+                if (len == 0) { 
+                    p++; continue; 
+                }
                 out.textures.emplace_back(p, len);
                 p += len + 1;
             }
