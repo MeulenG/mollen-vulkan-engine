@@ -9,9 +9,14 @@ add_library(mollen-engine STATIC
     resources/image.cpp
     resources/texture_array.cpp
     resources/asset_manager.cpp
+    resources/dbc_registry.cpp
+    resources/icon_cache.cpp
     systems/render_system.cpp
     systems/animation_system.cpp
     systems/editor_ui_system.cpp
+    systems/dbc_browser_system.cpp
+    systems/dbc_form_system.cpp
+    systems/spell_editor_system.cpp
     scene/mesh.cpp
     scene/camera.cpp
     scene/entity.cpp
@@ -21,6 +26,7 @@ add_library(mollen-engine STATIC
     animation/animator.cpp
     core/offscreen_pass.cpp
     core/imgui_context.cpp
+    core/editor_style.cpp
     formats/blp_loader.cpp
     formats/m2_loader.cpp
     formats/wdt_loader.cpp
@@ -33,6 +39,7 @@ add_library(mollen-engine STATIC
     scene/grass_scatter.cpp
     scene/light_cycle.cpp
     scene/player_controller.cpp
+    db/db_connection.cpp
 )
 
 target_include_directories(mollen-engine PUBLIC

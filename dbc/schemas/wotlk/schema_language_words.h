@@ -4,9 +4,9 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef language_words_fields[] = {
-    { "Id",         DbcFieldType::UInt32 },
-    { "LanguageID", DbcFieldType::UInt32 },
-    { "Word",       DbcFieldType::String },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "LanguageID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "languages" },
+    { "Word", DbcFieldType::String },
 };
 
 static const DbcSchema schema_language_words = {

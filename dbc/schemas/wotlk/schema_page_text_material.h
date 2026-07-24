@@ -4,8 +4,8 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef page_text_material_fields[] = {
-    { "Id",    DbcFieldType::UInt32 },
-    { "Name",  DbcFieldType::String },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "Name", DbcFieldType::String, DbcSemantic::Default, nullptr, "Identity" },
 };
 
 static const DbcSchema schema_page_text_material = {

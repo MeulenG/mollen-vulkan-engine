@@ -381,3 +381,7 @@ docs/
 # Screenshots dumped by the engine's F12 / flag-file capture.
 # Local-only; the directory is created at runtime if needed.
 screenshots/
+
+# Engine ships its own assets (fonts) -- do NOT ignore them.
+!engine/assets/
+!engine/assets/**

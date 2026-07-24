@@ -13,7 +13,7 @@ TEST_CASE("psql_connector Disconnect is safe when not connected", "[psql]") {
     CHECK_FALSE(db.IsConnected());
 }
 
-// Integration test — only runs if a real database is available.
+// Integration test - only runs if a real database is available.
 // Set environment variable DBC_TEST_DB_CONFIG to a valid .toml config path to enable.
 TEST_CASE("psql_connector integration: connect, query, disconnect", "[psql][integration]") {
     const char* config_path = std::getenv("DBC_TEST_DB_CONFIG");

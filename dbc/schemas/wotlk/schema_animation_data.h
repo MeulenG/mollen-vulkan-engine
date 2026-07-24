@@ -4,13 +4,13 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef animation_data_fields[] = {
-    { "Id",         DbcFieldType::UInt32 },
-    { "Name",       DbcFieldType::String },
-    { "WeaponFlags", DbcFieldType::UInt32 },
-    { "BodyFlags",  DbcFieldType::UInt32 },
-    { "Flags",      DbcFieldType::UInt32 },
-    { "FallbackID", DbcFieldType::UInt32 },
-    { "BehaviorID", DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "Name", DbcFieldType::String, DbcSemantic::Default, nullptr, "Identity" },
+    { "WeaponFlags", DbcFieldType::UInt32, DbcSemantic::Bitmask },
+    { "BodyFlags", DbcFieldType::UInt32, DbcSemantic::Bitmask },
+    { "Flags", DbcFieldType::UInt32, DbcSemantic::Bitmask, nullptr, "Classification" },
+    { "FallbackID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "fallback" },
+    { "BehaviorID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "behavior" },
     { "BehaviorTier", DbcFieldType::UInt32 },
 };
 

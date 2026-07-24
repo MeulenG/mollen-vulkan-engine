@@ -90,7 +90,7 @@ void M2Loader::parseHeader(const uint8_t* data, uint32_t size, M2Model& model) {
 
 void M2Loader::parseVertices(const uint8_t* data, const m2::M2Header& header, M2Model& model) {
     // M2 vertices are stored in the main M2 file.
-    // We DON'T convert them to our Vertex format here — that happens in parseSkin()
+    // We DON'T convert them to our Vertex format here - that happens in parseSkin()
     // because the skin file remaps vertex indices.
     // Just validate they exist.
     if (header.vertices.count == 0) return;
@@ -108,7 +108,7 @@ void M2Loader::parseBones(const uint8_t* data, const m2::M2Header& header, M2Mod
         bone.name = "bone_" + std::to_string(i);
         bone.parent_index = src.parent_bone;
 
-        // For M2, bind position/rotation/scale are identity —
+        // For M2, bind position/rotation/scale are identity -
         // the pivots handle positioning.
         bone.bind_position = glm::vec3{0.0f};
         bone.bind_rotation = glm::quat{1.0f, 0.0f, 0.0f, 0.0f};
@@ -118,7 +118,7 @@ void M2Loader::parseBones(const uint8_t* data, const m2::M2Header& header, M2Mod
         model.skeleton.SetPivot(i, {src.pivot.x, src.pivot.y, src.pivot.z});
     }
 
-    // For M2 models, inverse bind matrices are not used —
+    // For M2 models, inverse bind matrices are not used -
     // the pivot-based computation handles everything.
     model.skeleton.ComputeInverseBindMatrices();
 }
@@ -323,7 +323,7 @@ void M2Loader::parseSkin(const uint8_t* skin_data, uint32_t skin_size,
         dst.uv = {src.tex_coords[0].x, src.tex_coords[0].y};
 
         // M2 vertex bone_indices are direct indices into the bone array
-        // (NOT through the bone lookup table — that's for the skin's submesh batches)
+        // (NOT through the bone lookup table - that's for the skin's submesh batches)
         dst.bone_indices = {
             static_cast<uint32_t>(src.bone_indices[0]),
             static_cast<uint32_t>(src.bone_indices[1]),

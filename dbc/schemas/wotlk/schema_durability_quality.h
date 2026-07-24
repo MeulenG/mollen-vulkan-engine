@@ -4,8 +4,8 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef durability_quality_fields[] = {
-    { "Id",       DbcFieldType::UInt32 },
-    { "Data",     DbcFieldType::Float  },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "Data", DbcFieldType::Float },
 };
 
 static const DbcSchema schema_durability_quality = {
