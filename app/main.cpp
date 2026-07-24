@@ -8,12 +8,14 @@
 #include "scene/components/m2_info_component.h"
 #include "resources/asset_manager.h"
 #include "resources/dbc_registry.h"
+#include "resources/icon_cache.h"
 #include "db/db_connection.h"
 #include "systems/render_system.h"
 #include "systems/animation_system.h"
 #include "systems/editor_ui_system.h"
 #include "systems/dbc_browser_system.h"
 #include "systems/dbc_form_system.h"
+#include "systems/spell_editor_system.h"
 
 #include <imgui.h>
 
@@ -64,6 +66,9 @@ int main() {
         mve::DbcFormSystem dbc_form{dbc_registry, db};
         dbc_browser.SetFormSystem(&dbc_form);
 
+        mve::IconCache icon_cache{device, imgui_ctx};
+        mve::SpellEditorSystem spell_editor{db, icon_cache};
+
         // Editor camera
         auto* cam_entity = scene.CreateEntity("EditorCamera");
         auto* cam = cam_entity->AddComponent<mve::CameraComponent>();
@@ -97,6 +102,7 @@ int main() {
             editor_ui.Update(scene, render_system, dt);
             dbc_browser.Update();
             dbc_form.Update();
+            spell_editor.Update();
             animation_system.Update(scene, dt);
             render_system.UpdateSceneUBO();
             scene.FlushDestroyed();
