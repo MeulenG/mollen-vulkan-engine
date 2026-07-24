@@ -4,11 +4,11 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef emotes_text_sound_fields[] = {
-    { "Id",         DbcFieldType::UInt32 },
-    { "EmotesTextID", DbcFieldType::UInt32 },
-    { "RaceID",     DbcFieldType::UInt32 },
-    { "SexID",      DbcFieldType::UInt32 },
-    { "SoundID",    DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "EmotesTextID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "emotestext" },
+    { "RaceID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "chrraces" },
+    { "SexID", DbcFieldType::UInt32, DbcSemantic::Enum, "Sex" },
+    { "SoundID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "soundentries", "Visuals" },
 };
 
 static const DbcSchema schema_emotes_text_sound = {

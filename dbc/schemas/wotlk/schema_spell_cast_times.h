@@ -4,10 +4,10 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef spell_cast_times_fields[] = {
-    { "Id",           DbcFieldType::UInt32 },
-    { "CastTime",     DbcFieldType::Int32  },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "CastTime", DbcFieldType::Int32 },
     { "CastTimePerLevel", DbcFieldType::Float },
-    { "MinCastTime",  DbcFieldType::Int32  },
+    { "MinCastTime", DbcFieldType::Int32 },
 };
 
 static const DbcSchema schema_spell_cast_times = {

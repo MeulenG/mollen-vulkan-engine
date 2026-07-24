@@ -15,7 +15,7 @@
 
 namespace mve {
 
-// Parsed M2 submesh — one draw call with one material
+// Parsed M2 submesh - one draw call with one material
 struct M2Submesh {
     uint32_t index_start;
     uint32_t index_count;
@@ -25,7 +25,7 @@ struct M2Submesh {
     uint16_t texture_count;
 };
 
-// Parsed M2 model — ready to be uploaded to GPU
+// Parsed M2 model - ready to be uploaded to GPU
 struct M2Model {
     std::string name;
 

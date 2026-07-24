@@ -4,8 +4,8 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef object_effect_group_fields[] = {
-    { "Id",    DbcFieldType::UInt32 },
-    { "Name",  DbcFieldType::String },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "Name", DbcFieldType::String, DbcSemantic::Default, nullptr, "Identity" },
 };
 
 static const DbcSchema schema_object_effect_group = {

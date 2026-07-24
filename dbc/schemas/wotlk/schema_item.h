@@ -4,14 +4,14 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef item_fields[] = {
-    { "Id",              DbcFieldType::UInt32 },
-    { "ClassID",         DbcFieldType::UInt32 },
-    { "SubclassID",      DbcFieldType::UInt32 },
-    { "SoundOverrideID", DbcFieldType::Int32  },
-    { "Material",        DbcFieldType::UInt32 },
-    { "DisplayInfoID",   DbcFieldType::UInt32 },
-    { "InventoryType",   DbcFieldType::UInt32 },
-    { "SheatheType",     DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "ClassID", DbcFieldType::UInt32, DbcSemantic::Enum, "ItemClass" },
+    { "SubclassID", DbcFieldType::UInt32 },
+    { "SoundOverrideID", DbcFieldType::Int32, DbcSemantic::ForeignKey, "soundoverride", "Visuals" },
+    { "Material", DbcFieldType::UInt32, DbcSemantic::Enum, "Material" },
+    { "DisplayInfoID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "itemdisplayinfo", "Visuals" },
+    { "InventoryType", DbcFieldType::UInt32, DbcSemantic::Enum, "InventoryType" },
+    { "SheatheType", DbcFieldType::UInt32, DbcSemantic::Enum, "Sheath" },
 };
 
 static const DbcSchema schema_item = {

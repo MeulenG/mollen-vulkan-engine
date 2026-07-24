@@ -128,7 +128,7 @@ void Image::uploadCompressed(const BlpTexture& blp) {
         uint32_t mip_w = std::max(1u, blp.width >> m);
         uint32_t mip_h = std::max(1u, blp.height >> m);
 
-        // BC formats work in 4x4 blocks — minimum dimension is 4
+        // BC formats work in 4x4 blocks - minimum dimension is 4
         // But Vulkan handles this internally; we just specify the actual pixel dimensions
 
         vk::BufferImageCopy region{};

@@ -4,9 +4,9 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef loading_screens_fields[] = {
-    { "Id",            DbcFieldType::UInt32 },
-    { "Name",          DbcFieldType::String },
-    { "FileName",      DbcFieldType::String },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "Name", DbcFieldType::String, DbcSemantic::Default, nullptr, "Identity" },
+    { "FileName", DbcFieldType::String },
     { "HasWideScreen", DbcFieldType::UInt32 },
 };
 

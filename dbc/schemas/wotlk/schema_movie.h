@@ -4,9 +4,9 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef movie_fields[] = {
-    { "Id",        DbcFieldType::UInt32 },
-    { "Filename",  DbcFieldType::String },
-    { "Volume",    DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "Filename", DbcFieldType::String },
+    { "Volume", DbcFieldType::UInt32 },
 };
 
 static const DbcSchema schema_movie = {
