@@ -25,6 +25,7 @@ struct TerrainVertex {
     glm::vec3 normal;
     glm::vec2 chunk_uv;
     uint32_t  chunk_index;
+    glm::vec3 mccv;        // MCCV per-vertex tint (1,1,1 when unpainted)
 
     static std::vector<vk::VertexInputBindingDescription> GetBindingDescriptions();
     static std::vector<vk::VertexInputAttributeDescription> GetAttributeDescriptions();

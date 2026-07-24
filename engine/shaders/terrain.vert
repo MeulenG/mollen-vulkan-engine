@@ -10,11 +10,16 @@
 //   location 3  uint chunk_index - linear MCNK index (0..255). flat-out
 //                                  so the fragment shader can index the
 //                                  per-chunk SSBO and alpha-array slice.
+//   location 4  vec3 mccv        - per-vertex tint from MCNK's MCCV
+//                                  sub-chunk. White when the chunk has
+//                                  no painted tints. Multiplied into
+//                                  the albedo in the fragment shader.
 
 layout(location = 0) in vec3 in_position;
 layout(location = 1) in vec3 in_normal;
 layout(location = 2) in vec2 in_chunk_uv;
 layout(location = 3) in uint in_chunk_index;
+layout(location = 4) in vec3 in_mccv;
 
 layout(push_constant) uniform PushConstants {
     mat4 mvp;
@@ -25,6 +30,7 @@ layout(location = 0) out vec3 frag_world_pos;
 layout(location = 1) out vec3 frag_normal;
 layout(location = 2) out vec2 frag_chunk_uv;
 layout(location = 3) flat out uint frag_chunk_index;
+layout(location = 4) out vec3 frag_mccv;
 
 void main() {
     vec4 wp = push.model * vec4(in_position, 1.0);
@@ -33,4 +39,5 @@ void main() {
     frag_normal      = mat3(push.model) * in_normal;
     frag_chunk_uv    = in_chunk_uv;
     frag_chunk_index = in_chunk_index;
+    frag_mccv        = in_mccv;
 }

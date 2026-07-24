@@ -27,6 +27,7 @@ layout(location = 0) in vec3 frag_world_pos;
 layout(location = 1) in vec3 frag_normal;
 layout(location = 2) in vec2 frag_chunk_uv;
 layout(location = 3) flat in uint frag_chunk_index;
+layout(location = 4) in vec3 frag_mccv;
 
 layout(set = 0, binding = 0) uniform SceneUBO {
     vec3 light_dir;
@@ -108,15 +109,21 @@ void main() {
     vec3 L = normalize(scene.light_dir);
     float diffuse = max(dot(N, L), 0.0);
     vec3 lighting = scene.ambient + diffuse * scene.light_intensity * scene.light_color;
-    vec3 color = albedo * lighting;
 
-    // Same linear fog as basic.frag - distance from camera in world
-    // space, mix toward fog_color over [fog_start, fog_end]. Tiles at
-    // the edge of the 5x5 preload (~2700 yards from the camera) fade
-    // out instead of hard-clipping at the far plane.
+    // MCCV tint. WoW's "neutral" painted value is 0x7F / 255 ~ 0.5,
+    // so the convention is: tint = 2 * MCCV. That makes 0.5 unchanged,
+    // 1.0 a 2x overbright, 0.0 fully dark. The mesh builder defaults
+    // unpainted vertices to 0.5 too, so they pass through neutral.
+    vec3 tint = frag_mccv * 2.0;
+    vec3 color = albedo * lighting * tint;
+
+    // Exponential squared fog. See basic.frag for the rationale -
+    // nearby pixels almost untinted, far pixels heavily hazed.
+    // Density tuned so geometry at fog_end is ~95% fog.
     float dist = length(frag_world_pos - scene.camera_pos);
-    float fog = clamp((dist - scene.fog_start) /
-                       (scene.fog_end - scene.fog_start), 0.0, 1.0);
+    float density = 1.7 / scene.fog_end;
+    float fog = 1.0 - exp(-(dist * density) * (dist * density));
+    fog = clamp(fog, 0.0, 1.0);
     color = mix(color, scene.fog_color, fog);
 
     out_color = vec4(color, 1.0);

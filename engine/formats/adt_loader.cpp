@@ -194,6 +194,48 @@ void DecodeMcnr(const uint8_t* mcnr_body, AdtChunkNormals& out) {
     out.parsed = true;
 }
 
+// Decode MCCV: 145 BGRA8 quadruplets per wowdev.wiki/ADT/v18#MCCV. We
+// only consume RGB - the alpha byte historically indicated "fixed
+// pipeline lighting mix" and is ignored by modern engines. WoW
+// authoring tools paint these as a per-vertex color overlay; the
+// terrain shader multiplies them in to introduce the subtle hue
+// shifts that the flat splat textures alone can't capture.
+//
+// Same 9, 8, 9, 8, ... mini-row layout as MCVT / MCNR. RGB bytes
+// 0..255 normalize to 0..1; 0x7F (= 0.498) is the "neutral, no tint"
+// midpoint that WoW uses when only some vertices in a chunk are
+// painted.
+void DecodeMccv(const uint8_t* mccv_body, AdtChunkVertexColors& out) {
+    auto read_one = [&](size_t base, float* dst) {
+        // BGRA on disk; we want RGB in linear order. Note alpha (byte 3)
+        // is ignored - kept as a comment for future investigation if
+        // someone wants to use it as a height-shading mask.
+        uint8_t b = mccv_body[base + 0];
+        uint8_t g = mccv_body[base + 1];
+        uint8_t r = mccv_body[base + 2];
+        dst[0] = static_cast<float>(r) / 255.0f;
+        dst[1] = static_cast<float>(g) / 255.0f;
+        dst[2] = static_cast<float>(b) / 255.0f;
+    };
+
+    int outer_i = 0, inner_i = 0;
+    int fi = 0;
+    for (int mini = 0; mini < 17; mini++) {
+        bool is_outer = (mini % 2 == 0);
+        int verts = is_outer ? 9 : 8;
+        for (int i = 0; i < verts; i++, fi++) {
+            if (is_outer) {
+                read_one(fi * 4, &out.c_outer[outer_i * 3]);
+                outer_i++;
+            } else {
+                read_one(fi * 4, &out.c_inner[inner_i * 3]);
+                inner_i++;
+            }
+        }
+    }
+    out.parsed = true;
+}
+
 // Parse a single MCNK. `mcnk_data` points at the byte immediately after
 // the MCNK chunk's 8-byte top-level header (i.e. the MCNK *payload*).
 // `mcnk_payload_size` is the payload length.
@@ -218,6 +260,10 @@ bool ParseMcnk(const uint8_t* mcnk_data, size_t mcnk_payload_size,
     uint32_t ofs_mcly   = ReadU32(mcnk_data, 28);
     uint32_t ofs_mcal   = ReadU32(mcnk_data, 40);
     uint32_t size_alpha = ReadU32(mcnk_data, 44);
+    // ofsMCCV lives at MCNK_header offset 116 per wowdev.wiki - just
+    // after position[3] (104..115) and right before the second copy of
+    // texture-map data. 0 means the chunk has no vertex tints.
+    uint32_t ofs_mccv   = ReadU32(mcnk_data, 116);
     out.holes_low_res   = static_cast<uint16_t>(ReadU32(mcnk_data, 60) & 0xFFFFu);
     if (ofs_mcvt == 0) return false;
 
@@ -255,6 +301,19 @@ bool ParseMcnk(const uint8_t* mcnk_data, size_t mcnk_payload_size,
             uint32_t mcnr_id = ReadU32(mcnk_data, mcnr_off);
             if (mcnr_id == FourCC("MCNR")) {
                 DecodeMcnr(mcnk_data + mcnr_off + 8, out.normals);
+            }
+        }
+    }
+
+    // MCCV sub-chunk: 145 BGRA8 per-vertex tints. Optional - older ADTs
+    // or unpainted chunks don't have it; out.vertex_colors.parsed stays
+    // false and the mesh builder uses neutral white.
+    if (ofs_mccv > 0) {
+        size_t mccv_off = (size_t)ofs_mccv - 8;
+        if (mccv_off + 8 + 145 * 4 <= mcnk_payload_size) {
+            uint32_t mccv_id = ReadU32(mcnk_data, mccv_off);
+            if (mccv_id == FourCC("MCCV")) {
+                DecodeMccv(mcnk_data + mccv_off + 8, out.vertex_colors);
             }
         }
     }
