@@ -137,7 +137,9 @@ Entity* AssetManager::LoadM2IntoScene(const std::string& m2_path, Scene& scene) 
     std::vector<glm::mat4> identity(Skeleton::MAX_BONES, glm::mat4{1.0f});
     mat->pm_bone_buffer->Write(identity.data(), bone_buffer_size);
 
-    auto desc_set = pm_descriptor_pool->AllocateSet(*pm_descriptor_layout);
+    // Move the RAII descriptor set into the component so its lifetime
+    // matches the entity's, not this function's stack frame.
+    mat->pm_descriptor_set = pm_descriptor_pool->AllocateSet(*pm_descriptor_layout);
 
     vk::DescriptorBufferInfo ubo_info{*pm_scene_ubo->GetBuffer(), 0, sizeof(float) * 8};
     auto tex_info = texture->DescriptorInfo();
@@ -147,9 +149,7 @@ Entity* AssetManager::LoadM2IntoScene(const std::string& m2_path, Scene& scene) 
         .WriteBuffer(0, ubo_info)
         .WriteImage(1, tex_info)
         .WriteBuffer(2, bone_info, vk::DescriptorType::eStorageBuffer)
-        .Apply(pm_device.GetDevice(), desc_set);
-
-    mat->pm_descriptor_set = *desc_set;
+        .Apply(pm_device.GetDevice(), mat->pm_descriptor_set);
 
     SubmeshMaterial sub_mat;
     sub_mat.pm_texture = texture;

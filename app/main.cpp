@@ -7,9 +7,11 @@
 #include "scene/components/camera_component.h"
 #include "scene/components/m2_info_component.h"
 #include "resources/asset_manager.h"
+#include "resources/dbc_registry.h"
 #include "systems/render_system.h"
 #include "systems/animation_system.h"
 #include "systems/editor_ui_system.h"
+#include "systems/dbc_browser_system.h"
 
 #include <imgui.h>
 
@@ -30,9 +32,14 @@ int main() {
             renderer.GetDepthFormat());
 
         // Systems
-        mve::Scene scene;
+        // Declaration order matters: render_system owns the descriptor pool,
+        // scene owns entities whose MaterialComponents allocate descriptor
+        // sets from that pool. C++ destroys in reverse, so scene must be
+        // declared *after* render_system to die first.
         mve::RenderSystem render_system{device, *offscreen};
         render_system.Init();
+
+        mve::Scene scene;
 
         mve::AssetManager assets{device};
         assets.SetDescriptorResources(
@@ -42,6 +49,9 @@ int main() {
 
         mve::AnimationSystem animation_system;
         mve::EditorUISystem editor_ui{window, imgui_ctx, *offscreen};
+
+        mve::DbcRegistry dbc_registry{"assets/dbc"};
+        mve::DbcBrowserSystem dbc_browser{dbc_registry};
 
         // Editor camera
         auto* cam_entity = scene.CreateEntity("EditorCamera");
@@ -74,6 +84,7 @@ int main() {
 
             // Systems
             editor_ui.Update(scene, render_system, dt);
+            dbc_browser.Update();
             animation_system.Update(scene, dt);
             render_system.UpdateSceneUBO();
             scene.FlushDestroyed();
