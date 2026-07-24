@@ -4,7 +4,7 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef char_hair_geosets_fields[] = {
-    { "Id",        DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
     { "RaceID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "chrraces" },
     { "SexID", DbcFieldType::UInt32, DbcSemantic::Enum, "Sex" },
     { "VariationID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "variation" },

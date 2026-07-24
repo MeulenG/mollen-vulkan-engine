@@ -4,7 +4,7 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef spell_visual_precast_transitions_fields[] = {
-    { "Id",         DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
     { "LoadAnimID", DbcFieldType::String, DbcSemantic::ForeignKey, "loadanim" },
     { "HoldAnimID", DbcFieldType::String, DbcSemantic::ForeignKey, "holdanim" },
 };

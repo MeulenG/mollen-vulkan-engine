@@ -4,9 +4,9 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef liquid_material_fields[] = {
-    { "Id",       DbcFieldType::UInt32 },
-    { "LVF",      DbcFieldType::UInt32 },
-    { "Flags", DbcFieldType::UInt32, DbcSemantic::Bitmask },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "LVF", DbcFieldType::UInt32 },
+    { "Flags", DbcFieldType::UInt32, DbcSemantic::Bitmask, nullptr, "Classification" },
 };
 
 static const DbcSchema schema_liquid_material = {

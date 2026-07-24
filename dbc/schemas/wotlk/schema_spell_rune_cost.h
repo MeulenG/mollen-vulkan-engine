@@ -4,10 +4,10 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef spell_rune_cost_fields[] = {
-    { "Id",         DbcFieldType::UInt32 },
-    { "Blood",      DbcFieldType::UInt32 },
-    { "Unholy",     DbcFieldType::UInt32 },
-    { "Frost",      DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "Blood", DbcFieldType::UInt32 },
+    { "Unholy", DbcFieldType::UInt32 },
+    { "Frost", DbcFieldType::UInt32 },
     { "RunicPower", DbcFieldType::UInt32 },
 };
 
