@@ -53,6 +53,10 @@ private:
                        DbConnection::Table& table);
     void DrawFileTable(DbcRegistry::Entry& entry);
 
+    // Tabbed popup for editing every locale of a LocalizedString cluster.
+    // Reads + commits each tab as a separate UPDATE against its own column.
+    void DrawLocaleEditPopup(DbConnection::Table& table);
+
     // Per-cell semantic dispatch. Each renders the appropriate widget for
     // the field's DbcSemantic and, on user change, commits via UpdateCell
     // and refreshes the cached row in `table`.
@@ -87,6 +91,29 @@ private:
     const std::string& ResolveFkLabel(const std::string& target_table, int64_t id);
 
     EditState pm_edit;
+
+    // ---- Locale cluster editing ----
+    //
+    // A DBC like ChrRaces has 16 separate `Name_enUS`, `Name_koKR`, ... columns
+    // that the auto-tagger marked with `DbcSemantic::LocalizedString` and a
+    // common hint ("Name"). We collapse those into a single visible column
+    // showing the enUS value; double-click opens this popup with one tab per
+    // locale. Edits go through the standard UpdateCell path, one column at a
+    // time, so multi-locale updates aren't atomic but each commit is.
+    struct LocaleEditState {
+        std::string dbc;
+        int64_t row_id = 0;
+        std::string hint;          // e.g. "Name" — shared across cluster members
+
+        // Parallel arrays: one entry per locale, matching the schema field order.
+        std::vector<std::string> field_names;   // e.g. "Name_enUS"
+        std::vector<std::string> col_names;     // matching DB column (snake_case)
+        std::vector<std::string> buffers;       // editable working values
+
+        std::string last_error;
+        bool just_opened = false;  // request focus on the enUS tab on open
+    };
+    LocaleEditState pm_locale_edit;
 };
 
 } // namespace mve

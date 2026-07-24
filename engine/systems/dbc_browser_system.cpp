@@ -52,17 +52,29 @@ float ColumnWidthForType(DbcFieldType type) {
 // narrower type-only widths since cells there are still raw values.
 float ColumnWidthForField(const DbcFieldDef& f) {
     switch (f.semantic) {
-    case DbcSemantic::ForeignKey: return 200.0f;  // "Some Long Name (123)"
-    case DbcSemantic::Enum:       return 150.0f;  // "Held in Off-Hand"
-    case DbcSemantic::Bitmask:    return 130.0f;  // "[5 set] 0x1A2B"
-    case DbcSemantic::Color:      return 110.0f;  // swatch + small preview
-    case DbcSemantic::Boolean:    return  60.0f;  // checkbox only
-    case DbcSemantic::LocalizedString:
+    case DbcSemantic::ForeignKey:      return 200.0f;  // "Some Long Name (123)"
+    case DbcSemantic::Enum:            return 150.0f;  // "Held in Off-Hand"
+    case DbcSemantic::Bitmask:         return 130.0f;  // "[5 set] 0x1A2B"
+    case DbcSemantic::Color:           return 110.0f;  // swatch + small preview
+    case DbcSemantic::Boolean:         return  60.0f;  // checkbox only
+    case DbcSemantic::LocalizedString: return 240.0f;  // primary-locale value
     case DbcSemantic::Default:
     default: break;
     }
     return ColumnWidthForType(f.type);
 }
+
+// Return the locale suffix of a field name like "Name_enUS" -> "enUS".
+// Empty string if the field doesn't look like a locale member.
+std::string LocaleSuffix(const char* field_name) {
+    if (!field_name) return {};
+    const char* under = std::strrchr(field_name, '_');
+    return under ? std::string(under + 1) : std::string{};
+}
+
+// Primary locale used as the "summary" value shown when the cluster is collapsed.
+// enUS is the standard fallback across every WotLK DBC.
+constexpr const char* kPrimaryLocale = "enUS";
 
 // If the last item drawn was clipped (rendered text wider than its cell),
 // show its full content as a tooltip on hover. Cheap to call after every
@@ -358,25 +370,84 @@ void DbcBrowserSystem::DrawPsqlTable(DbcRegistry::Entry& entry,
     // Build display column list from the schema (skipping padding) and map
     // to indices in `table.columns` by name. If a column is missing in the
     // DB (e.g. older import), it's shown as "(missing)".
+    //
+    // Localized clusters: fields with semantic=LocalizedString and a shared
+    // hint (e.g. "Name") collapse into one visible column. The primary entry
+    // (preferring _enUS) becomes the "lead" view and carries the metadata
+    // for all sibling locale columns; non-primary members get dropped from
+    // the rendered view entirely.
     struct ColView {
         int field_index;        // index into schema->fields
         int db_column;          // index into table.columns; -1 if missing
         std::string col_name;   // snake_case
+
+        // Locale cluster info — only set on the lead view of a cluster.
+        bool is_locale_lead = false;
+        std::vector<int> locale_field_indices;   // schema indices of all members
+        std::vector<int> locale_db_columns;      // matching db column indices
     };
     std::vector<ColView> view;
     view.reserve(schema->field_count);
+
+    // First pass: build a per-hint cluster index so we can decide which field
+    // is the "lead" for each locale group.
+    struct ClusterInfo {
+        std::vector<int> member_field_indices;
+        int primary_index = -1;  // schema index of the _enUS member if found
+    };
+    std::unordered_map<std::string, ClusterInfo> clusters;
     for (uint32_t f = 0; f < schema->field_count; f++) {
-        if (IsPaddingField(schema->fields[f].name)) continue;
-        ColView v;
-        v.field_index = static_cast<int>(f);
-        v.col_name = DbcColumnName(schema->fields[f].name);
-        v.db_column = -1;
+        const auto& field = schema->fields[f];
+        if (field.semantic != DbcSemantic::LocalizedString || !field.hint) continue;
+        auto& c = clusters[field.hint];
+        c.member_field_indices.push_back(static_cast<int>(f));
+        if (LocaleSuffix(field.name) == kPrimaryLocale) {
+            c.primary_index = static_cast<int>(f);
+        }
+    }
+    // Fall back to the first member if no _enUS exists in a cluster.
+    for (auto& [_, c] : clusters) {
+        if (c.primary_index < 0 && !c.member_field_indices.empty()) {
+            c.primary_index = c.member_field_indices.front();
+        }
+    }
+
+    // Helper: look up a DB column by snake_case name.
+    auto find_db_column = [&](const std::string& name) -> int {
         for (size_t i = 0; i < table.columns.size(); i++) {
-            if (table.columns[i] == v.col_name) {
-                v.db_column = static_cast<int>(i);
-                break;
+            if (table.columns[i] == name) return static_cast<int>(i);
+        }
+        return -1;
+    };
+
+    for (uint32_t f = 0; f < schema->field_count; f++) {
+        const auto& field = schema->fields[f];
+        if (IsPaddingField(field.name)) continue;
+
+        // Drop non-primary locale members; the cluster lead carries them.
+        if (field.semantic == DbcSemantic::LocalizedString && field.hint) {
+            auto it = clusters.find(field.hint);
+            if (it != clusters.end() && it->second.primary_index != static_cast<int>(f)) {
+                continue;
             }
         }
+
+        ColView v;
+        v.field_index = static_cast<int>(f);
+        v.col_name = DbcColumnName(field.name);
+        v.db_column = find_db_column(v.col_name);
+
+        if (field.semantic == DbcSemantic::LocalizedString && field.hint) {
+            v.is_locale_lead = true;
+            const auto& c = clusters[field.hint];
+            v.locale_field_indices = c.member_field_indices;
+            v.locale_db_columns.reserve(c.member_field_indices.size());
+            for (int fi : c.member_field_indices) {
+                v.locale_db_columns.push_back(
+                    find_db_column(DbcColumnName(schema->fields[fi].name)));
+            }
+        }
+
         view.push_back(std::move(v));
     }
 
@@ -437,15 +508,164 @@ void DbcBrowserSystem::DrawPsqlTable(DbcRegistry::Entry& entry,
 
                 ImGui::PushID(row);
                 ImGui::PushID(static_cast<int>(cv));
-                DrawPsqlCell(schema, v.field_index, table,
-                             row, static_cast<int>(row_id),
-                             v.db_column, static_cast<int>(cv));
+
+                // Locale clusters get a custom inline cell: enUS value as the
+                // visible summary, double-click opens a tabbed popup over all
+                // 16 locales. Other locale columns were pruned from `view`
+                // up above so we'd never see them here.
+                if (v.is_locale_lead) {
+                    const std::string& primary = db_row.values[v.db_column];
+                    bool clicked = ImGui::Selectable(
+                        primary.empty() ? " " : primary.c_str(), false,
+                        ImGuiSelectableFlags_AllowDoubleClick);
+                    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+                        // Tooltip: full enUS + hint that other locales exist.
+                        ImGui::SetTooltip("%s\n\n(double-click to edit all %zu locales)",
+                                          primary.empty() ? "(empty)" : primary.c_str(),
+                                          v.locale_field_indices.size());
+                    }
+                    if (clicked && ImGui::IsMouseDoubleClicked(0)) {
+                        // Snapshot all locale values into the popup state.
+                        pm_locale_edit.dbc = pm_selected;
+                        pm_locale_edit.row_id = row_id;
+                        pm_locale_edit.hint = schema->fields[v.field_index].hint;
+                        pm_locale_edit.field_names.clear();
+                        pm_locale_edit.col_names.clear();
+                        pm_locale_edit.buffers.clear();
+                        pm_locale_edit.last_error.clear();
+                        for (size_t i = 0; i < v.locale_field_indices.size(); i++) {
+                            int fi = v.locale_field_indices[i];
+                            int dc = v.locale_db_columns[i];
+                            pm_locale_edit.field_names.emplace_back(schema->fields[fi].name);
+                            pm_locale_edit.col_names.push_back(DbcColumnName(schema->fields[fi].name));
+                            pm_locale_edit.buffers.push_back(
+                                (dc >= 0 && dc < static_cast<int>(db_row.values.size()))
+                                    ? db_row.values[dc] : "");
+                        }
+                        pm_locale_edit.just_opened = true;
+                        ImGui::OpenPopup("##locale_edit_popup");
+                    }
+                } else {
+                    DrawPsqlCell(schema, v.field_index, table,
+                                 row, static_cast<int>(row_id),
+                                 v.db_column, static_cast<int>(cv));
+                }
+
                 ImGui::PopID();
                 ImGui::PopID();
             }
         }
     }
     ImGui::EndTable();
+
+    DrawLocaleEditPopup(table);
+}
+
+// ---- Locale cluster editor --------------------------------------------------
+
+void DbcBrowserSystem::DrawLocaleEditPopup(DbConnection::Table& table) {
+    // We use SetNextWindowSize once on open to make the popup roomy enough
+    // for description-length text. ImGui will remember the user's resize.
+    if (pm_locale_edit.just_opened) {
+        ImGui::SetNextWindowSize(ImVec2(640, 360), ImGuiCond_Appearing);
+    }
+
+    if (!ImGui::BeginPopup("##locale_edit_popup")) {
+        pm_locale_edit.just_opened = false;
+        return;
+    }
+
+    ImGui::Text("%s  (row id %lld)",
+                pm_locale_edit.hint.c_str(),
+                static_cast<long long>(pm_locale_edit.row_id));
+    ImGui::Separator();
+
+    if (!pm_locale_edit.last_error.empty()) {
+        ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s",
+                           pm_locale_edit.last_error.c_str());
+    }
+
+    if (ImGui::BeginTabBar("##locale_tabs")) {
+        for (size_t i = 0; i < pm_locale_edit.field_names.size(); i++) {
+            std::string suffix = LocaleSuffix(pm_locale_edit.field_names[i].c_str());
+            if (suffix.empty()) suffix = pm_locale_edit.field_names[i];
+
+            // Tabs are pinned in field order; enUS is usually first thanks to
+            // the schema convention.
+            if (!ImGui::BeginTabItem(suffix.c_str())) continue;
+
+            ImGui::TextDisabled("column: %s", pm_locale_edit.col_names[i].c_str());
+
+            // Resize buffer to give InputTextMultiline some headroom. ImGui's
+            // multiline input mutates the buffer in place, so it needs spare
+            // capacity beyond the current length.
+            constexpr size_t kBufCap = 4096;
+            std::string& buf = pm_locale_edit.buffers[i];
+            if (buf.capacity() < kBufCap) buf.reserve(kBufCap);
+
+            ImGui::PushID(static_cast<int>(i));
+            ImGui::InputTextMultiline(
+                "##v", buf.data(), buf.capacity(),
+                ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 8),
+                ImGuiInputTextFlags_CallbackResize,
+                [](ImGuiInputTextCallbackData* d) -> int {
+                    auto* s = static_cast<std::string*>(d->UserData);
+                    if (d->EventFlag == ImGuiInputTextFlags_CallbackResize) {
+                        s->resize(d->BufTextLen);
+                        d->Buf = s->data();
+                    }
+                    return 0;
+                },
+                &buf);
+
+            // Commit when the user clicks elsewhere or tabs out — the
+            // standard ImGui pattern for non-Enter-finished edits.
+            if (ImGui::IsItemDeactivatedAfterEdit()) {
+                std::string current = buf.c_str();  // strip trailing NULs
+                bool ok = pm_db.UpdateCell(
+                    DbcTableName(pm_selected.c_str()),
+                    "id", pm_locale_edit.row_id,
+                    pm_locale_edit.col_names[i],
+                    current,
+                    DbcFieldType::String);
+                if (!ok) {
+                    pm_locale_edit.last_error = pm_db.LastError();
+                } else {
+                    pm_locale_edit.last_error.clear();
+                    // Refresh just this row from the DB so the table caches stay current.
+                    DbConnection::Row fresh;
+                    if (pm_db.FetchRow(DbcTableName(pm_selected.c_str()),
+                                       "id", pm_locale_edit.row_id, fresh)) {
+                        for (size_t r = 0; r < table.rows.size(); r++) {
+                            // Match by id — we can't trust positional row index after refresh.
+                            // Cheap given the table is in memory.
+                            int64_t this_row_id = 0;
+                            if (!table.rows[r].values.empty()) {
+                                this_row_id = std::strtoll(
+                                    table.rows[r].values[0].c_str(), nullptr, 10);
+                            }
+                            if (this_row_id == pm_locale_edit.row_id) {
+                                table.rows[r] = fresh;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (pm_locale_edit.just_opened &&
+                LocaleSuffix(pm_locale_edit.field_names[i].c_str()) == kPrimaryLocale) {
+                ImGui::SetKeyboardFocusHere(-1);
+            }
+
+            ImGui::PopID();
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+    }
+
+    pm_locale_edit.just_opened = false;
+    ImGui::EndPopup();
 }
 
 // ---- FK label cache ---------------------------------------------------------
