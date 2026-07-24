@@ -28,6 +28,9 @@ add_library(mollen-engine STATIC
     core/editor_style.cpp
     formats/blp_loader.cpp
     formats/m2_loader.cpp
+    formats/wdt_loader.cpp
+    formats/adt_loader.cpp
+    scene/terrain_mesh.cpp
     db/db_connection.cpp
 )
 
