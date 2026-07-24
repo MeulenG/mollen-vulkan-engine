@@ -345,6 +345,11 @@ bool AdtLoader::LoadFile(const std::string& path, AdtTile& out) {
     // nibble-packed format) and flip it if we see the bit set in MHDR.
     bool mhdr_flag_big_alpha = false;
 
+    // MMDX/MMID/MDDF can appear in any order. Capture the raw bytes
+    // here and resolve into out.doodad_paths after the main walk.
+    std::vector<uint8_t> mmdx_blob;
+    std::vector<uint32_t> mmid_offsets;
+
     // Walk top-level chunks.
     size_t pos = 0;
     while (pos + 8 <= buf.size()) {
@@ -370,6 +375,43 @@ bool AdtLoader::LoadFile(const std::string& path, AdtTile& out) {
                 out.textures.emplace_back(p, len);
                 p += len + 1;
             }
+        } else if (id == FourCC("MMDX")) {
+            // Null-separated M2 path strings. Byte-addressable - MMID
+            // entries are byte offsets, not string indices.
+            mmdx_blob.assign(buf.data() + pos, buf.data() + pos + payload_size);
+        } else if (id == FourCC("MMID")) {
+            uint32_t count = payload_size / 4;
+            mmid_offsets.resize(count);
+            for (uint32_t i = 0; i < count; i++) {
+                mmid_offsets[i] = ReadU32(buf.data(), pos + i * 4);
+            }
+        } else if (id == FourCC("MDDF")) {
+            // 36-byte entries per wowdev.wiki/ADT/v18#MDDF.
+            uint32_t count = payload_size / 36;
+            out.doodads.reserve(count);
+            for (uint32_t i = 0; i < count; i++) {
+                size_t off = pos + i * 36;
+                AdtDoodadPlacement d{};
+                d.name_id   = ReadU32(buf.data(), off + 0);
+                d.unique_id = ReadU32(buf.data(), off + 4);
+                d.pos_x     = ReadF32(buf.data(), off + 8);
+                d.pos_y     = ReadF32(buf.data(), off + 12);
+                d.pos_z     = ReadF32(buf.data(), off + 16);
+                d.rot_x_deg = ReadF32(buf.data(), off + 20);
+                d.rot_y_deg = ReadF32(buf.data(), off + 24);
+                d.rot_z_deg = ReadF32(buf.data(), off + 28);
+                uint32_t packed = ReadU32(buf.data(), off + 32);
+                uint16_t s_raw  = static_cast<uint16_t>(packed & 0xFFFF);
+                d.flags = static_cast<uint16_t>((packed >> 16) & 0xFFFF);
+                // Scale stored as fixed-point /1024. Clamp to a sane
+                // window so a corrupt 0xFFFF -> 64x doesn't explode the
+                // scene; real props use 0.5x .. 4x at most.
+                float s = s_raw / 1024.0f;
+                if (s < 0.01f) s = 0.01f;
+                if (s > 100.0f) s = 100.0f;
+                d.scale = s;
+                out.doodads.push_back(d);
+            }
         } else if (id == FourCC("MCNK")) {
             // Up to 256 MCNK chunks. Order in the file is row-major (the
             // index_x and index_y inside the header give the canonical
@@ -388,10 +430,25 @@ bool AdtLoader::LoadFile(const std::string& path, AdtTile& out) {
             }
             mcnk_seen++;
         }
-        // MVER / MCIN / MMDX / MMID / MWMO / MWID / MDDF / MODF /
-        // MH2O / MFBO / MTXF: ignored for R2.
+        // MVER / MCIN / MWMO / MWID / MODF / MH2O / MFBO / MTXF:
+        // ignored for now (MODF/MWMO/MWID = WMOs, deferred to R5).
 
         pos += payload_size;
+    }
+
+    // Resolve MMID byte offsets into doodad_paths. Done after the main
+    // chunk loop so the parse doesn't depend on MMDX/MMID/MDDF order.
+    // strnlen with a bound defends against a missing null terminator
+    // in malformed MMDX blobs.
+    out.doodad_paths.reserve(mmid_offsets.size());
+    for (uint32_t off : mmid_offsets) {
+        if (off >= mmdx_blob.size()) {
+            out.doodad_paths.emplace_back();   // empty -> spawn loop skips
+            continue;
+        }
+        const char* s = reinterpret_cast<const char*>(mmdx_blob.data() + off);
+        size_t max_len = mmdx_blob.size() - off;
+        out.doodad_paths.emplace_back(s, strnlen(s, max_len));
     }
 
     return mcnk_seen > 0;

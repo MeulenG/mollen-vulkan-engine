@@ -54,6 +54,17 @@ vk::raii::DescriptorSet DescriptorPool::AllocateSet(const vk::raii::DescriptorSe
     return std::move(sets[0]);
 }
 
+vk::DescriptorSet DescriptorPool::AllocateSetRaw(const vk::raii::DescriptorSetLayout& layout) {
+    // Same allocation but extract the raw handle, then release() the
+    // raii wrapper so it doesn't try to free at the end of this
+    // function. The pool tracks the allocation; the caller's raw
+    // handle stays valid until the pool itself is destroyed.
+    vk::raii::DescriptorSet wrapped = AllocateSet(layout);
+    VkDescriptorSet raw = static_cast<VkDescriptorSet>(*wrapped);
+    wrapped.release();
+    return vk::DescriptorSet(raw);
+}
+
 DescriptorWriter& DescriptorWriter::WriteBuffer(
     uint32_t binding,
     const vk::DescriptorBufferInfo& buffer_info,
@@ -88,11 +99,15 @@ DescriptorWriter& DescriptorWriter::WriteImage(
 }
 
 void DescriptorWriter::Apply(const vk::raii::Device& device, const vk::raii::DescriptorSet& set) {
+    Apply(device, *set);
+}
+
+void DescriptorWriter::Apply(const vk::raii::Device& device, vk::DescriptorSet set) {
     uint32_t buf_idx = 0;
     uint32_t img_idx = 0;
 
     for (auto& write : writes_) {
-        write.dstSet = *set;
+        write.dstSet = set;
 
         if (write.descriptorType == vk::DescriptorType::eUniformBuffer ||
             write.descriptorType == vk::DescriptorType::eStorageBuffer ||

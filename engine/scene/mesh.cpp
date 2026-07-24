@@ -46,6 +46,14 @@ void Mesh::Draw(const vk::raii::CommandBuffer& command_buffer) const {
     command_buffer.drawIndexed(index_count_, 1, 0, 0, 0);
 }
 
+void Mesh::DrawInstanced(const vk::raii::CommandBuffer& command_buffer,
+                          uint32_t instance_count) const {
+    // The vertex shader reads gl_InstanceIndex (0..instance_count-1) to
+    // look up the per-instance model matrix from the SSBO bound at
+    // descriptor binding 3.
+    command_buffer.drawIndexed(index_count_, instance_count, 0, 0, 0);
+}
+
 Mesh Mesh::CreatePyramid(Device& device, glm::vec3 color) {
     std::vector<Vertex> vertices = {
         // Square base

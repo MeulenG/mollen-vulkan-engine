@@ -81,6 +81,35 @@ struct AdtChunk {
     uint16_t holes_low_res = 0;
 };
 
+// One MDDF entry. Each ADT tile lists 0..N of these to place static
+// M2 doodads (trees, rocks, fences, lanterns) at specific world
+// positions. We keep the raw WoW coordinates and Euler degrees rather
+// than pre-converting; the spawn code does WoW->engine + degrees->quat
+// at the call site so the parser stays close to the on-disk layout.
+//
+// On-disk format (36 bytes per entry):
+//   uint32 name_id    - index into AdtTile::doodad_paths
+//   uint32 unique_id  - globally unique across the WoW map; used to
+//                       dedupe across tiles when neighbors list the
+//                       same prop on a shared border
+//   float  pos[3]     - (X south, Y up, Z east) in WoW coords
+//   float  rot[3]     - Euler degrees, applied YXZ (yaw, pitch, roll)
+//   uint16 scale      - fixed point, 1024 == 1.0
+//   uint16 flags      - bit 0 = biodome, bit 1 = shrubbery, etc.
+//                       (unused for v1)
+struct AdtDoodadPlacement {
+    uint32_t name_id      = 0;
+    uint32_t unique_id    = 0;
+    float    pos_x        = 0.0f;   // WoW south axis
+    float    pos_y        = 0.0f;   // WoW UP axis (height)
+    float    pos_z        = 0.0f;   // WoW east axis
+    float    rot_x_deg    = 0.0f;   // pitch (rotation about WoW X)
+    float    rot_y_deg    = 0.0f;   // yaw   (rotation about WoW Y, up)
+    float    rot_z_deg    = 0.0f;   // roll  (rotation about WoW Z)
+    float    scale        = 1.0f;   // scale / 1024.0, clamped to [0.01, 100]
+    uint16_t flags        = 0;
+};
+
 // Parsed ADT terrain content.
 struct AdtTile {
     int tile_x = 0;             // 0..63 along WoW X axis
@@ -90,6 +119,15 @@ struct AdtTile {
     // MTEX). For R1 we don't load them yet but the loader still extracts
     // the list so the rendering branch downstream has them ready.
     std::vector<std::string> textures;
+
+    // M2 doodad paths resolved from MMDX (string blob) via MMID (byte
+    // offsets). doodad_paths[i] is the path for any MDDF entry whose
+    // name_id == i. Backslashed WoW-style paths; the spawn code maps
+    // them through ResolveWowAsset.
+    std::vector<std::string> doodad_paths;
+
+    // Parsed MDDF placements. Typical Elwynn tile has 100-500 entries.
+    std::vector<AdtDoodadPlacement> doodads;
 
     // 256 MCNK chunks, indexed as [y * 16 + x] where x and y are the chunk
     // coordinates within the tile (0..15).

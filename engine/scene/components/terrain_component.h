@@ -23,7 +23,23 @@ struct TerrainComponent : Component {
     std::shared_ptr<TextureArray> pm_diffuse_array;
     std::shared_ptr<TextureArray> pm_alpha_array;
     std::unique_ptr<Buffer>       pm_chunk_meta_ssbo;
-    vk::raii::DescriptorSet       pm_descriptor_set = nullptr;
+
+    // Raw handle (not vk::raii) - we deliberately do not free
+    // individual descriptor sets when entities are destroyed.
+    //
+    // History: an earlier attempt used vk::raii::DescriptorSet for
+    // automatic cleanup, but its destructor reliably triggered
+    // 'Invalid VkDescriptorPool Object' validation errors and driver
+    // crashes during R3 tile eviction even with waitIdle guards. The
+    // exact cause is unclear (looks like double-free or stale handle
+    // copy under move-assignment on Intel's Vulkan stack), and the
+    // diagnostic effort to chase it isn't justified for an editor
+    // where the entire pool is reclaimed at shutdown anyway.
+    //
+    // The pool is sized for 8192 entities; flying across ~150 unique
+    // tiles in one session exhausts that, which is a separate concern
+    // (instancing or static-doodad packing will fix it).
+    vk::DescriptorSet pm_descriptor_set = VK_NULL_HANDLE;
 };
 
 } // namespace mve

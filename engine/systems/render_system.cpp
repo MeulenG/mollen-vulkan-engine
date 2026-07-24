@@ -3,6 +3,7 @@
 #include "../scene/components/mesh_component.h"
 #include "../scene/components/material_component.h"
 #include "../scene/components/terrain_component.h"
+#include "../scene/components/doodad_instance_component.h"
 #include "../scene/terrain_mesh.h"
 
 #include <string>
@@ -22,30 +23,38 @@ RenderSystem::RenderSystem(Device& device, OffscreenPass& offscreen)
 void RenderSystem::Init() {
     std::string shader_dir = MVE_SHADER_DIR;
 
-    // Descriptor layout: binding 0 = UBO, binding 1 = texture, binding 2 = bones
+    // Descriptor layout (M2 pipeline):
+    //   binding 0  scene UBO        (fragment)
+    //   binding 1  diffuse texture  (fragment)
+    //   binding 2  bone matrices    (vertex)  - identity for static doodads
+    //   binding 3  instance models  (vertex)  - 1 entry for legacy path,
+    //                                           N entries for doodad path
     pm_descriptor_layout = DescriptorSetLayoutBuilder{pm_device}
         .AddBinding(0, vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eFragment)
         .AddBinding(1, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
         .AddBinding(2, vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eVertex)
+        .AddBinding(3, vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eVertex)
         .Build();
 
-    // Pool sized generously enough for R3 multi-tile streaming + R4
-    // doodad spawn. Per-entity sets consume:
-    //   M2:      1 UBO + 1 sampler  + 1 storage (bones)
+    // Pool sized for R3 multi-tile + R4.5 instanced doodad density.
+    // Per-entity sets consume:
+    //   M2:      1 UBO + 1 sampler  + 2 storage (bones + instances)
     //   Terrain: 1 UBO + 2 samplers + 1 storage (chunk meta)
-    // 1024 entity sets covers a 5x5 tile grid (25 tiles) plus ~900
-    // doodads. Memory cost is sub-MB of driver state.
+    //
+    // R4.5 collapses ~4650 doodad placements into ~50 instanced entities
+    // (one per unique M2 path). So the M2 set demand drops dramatically
+    // and the pool's main consumer is now terrain tiles (25 at radius
+    // 2). 2048 gives plenty of headroom even if a future change loosens
+    // dedup or adds animated doodads.
     //
     // FreeDescriptorSet flag lets vk::raii::DescriptorSet release back
     // to the pool when an entity is destroyed (R3 tile eviction).
-    // Without it, validation complains and the slot leaks until program
-    // exit.
     pm_descriptor_pool = std::make_unique<DescriptorPool>(
-        pm_device, 1024,
+        pm_device, 2048,
         std::vector<vk::DescriptorPoolSize>{
-            {vk::DescriptorType::eUniformBuffer,        1024},
-            {vk::DescriptorType::eCombinedImageSampler, 2048},
-            {vk::DescriptorType::eStorageBuffer,        1024},
+            {vk::DescriptorType::eUniformBuffer,        2048},
+            {vk::DescriptorType::eCombinedImageSampler, 4096},
+            {vk::DescriptorType::eStorageBuffer,        4096},
         },
         vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet);
 
@@ -186,12 +195,12 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
     scene.Each<TransformComponent, MeshComponent, TerrainComponent>(
         [&](Entity&, TransformComponent& transform, MeshComponent& mesh_comp, TerrainComponent& terrain) {
             if (!mesh_comp.pm_visible || !mesh_comp.pm_mesh) return;
-            if (!*terrain.pm_descriptor_set) return;
+            if (!terrain.pm_descriptor_set) return;
 
             cmd.bindDescriptorSets(
                 vk::PipelineBindPoint::eGraphics,
                 *pm_terrain_pipeline_layout, 0,
-                *terrain.pm_descriptor_set, nullptr);
+                terrain.pm_descriptor_set, nullptr);
 
             glm::mat4 model = transform.ModelMatrix();
             PushConstants push{};
@@ -204,18 +213,31 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
             mesh_comp.pm_mesh->Draw(cmd);
         });
 
-    // Render all entities with mesh + transform + material (M2 doodads
-    // etc.). Skips terrain entities because they lack MaterialComponent.
+    // M2 pipeline. Bind once, then issue two passes over the scene:
+    //
+    //   Pass A - legacy M2 entities (MaterialComponent, no instancing).
+    //   Used by the spell editor's per-model preview. One draw call per
+    //   entity, push constants carry the full MVP, and the descriptor
+    //   set's binding 3 is a 1-entry identity SSBO.
+    //
+    //   Pass B - instanced doodads (DoodadInstanceComponent). One draw
+    //   call per unique M2 path, instance_count = number of MDDF
+    //   placements. push.mvp carries only view*proj because the
+    //   per-placement model matrix lives in the SSBO at binding 3.
     pm_model_pipeline->Bind(cmd);
 
     scene.Each<TransformComponent, MeshComponent, MaterialComponent>(
         [&](Entity& entity, TransformComponent& transform, MeshComponent& mesh_comp, MaterialComponent& mat) {
             if (!mesh_comp.pm_visible || !mesh_comp.pm_mesh) return;
+            // Skip doodad entities here - the instanced pass below
+            // handles them. An entity carrying both components means a
+            // doodad with leftover material data from earlier (defensive).
+            if (entity.HasComponent<DoodadInstanceComponent>()) return;
 
             cmd.bindDescriptorSets(
                 vk::PipelineBindPoint::eGraphics,
                 *pm_model_pipeline_layout, 0,
-                *mat.pm_descriptor_set, nullptr);
+                mat.pm_descriptor_set, nullptr);
 
             glm::mat4 model = transform.ModelMatrix();
             PushConstants push{};
@@ -226,6 +248,34 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
 
             mesh_comp.pm_mesh->Bind(cmd);
             mesh_comp.pm_mesh->Draw(cmd);
+        });
+
+    // Pass B: instanced doodads. The entity sits at the world origin
+    // (Transform = identity), and the per-MDDF-placement TRS lives in
+    // the SSBO that the vertex shader reads via gl_InstanceIndex. So
+    // push.pm_model stays identity and push.pm_mvp = proj * view.
+    glm::mat4 view_proj =
+        active_camera.GetProjectionMatrix() * active_camera.GetViewMatrix();
+    scene.Each<TransformComponent, MeshComponent, DoodadInstanceComponent>(
+        [&](Entity&, TransformComponent&, MeshComponent& mesh_comp,
+            DoodadInstanceComponent& inst) {
+            if (!mesh_comp.pm_visible || !mesh_comp.pm_mesh) return;
+            if (inst.pm_instance_count == 0) return;
+            if (!inst.pm_descriptor_set) return;
+
+            cmd.bindDescriptorSets(
+                vk::PipelineBindPoint::eGraphics,
+                *pm_model_pipeline_layout, 0,
+                inst.pm_descriptor_set, nullptr);
+
+            PushConstants push{};
+            push.pm_model = glm::mat4{1.0f};
+            push.pm_mvp   = view_proj;
+            cmd.pushConstants<PushConstants>(
+                *pm_model_pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, push);
+
+            mesh_comp.pm_mesh->Bind(cmd);
+            mesh_comp.pm_mesh->DrawInstanced(cmd, inst.pm_instance_count);
         });
 
     pm_offscreen.EndRendering(cmd);

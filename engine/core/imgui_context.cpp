@@ -16,26 +16,35 @@ ImGuiContext::~ImGuiContext() {
 }
 
 void ImGuiContext::initImGui(Window& window, Device& device, vk::Format swapchain_format) {
-    // ImGui's descriptor pool - covers all binding types ImGui internally uses.
-    // The `eFreeDescriptorSet` flag is required because ImGui frees descriptor
-    // sets (e.g., when textures are unregistered).
+    // ImGui's descriptor pool - covers all binding types ImGui uses.
+    // eFreeDescriptorSet is required because ImGui frees descriptor sets
+    // when textures are unregistered (which happens every time the
+    // editor's viewport panel is resized).
+    //
+    // 1024 sets gives ~10x the per-frame churn budget; 100 was too tight
+    // and exhausted on a fast viewport-panel drag. When the pool runs
+    // out, vkAllocateDescriptorSets returns OUT_OF_POOL_MEMORY but
+    // ImGui's AddTexture call site doesn't check the result, returning
+    // an uninitialized handle - leading to follow-on
+    // 'Invalid VkDescriptorPool Object 0x33...0033' validation errors.
+    constexpr uint32_t kImGuiPoolSize = 1024;
     std::vector<vk::DescriptorPoolSize> pool_sizes = {
-        {vk::DescriptorType::eSampler, 100},
-        {vk::DescriptorType::eCombinedImageSampler, 100},
-        {vk::DescriptorType::eSampledImage, 100},
-        {vk::DescriptorType::eStorageImage, 100},
-        {vk::DescriptorType::eUniformTexelBuffer, 100},
-        {vk::DescriptorType::eStorageTexelBuffer, 100},
-        {vk::DescriptorType::eUniformBuffer, 100},
-        {vk::DescriptorType::eStorageBuffer, 100},
-        {vk::DescriptorType::eUniformBufferDynamic, 100},
-        {vk::DescriptorType::eStorageBufferDynamic, 100},
-        {vk::DescriptorType::eInputAttachment, 100},
+        {vk::DescriptorType::eSampler,                kImGuiPoolSize},
+        {vk::DescriptorType::eCombinedImageSampler,   kImGuiPoolSize},
+        {vk::DescriptorType::eSampledImage,           kImGuiPoolSize},
+        {vk::DescriptorType::eStorageImage,           kImGuiPoolSize},
+        {vk::DescriptorType::eUniformTexelBuffer,     kImGuiPoolSize},
+        {vk::DescriptorType::eStorageTexelBuffer,     kImGuiPoolSize},
+        {vk::DescriptorType::eUniformBuffer,          kImGuiPoolSize},
+        {vk::DescriptorType::eStorageBuffer,          kImGuiPoolSize},
+        {vk::DescriptorType::eUniformBufferDynamic,   kImGuiPoolSize},
+        {vk::DescriptorType::eStorageBufferDynamic,   kImGuiPoolSize},
+        {vk::DescriptorType::eInputAttachment,        kImGuiPoolSize},
     };
 
     vk::DescriptorPoolCreateInfo pool_info{};
     pool_info.flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet;
-    pool_info.maxSets = 100;
+    pool_info.maxSets = kImGuiPoolSize;
     pool_info.setPoolSizes(pool_sizes);
 
     descriptor_pool_ = device.GetDevice().createDescriptorPool(pool_info);
