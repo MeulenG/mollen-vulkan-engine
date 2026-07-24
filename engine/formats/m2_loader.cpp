@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
+#include <vector>
 
 namespace mve {
 
@@ -89,7 +90,7 @@ void M2Loader::parseHeader(const uint8_t* data, uint32_t size, M2Model& model) {
 
 void M2Loader::parseVertices(const uint8_t* data, const m2::M2Header& header, M2Model& model) {
     // M2 vertices are stored in the main M2 file.
-    // We DON'T convert them to our Vertex format here — that happens in parseSkin()
+    // We DON'T convert them to our Vertex format here - that happens in parseSkin()
     // because the skin file remaps vertex indices.
     // Just validate they exist.
     if (header.vertices.count == 0) return;
@@ -107,7 +108,7 @@ void M2Loader::parseBones(const uint8_t* data, const m2::M2Header& header, M2Mod
         bone.name = "bone_" + std::to_string(i);
         bone.parent_index = src.parent_bone;
 
-        // For M2, bind position/rotation/scale are identity —
+        // For M2, bind position/rotation/scale are identity -
         // the pivots handle positioning.
         bone.bind_position = glm::vec3{0.0f};
         bone.bind_rotation = glm::quat{1.0f, 0.0f, 0.0f, 0.0f};
@@ -117,7 +118,7 @@ void M2Loader::parseBones(const uint8_t* data, const m2::M2Header& header, M2Mod
         model.skeleton.SetPivot(i, {src.pivot.x, src.pivot.y, src.pivot.z});
     }
 
-    // For M2 models, inverse bind matrices are not used —
+    // For M2 models, inverse bind matrices are not used -
     // the pivot-based computation handles everything.
     model.skeleton.ComputeInverseBindMatrices();
 }
@@ -322,7 +323,7 @@ void M2Loader::parseSkin(const uint8_t* skin_data, uint32_t skin_size,
         dst.uv = {src.tex_coords[0].x, src.tex_coords[0].y};
 
         // M2 vertex bone_indices are direct indices into the bone array
-        // (NOT through the bone lookup table — that's for the skin's submesh batches)
+        // (NOT through the bone lookup table - that's for the skin's submesh batches)
         dst.bone_indices = {
             static_cast<uint32_t>(src.bone_indices[0]),
             static_cast<uint32_t>(src.bone_indices[1]),
@@ -362,6 +363,63 @@ void M2Loader::parseSkin(const uint8_t* skin_data, uint32_t skin_size,
         sub.texture_count = batch.texture_count;
 
         model.submeshes.push_back(sub);
+    }
+
+    // Spherical normal rewrite for foliage submeshes.
+    //
+    // Why: an M2 leaf-plane submesh is just a few flat quads intersecting
+    // at angles. Each quad's per-vertex normal points perpendicular to
+    // its own plane, so when two adjacent quads of one canopy disagree
+    // by 60-90 degrees, dot(N, L) snaps from one quad's value to the
+    // other at the shared edge - you see a hard seam down the canopy.
+    //
+    // Trick (used by both Valve foliage and Unreal): for canopy vertices,
+    // replace the per-quad normal with a normal radiating OUT from the
+    // tree's bounding-sphere center. All canopy vertices now share a
+    // smooth "sphere of leaves" normal field, so dot(N, L) varies
+    // continuously across the canopy regardless of which quad each
+    // fragment came from. The seam disappears and the canopy reads as
+    // a single foliage volume.
+    //
+    // Math:
+    //   center = (bbox_min + bbox_max) * 0.5
+    //   for each canopy vertex v:
+    //       v.normal = normalize(v.position - center)
+    //
+    // Trunks keep their original normals - they ARE flat-surfaced
+    // cylinders and benefit from per-face Lambert. The "canopy vs
+    // trunk" decision is made by checking each batch's material
+    // blend_mode: 1 (AlphaKey) is canonical foliage; modes 0, 2, 3
+    // are NOT foliage and should keep original normals.
+    //
+    // Implementation: walk every batch, identify alpha-key ones, collect
+    // the unique vertex indices their triangles reference, rewrite those
+    // vertices' normals. If a vertex is referenced by BOTH an alpha-key
+    // batch and an opaque batch (rare - typically trees keep them
+    // disjoint), the alpha-key sphere normal wins (the vertex is
+    // mostly canopy in those edge cases).
+    glm::vec3 bbox_center = (model.bbox_min + model.bbox_max) * 0.5f;
+    std::vector<uint8_t> is_foliage_vertex(model.vertices.size(), 0);
+    for (uint32_t i = 0; i < skin.batches.count; i++) {
+        const auto& batch = batches[i];
+        if (batch.material_index >= model.materials.size()) continue;
+        if (model.materials[batch.material_index].blend_mode != 1) continue;
+        const auto& section = submeshes[batch.skin_section_index];
+        for (uint32_t k = section.index_start;
+             k < section.index_start + section.index_count; k++) {
+            if (k >= model.indices.size()) break;
+            uint32_t vidx = model.indices[k];
+            if (vidx < model.vertices.size()) {
+                is_foliage_vertex[vidx] = 1;
+            }
+        }
+    }
+    for (size_t i = 0; i < model.vertices.size(); i++) {
+        if (!is_foliage_vertex[i]) continue;
+        glm::vec3 radial = model.vertices[i].position - bbox_center;
+        float len = glm::length(radial);
+        if (len < 0.0001f) continue;  // degenerate, keep original
+        model.vertices[i].normal = radial / len;
     }
 }
 

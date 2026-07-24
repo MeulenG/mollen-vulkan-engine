@@ -9,17 +9,25 @@
 #include "scene/components/transform_component.h"
 #include "scene/components/mesh_component.h"
 #include "scene/components/material_component.h"
-#include "scene/terrain_mesh.h"
+#include "scene/components/terrain_component.h"
+#include "scene/components/terrain_tile_component.h"
+#include "scene/terrain_streamer.h"
+#include "scene/player_controller.h"
 #include "resources/asset_manager.h"
 #include "resources/buffer.h"
 #include "resources/descriptor.h"
 #include "resources/image.h"
 #include "animation/skeleton.h"
-#include "formats/wdt_loader.h"
 #include "formats/adt_types.h"
+#include "resources/dbc_registry.h"
+#include "resources/icon_cache.h"
+#include "db/db_connection.h"
 #include "systems/render_system.h"
 #include "systems/animation_system.h"
 #include "systems/editor_ui_system.h"
+#include "systems/dbc_browser_system.h"
+#include "systems/dbc_form_system.h"
+#include "systems/spell_editor_system.h"
 
 #include <imgui.h>
 
@@ -41,9 +49,14 @@ int main() {
             renderer.GetDepthFormat());
 
         // Systems
-        mve::Scene scene;
+        // Declaration order matters: render_system owns the descriptor pool,
+        // scene owns entities whose MaterialComponents allocate descriptor
+        // sets from that pool. C++ destroys in reverse, so scene must be
+        // declared *after* render_system to die first.
         mve::RenderSystem render_system{device, *offscreen};
         render_system.Init();
+
+        mve::Scene scene;
 
         mve::AssetManager assets{device};
         assets.SetDescriptorResources(
@@ -51,8 +64,44 @@ int main() {
             render_system.GetDescriptorPool(),
             render_system.SceneUBOBuffer());
 
+        // Load the GroundEffect DBC tables (texture + doodad) once,
+        // before any tiles stream in. ADT tile loading calls
+        // ScatterGrassForTile() which silently does nothing if the
+        // tables didn't load. A missing or unparseable DBC is logged
+        // by LoadGroundEffectTables but isn't fatal - the engine just
+        // renders without detail grass.
+        assets.LoadGroundEffectTables();
+
+        // Load the Light DBC tables (Light + LightParams + LightIntBand
+        // + LightFloatBand) and attach a LightCycle to the render
+        // system. The cycle interpolates the 18 LightIntBand colors +
+        // 6 LightFloatBand floats across a 16-keyframe per-day curve
+        // and drives the scene UBO + sky cone push constants every
+        // frame. Without it the renderer uses the hardcoded canonical
+        // Elwynn noon values seeded by the RenderSystem constructor.
+        assets.LoadLightTables();
+        mve::LightCycle light_cycle;
+        light_cycle.SetTables(&assets.Lights());
+        render_system.SetLightCycle(&light_cycle);
+
         mve::AnimationSystem animation_system;
-        mve::EditorUISystem editor_ui{window, imgui_ctx, *offscreen};
+        mve::EditorUISystem editor_ui{window, imgui_ctx, *offscreen,
+                                       device, assets};
+
+        mve::DbcRegistry dbc_registry{"assets/dbc"};
+
+        // Best-effort connect - failure leaves the browser in file-only mode.
+        mve::DbConnection db;
+        if (!db.Connect("db_config.toml")) {
+            std::cerr << "DB connect: " << db.LastError() << "\n";
+        }
+
+        mve::DbcBrowserSystem dbc_browser{dbc_registry, db};
+        mve::DbcFormSystem dbc_form{dbc_registry, db};
+        dbc_browser.SetFormSystem(&dbc_form);
+
+        mve::IconCache icon_cache{device, imgui_ctx};
+        mve::SpellEditorSystem spell_editor{db, icon_cache};
 
         // Editor camera
         auto* cam_entity = scene.CreateEntity("EditorCamera");
@@ -61,79 +110,111 @@ int main() {
         cam->pm_camera.SetOrbit(8.0f, 0.5f, 0.3f);
         cam->pm_camera.SetTarget({0.0f, 0.5f, 0.0f});
 
-        // Load an Elwynn Forest ADT tile and render it as terrain. The tile
-        // chosen (32_48) covers the Northshire / Stormwind northern area.
-        // This is the R1 milestone deliverable: a single ADT heightmap on
-        // screen with the existing camera + lighting pipeline.
-        {
-            const char* adt_path = "assets/World/Maps/Azeroth/Azeroth_32_48.adt";
-            mve::AdtTile tile{};
-            if (!mve::AdtLoader::LoadFile(adt_path, tile)) {
-                std::cerr << "Failed to load ADT: " << adt_path << "\n";
-            } else {
-                std::cout << "Loaded ADT with " << tile.textures.size()
-                          << " textures and 256 chunks\n";
-
-                auto terrain_mesh = mve::TerrainMesh::Build(device, tile);
-
-                // Wire an entity using the existing Transform + Mesh +
-                // Material component triple so the regular model pipeline
-                // draws it. R1 binds the default checkerboard texture as a
-                // placeholder; height-based vertex color does the heavy
-                // lifting visually.
-                auto* terrain_entity = scene.CreateEntity("Elwynn_32_48");
-                terrain_entity->AddComponent<mve::TransformComponent>();
-                auto* mesh_comp = terrain_entity->AddComponent<mve::MeshComponent>();
-                mesh_comp->pm_mesh = std::move(terrain_mesh);
-
-                auto placeholder_tex = assets.GetDefaultTexture();
-                auto* mat = terrain_entity->AddComponent<mve::MaterialComponent>();
-
-                vk::DeviceSize bone_buffer_size = mve::Skeleton::MAX_BONES * sizeof(glm::mat4);
-                mat->pm_bone_buffer = std::make_unique<mve::Buffer>(
-                    device, bone_buffer_size,
-                    vk::BufferUsageFlagBits::eStorageBuffer,
-                    vk::MemoryPropertyFlagBits::eHostVisible |
-                        vk::MemoryPropertyFlagBits::eHostCoherent);
-                std::vector<glm::mat4> identity(mve::Skeleton::MAX_BONES, glm::mat4{1.0f});
-                mat->pm_bone_buffer->Write(identity.data(), bone_buffer_size);
-
-                // Move the raii descriptor set into the component so its
-                // lifetime is tied to the terrain entity. Same pattern as
-                // AssetManager::LoadM2IntoScene.
-                mat->pm_descriptor_set = render_system.GetDescriptorPool()
-                    .AllocateSet(render_system.DescriptorLayout());
-                vk::DescriptorBufferInfo ubo_info{
-                    *render_system.SceneUBOBuffer().GetBuffer(), 0, sizeof(float) * 8};
-                auto tex_info = placeholder_tex->DescriptorInfo();
-                vk::DescriptorBufferInfo bone_info{
-                    *mat->pm_bone_buffer->GetBuffer(), 0, bone_buffer_size};
-                mve::DescriptorWriter{}
-                    .WriteBuffer(0, ubo_info)
-                    .WriteImage(1, tex_info)
-                    .WriteBuffer(2, bone_info, vk::DescriptorType::eStorageBuffer)
-                    .Apply(device.GetDevice(), mat->pm_descriptor_set);
-
-                mve::SubmeshMaterial sub_mat;
-                sub_mat.pm_texture = placeholder_tex;
-                mat->pm_submesh_materials.push_back(sub_mat);
-
-                // Center the camera roughly on the tile. The tile spans
-                // ~533 yards. The terrain's vertex world-positions come
-                // straight from the ADT (WoW coords), so the tile sits
-                // somewhere in world space dictated by its (x, y) index.
-                // We just orbit around the centroid of the rendered geometry.
-                glm::vec3 c0(tile.chunks[0].wow_y,
-                             tile.chunks[0].wow_z_base,
-                             tile.chunks[0].wow_x);
-                glm::vec3 c1(tile.chunks[255].wow_y,
-                             tile.chunks[255].wow_z_base,
-                             tile.chunks[255].wow_x);
-                glm::vec3 center = 0.5f * (c0 + c1);
-                cam->pm_camera.SetTarget(center);
-                cam->pm_camera.SetOrbit(800.0f, 0.5f, 0.6f);
-            }
+        // R3: stream multiple ADT tiles around a focus point. The
+        // streamer loads tiles in a (2r+1)x(2r+1) ring around the camera,
+        // gated by the WDT MAIN bitmap so we never try to open ocean tiles.
+        //
+        // Initial focus is (32, 48) - Northshire / north Stormwind. We
+        // point the camera at that tile's expected engine centroid, then
+        // ask the streamer which tile the camera actually ended up in
+        // (the orbit position can sit in a neighbor) and preload around
+        // that tile - this prevents the first per-frame Update from
+        // immediately evicting tiles we just loaded.
+        mve::TerrainStreamer streamer{assets, scene};
+        if (!streamer.LoadWdt("World/Maps/Azeroth/Azeroth.wdt")) {
+            std::cerr << "WDT load failed - streamer falls back to "
+                         "try-every-tile mode\n";
         }
+
+        // Hardcoded engine center of tile (32, 48). The per-tile centroid
+        // from the file would be slightly more accurate, but the file
+        // load happens DURING the preload below - so we use the analytic
+        // tile center to bootstrap.
+        //
+        // Default camera is ground-level FPS now - the orbit-1500
+        // bird's-eye made the editor read as a diorama. Ground level
+        // (matches the target reference) shows trees + terrain at
+        // proper density. User can switch via Tools menu.
+        // Ground-eye close shot at the Northshire road, designed to
+        // catch detail-grass blades scattered around the camera and
+        // the cobblestone path in the same frame. orbit 8y radius +
+        // pitch +0.15 (~9deg downward look) puts the camera at
+        // ~91 yards Y (just above the ground at Y=89) so we're
+        // standing on the road looking slightly down at our feet.
+        // Grass cull radius is 60 yards so foreground blades render.
+        // Phase 2B: third-person mode with a player controller.
+        // Player spawns on the road in tile (32, 48) at Northshire Valley.
+        // Engine is Z-up: renderX = canonical.Y (west), renderY =
+        // canonical.X (north), renderZ = height. Spawn coords below
+        // place the player in tile (32, 48) at canonical X ~ -30 and
+        // canonical Y ~ -9000, eye height 89.
+        //
+        // Orbit yaw convention (Camera::updatePosition in Z-up):
+        //   position = target + R * (ch*sin(yaw), ch*cos(yaw), sin(pitch))
+        // So:
+        //   yaw=0    -> camera at target + (0, R, 0) = +Y side of target
+        //   yaw=pi/2 -> camera at target + (R, 0, 0) = +X side of target
+        //   yaw=pi   -> camera at target + (0,-R, 0) = -Y side of target
+        glm::vec3 player_spawn{-9000.0f, -30.0f, 89.0f};
+        glm::vec3 eye_target = player_spawn + glm::vec3{0, 0, 1.7f};
+        cam->pm_camera.SetTarget(eye_target);
+        cam->pm_camera.SetOrbit(15.0f, 0.0f, 0.35f);
+        cam->pm_camera.SetMode(mve::CameraMode::ThirdPerson);
+
+        mve::PlayerController player;
+        player.SetPosition(player_spawn);
+
+        // Preload around wherever the camera actually sits (which may be
+        // a neighboring tile because of the orbit offset). Radius 2 (5x5)
+        // gives a ~2700-yard view region - enough that the target tile
+        // (32, 48) is always inside the loaded set even when the camera
+        // sits in a neighbor.
+        streamer.SetRadius(2);
+        streamer.SetEvictRadius(3);
+        int cam_tx, cam_ty;
+        streamer.EngineToTile(cam->pm_camera.GetPosition(), cam_tx, cam_ty);
+        streamer.PreloadAround(cam_tx, cam_ty, 2,
+                                render_system.TerrainDescriptorLayout());
+
+        // R4.5: tile loading parks MDDF doodad placements into a
+        // per-M2-path pending list rather than spawning one entity per
+        // placement. Flush them now that the full 5x5 preload is done
+        // so each unique M2 becomes one instanced entity carrying all
+        // its placements across every tile that referenced it.
+        // Without this call the doodads never enter the scene.
+        assets.FlushDoodadInstances(scene);
+
+        // Phase 2E: load each MODF WMO placement as a real meshed
+        // entity. On parse failure (missing asset, malformed group
+        // file) we fall back to the colored bbox marker debug overlay
+        // so the building's position is still visible on screen.
+        size_t wmo_ok = 0, wmo_fail = 0;
+        for (const auto& w : assets.PendingWmoPlacements()) {
+            if (assets.LoadWmoPlacement(w, scene,
+                                         render_system.WmoDescriptorLayout())) {
+                ++wmo_ok;
+                continue;
+            }
+            ++wmo_fail;
+            mve::RenderSystem::WmoBboxMarker m{};
+            m.pos     = w.engine_pos;
+            m.extents = w.bbox_extents;
+            uint32_t h = w.unique_id * 2654435761u;
+            m.color = glm::vec3{
+                ((h >>  0) & 0xff) / 255.0f * 0.7f + 0.3f,
+                ((h >>  8) & 0xff) / 255.0f * 0.7f + 0.3f,
+                ((h >> 16) & 0xff) / 255.0f * 0.7f + 0.3f,
+            };
+            render_system.AddWmoBbox(m);
+            std::fprintf(stderr,
+                "  WMO (bbox fallback): %s at engine=(%.0f, %.0f, %.0f)\n",
+                w.wow_path.c_str(),
+                w.engine_pos.x, w.engine_pos.y, w.engine_pos.z);
+        }
+        std::fprintf(stderr,
+            "WMO placements: %zu loaded, %zu fell back to bbox\n",
+            wmo_ok, wmo_fail);
+        assets.ClearPendingWmoPlacements();
 
         auto last_time = std::chrono::high_resolution_clock::now();
 
@@ -145,12 +226,90 @@ int main() {
 
             // ImGui frame
             imgui_ctx.NewFrame();
-            ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport());
 
-            // Systems
+            // Advance the day/night cycle clock. light_cycle.Tick
+            // wraps to a no-op when paused, which is the editor's
+            // default state - the user pins a specific time-of-day
+            // for stable comparisons and clicks "Real-time" to let
+            // it advance.
+            light_cycle.Tick(dt);
+
+            // Noclip toggle (N): swap between ThirdPerson (player-
+            // following) and FlyFirstPerson (free camera). When
+            // re-entering ThirdPerson, re-anchor the camera to the
+            // player so the view snaps back to where the player is
+            // standing (otherwise the orbit target would still point
+            // wherever the free camera was last looking).
+            if (ImGui::IsKeyPressed(ImGuiKey_N, false)) {
+                if (cam->pm_camera.Mode() == mve::CameraMode::ThirdPerson) {
+                    cam->pm_camera.SetMode(mve::CameraMode::FlyFirstPerson);
+                } else if (cam->pm_camera.Mode() ==
+                           mve::CameraMode::FlyFirstPerson) {
+                    cam->pm_camera.SetMode(mve::CameraMode::ThirdPerson);
+                    cam->pm_camera.SetTarget(player.GetEyePos());
+                }
+            }
+
+            // Phase 2B player update. Runs ONLY when the active camera
+            // is in ThirdPerson mode - in Orbit / FlyFirstPerson the
+            // WASD keys drive the camera via EditorUISystem instead.
+            //
+            // The player marker stays VISIBLE in every mode (rendered
+            // at player.GetPosition()) so noclip users have a "you-
+            // were-here" reference to fly back to.
+            render_system.SetPlayerPos(player.GetPosition());
+
+            if (cam->pm_camera.Mode() == mve::CameraMode::ThirdPerson) {
+                bool w = ImGui::IsKeyDown(ImGuiKey_W);
+                bool a = ImGui::IsKeyDown(ImGuiKey_A);
+                bool s = ImGui::IsKeyDown(ImGuiKey_S);
+                bool d = ImGui::IsKeyDown(ImGuiKey_D);
+                bool sprint = ImGui::GetIO().KeyShift;
+                player.Update(dt, cam->pm_camera, w, a, s, d, sprint);
+
+                // Snap the player's height to the terrain. Engine is
+                // Z-up so height is the Z component. Without this the
+                // player floats at fixed height while the ground slopes
+                // underneath. GetGroundY returns false off-tile, in
+                // which case we leave the previous height alone (player
+                // glides off the loaded region instead of falling).
+                glm::vec3 pos = player.GetPosition();
+                float ground_z;
+                if (assets.GetGroundY(pos, &ground_z)) {
+                    pos.z = ground_z;
+                    player.SetPosition(pos);
+                }
+
+                cam->pm_camera.SetTarget(player.GetEyePos());
+                render_system.SetPlayerPos(player.GetPosition());
+            }
+
+            // Systems. EditorUISystem owns the dockspace + menu/status
+            // bars, so the host viewport gets its layout from there.
             editor_ui.Update(scene, render_system, dt);
+            dbc_browser.Update();
+            dbc_form.Update();
+            spell_editor.Update();
             animation_system.Update(scene, dt);
             render_system.UpdateSceneUBO();
+
+            // Stream-load tiles around the camera. Cheap when the camera
+            // stays in the same tile; loads ~one new tile per boundary
+            // crossing. Runs before FlushDestroyed so evicted tiles
+            // disappear in the same frame.
+            mve::Camera* stream_cam = nullptr;
+            scene.Each<mve::CameraComponent>(
+                [&](mve::Entity&, mve::CameraComponent& cc) {
+                    if (cc.pm_is_active) stream_cam = &cc.pm_camera;
+                });
+            if (stream_cam) {
+                streamer.Update(stream_cam->GetPosition(),
+                                render_system.TerrainDescriptorLayout());
+                // New tiles parked doodad placements; materialize them
+                // into instanced entities. No-op when no new tiles
+                // loaded this frame.
+                assets.FlushDoodadInstances(scene);
+            }
             scene.FlushDestroyed();
 
             // Render
@@ -174,7 +333,24 @@ int main() {
             renderer.EndFrame(*cmd);
         }
 
+        // Shutdown sequence:
+        //
+        // 1. Wait for any in-flight command buffer that might still be
+        //    referencing entity descriptor sets.
+        // 2. Destroy every entity NOW, while RenderSystem (and its
+        //    DescriptorPool) is still alive. The vk::raii::DescriptorSet
+        //    members of TerrainComponent / MaterialComponent free
+        //    themselves back to the pool here.
+        // 3. The normal stack unwind then tears down render_system
+        //    (DescriptorPool dies with nothing left to free), then the
+        //    now-empty scene.
+        //
+        // Without (2), automatic destruction order has render_system
+        // dying before scene, and the descriptor-set destructors trip
+        // VUID-vkFreeDescriptorSets-descriptorPool-parameter when they
+        // try to free against the dead pool.
         device.GetDevice().waitIdle();
+        scene.Clear();
 
     } catch (const std::exception& e) {
         std::cerr << e.what() << '\n';

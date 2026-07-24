@@ -7,10 +7,16 @@ add_library(mollen-engine STATIC
     resources/buffer.cpp
     resources/descriptor.cpp
     resources/image.cpp
+    resources/texture_array.cpp
     resources/asset_manager.cpp
+    resources/dbc_registry.cpp
+    resources/icon_cache.cpp
     systems/render_system.cpp
     systems/animation_system.cpp
     systems/editor_ui_system.cpp
+    systems/dbc_browser_system.cpp
+    systems/dbc_form_system.cpp
+    systems/spell_editor_system.cpp
     scene/mesh.cpp
     scene/camera.cpp
     scene/entity.cpp
@@ -20,12 +26,21 @@ add_library(mollen-engine STATIC
     animation/animator.cpp
     core/offscreen_pass.cpp
     core/imgui_context.cpp
+    core/editor_style.cpp
     formats/blp_loader.cpp
     formats/m2_loader.cpp
     formats/chunk_handler.cpp
     formats/wdt_loader.cpp
     formats/adt_loader.cpp
+    formats/wmo_loader.cpp
     scene/terrain_mesh.cpp
+    scene/terrain_streamer.cpp
+    scene/water_mesh.cpp
+    scene/wmo_mesh.cpp
+    scene/grass_scatter.cpp
+    scene/light_cycle.cpp
+    scene/player_controller.cpp
+    db/db_connection.cpp
 )
 
 target_include_directories(mollen-engine PUBLIC
@@ -37,6 +52,7 @@ target_link_libraries(mollen-engine PUBLIC
     glfw
     glm::glm
     imgui_lib
+    mollen-dbc
 )
 
 # Compile GLSL shaders to SPIR-V
@@ -78,4 +94,11 @@ add_dependencies(mollen-engine compile-shaders)
 # Make shader output directory available to consumers
 target_compile_definitions(mollen-engine PUBLIC
     MVE_SHADER_DIR="${SHADER_OUTPUT_DIR}"
+)
+
+# Absolute path to the assets/ directory at the repo root. Consumers
+# concatenate WoW-style relative paths (e.g. "World/Maps/Azeroth/...")
+# onto this so the executable can find its assets regardless of CWD.
+target_compile_definitions(mollen-engine PUBLIC
+    MVE_ASSET_DIR="${CMAKE_SOURCE_DIR}/assets"
 )

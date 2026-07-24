@@ -18,12 +18,16 @@ std::vector<vk::VertexInputAttributeDescription> Vertex::GetAttributeDescription
 }
 
 Mesh::Mesh(Device& device, const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices)
+    : Mesh(device, vertices.data(), sizeof(Vertex) * vertices.size(), indices) {}
+
+Mesh::Mesh(Device& device, const void* vertex_data, size_t vertex_bytes,
+           const std::vector<uint32_t>& indices)
     : index_count_{static_cast<uint32_t>(indices.size())} {
 
     vertex_buffer_ = std::make_unique<Buffer>(Buffer::CreateWithStaging(
         device,
-        vertices.data(),
-        sizeof(Vertex) * vertices.size(),
+        vertex_data,
+        vertex_bytes,
         vk::BufferUsageFlagBits::eVertexBuffer));
 
     index_buffer_ = std::make_unique<Buffer>(Buffer::CreateWithStaging(
@@ -40,6 +44,24 @@ void Mesh::Bind(const vk::raii::CommandBuffer& command_buffer) const {
 
 void Mesh::Draw(const vk::raii::CommandBuffer& command_buffer) const {
     command_buffer.drawIndexed(index_count_, 1, 0, 0, 0);
+}
+
+void Mesh::DrawInstanced(const vk::raii::CommandBuffer& command_buffer,
+                          uint32_t instance_count) const {
+    // The vertex shader reads gl_InstanceIndex (0..instance_count-1) to
+    // look up the per-instance model matrix from the SSBO bound at
+    // descriptor binding 3.
+    command_buffer.drawIndexed(index_count_, instance_count, 0, 0, 0);
+}
+
+void Mesh::DrawInstancedRange(const vk::raii::CommandBuffer& command_buffer,
+                               uint32_t instance_count,
+                               uint32_t index_start,
+                               uint32_t index_count) const {
+    // index_start is the offset into the model's shared index buffer.
+    // index_count triangles fanning from that offset will be drawn,
+    // each replicated instance_count times.
+    command_buffer.drawIndexed(index_count, instance_count, index_start, 0, 0);
 }
 
 Mesh Mesh::CreatePyramid(Device& device, glm::vec3 color) {

@@ -4,8 +4,8 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef helmet_geoset_vis_data_fields[] = {
-    { "Id",              DbcFieldType::UInt32 },
-    { "HairGeoset",      DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "HairGeoset", DbcFieldType::UInt32 },
     { "Accessory1Geoset", DbcFieldType::UInt32 },
     { "Accessory2Geoset", DbcFieldType::UInt32 },
     { "Accessory3Geoset", DbcFieldType::UInt32 },

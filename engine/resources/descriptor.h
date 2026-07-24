@@ -8,7 +8,7 @@
 
 namespace mve {
 
-// Builds a descriptor set layout — defines the "interface" of what a shader expects.
+// Builds a descriptor set layout - defines the "interface" of what a shader expects.
 // Example: binding 0 = uniform buffer, binding 1 = texture sampler
 class DescriptorSetLayoutBuilder {
 public:
@@ -33,12 +33,29 @@ public:
     DescriptorPool(
         Device& device,
         uint32_t max_sets,
-        const std::vector<vk::DescriptorPoolSize>& pool_sizes);
+        const std::vector<vk::DescriptorPoolSize>& pool_sizes,
+        vk::DescriptorPoolCreateFlags flags = {});
 
     DescriptorPool(const DescriptorPool&) = delete;
     DescriptorPool& operator=(const DescriptorPool&) = delete;
 
+    // Allocate a descriptor set as a raii object (frees back to the
+    // pool when destroyed). Use this when you need automatic cleanup
+    // and you control the lifetime carefully (e.g. a long-lived
+    // resource that you know won't outlive the pool).
     vk::raii::DescriptorSet AllocateSet(const vk::raii::DescriptorSetLayout& layout);
+
+    // Allocate a raw handle. The pool tracks the allocation but the
+    // caller is responsible for freeing it (or just lets the pool's
+    // own destruction reclaim it). Used for entity descriptor sets
+    // where the raii destruction path has caused trouble.
+    vk::DescriptorSet AllocateSetRaw(const vk::raii::DescriptorSetLayout& layout);
+
+    // Return a raw handle to the pool. Caller MUST ensure no in-flight
+    // command buffer is still referencing the set (typically a
+    // device.waitIdle() before the call). The pool was created with
+    // eFreeDescriptorSet so this is spec-legal; no-op when set is null.
+    void FreeSet(vk::DescriptorSet set);
 
 private:
     Device& device_;
@@ -61,6 +78,7 @@ public:
         vk::DescriptorType type = vk::DescriptorType::eCombinedImageSampler);
 
     void Apply(const vk::raii::Device& device, const vk::raii::DescriptorSet& set);
+    void Apply(const vk::raii::Device& device, vk::DescriptorSet set);
 
 private:
     std::vector<vk::WriteDescriptorSet> writes_;

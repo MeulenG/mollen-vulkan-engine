@@ -4,7 +4,7 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef spell_difficulty_fields[] = {
-    { "Id",            DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
     { "SpellId_Normal10", DbcFieldType::UInt32 },
     { "SpellId_Normal25", DbcFieldType::UInt32 },
     { "SpellId_Heroic10", DbcFieldType::UInt32 },

@@ -18,6 +18,15 @@ public:
     void DestroyEntity(EntityId id);
     void FlushDestroyed();
 
+    // Tears down every entity in the scene immediately. Used at shutdown
+    // to release per-entity GPU resources (descriptor sets, buffers,
+    // images) while the systems that own the pools they belong to are
+    // still alive. Without this, automatic destruction races: the
+    // RenderSystem (and its DescriptorPool) may go away before the
+    // scene's entities, leaving vk::raii::DescriptorSet destructors
+    // calling vkFreeDescriptorSets against a freed pool handle.
+    void Clear();
+
     Entity* FindEntity(EntityId id);
     Entity* FindEntityByName(const std::string& name);
     const std::vector<std::unique_ptr<Entity>>& Entities() const { return pm_entities; }

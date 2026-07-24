@@ -4,26 +4,171 @@
 #include "../core/device.h"
 #include "../scene/mesh.h"
 #include "../scene/scene.h"
+#include "../scene/grass_scatter.h"
+#include "../scene/light_cycle.h"
 #include "../resources/image.h"
 #include "../resources/descriptor.h"
+#include "../resources/texture_array.h"
 #include "../formats/m2_loader.h"
+#include "../formats/adt_types.h"
+
+#include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace mve {
 
 using MeshHandle = std::shared_ptr<Mesh>;
 using TextureHandle = std::shared_ptr<Image>;
 
+// Result of loading a tile's diffuse textures into a 2D-array image.
+// tile_tex_to_slice[i] gives the array slice for the i-th MTEX entry
+// in the parent ADT tile, or -1 if that texture failed to load.
+struct AdtTextureSet {
+    std::unique_ptr<TextureArray> diffuse;
+    std::vector<int> tile_tex_to_slice;
+};
+
 class AssetManager {
 public:
     AssetManager(Device& device);
 
     // Load an M2 model and spawn a fully-wired entity in the scene.
-    // Caches M2 data and textures so loading the same model twice shares GPU resources.
+    // Caches M2 data and textures so loading the same model twice
+    // shares GPU resources. Uses the legacy WoW-coord transform that
+    // hoists the model so its lowest bbox corner sits at y=0.
     Entity* LoadM2IntoScene(const std::string& m2_path, Scene& scene);
+
+    // Same, but with an explicit world transform - used by R4 doodad
+    // spawning where the MDDF data specifies position + Euler rotation
+    // + scale directly. The caller is responsible for converting WoW
+    // coords to engine coords before passing them in.
+    //
+    // name_hint becomes the entity's debug name (typically
+    // "Doodad#<unique_id>" so the editor entity panel can identify it).
+    // Empty name_hint falls back to the model's internal name.
+    Entity* LoadM2IntoScene(
+        const std::string& m2_path, Scene& scene,
+        const glm::vec3& position,
+        const glm::quat& rotation,
+        const glm::vec3& scale,
+        const std::string& name_hint = "");
+
+    // Load one ADT terrain tile (parses Azeroth_<x>_<y>.adt under
+    // assets/World/Maps/Azeroth/), build its mesh + diffuse/alpha
+    // atlases, and spawn a fully-wired Transform + Mesh + Terrain +
+    // TerrainTile entity in the scene. The caller supplies the
+    // terrain-pipeline descriptor layout because RenderSystem owns it.
+    //
+    // Returns nullptr if the .adt file doesn't exist or fails to parse.
+    // The mesh is cached by "adt:<x>_<y>" so re-loading a tile shares
+    // GPU memory; BLPs are cached per-path inside LoadAdtTextures.
+    //
+    // R4.5: doodad MDDF entries are NOT spawned per-placement. Instead
+    // the tile loader accumulates them into pm_pending_doodad_instances
+    // (keyed by M2 path) and the caller must invoke FlushDoodadInstances
+    // once after all desired tiles are loaded. This collapses ~4650
+    // draw calls into ~50 (one per unique M2 path) for a 5x5 preload.
+    Entity* LoadAdtTileIntoScene(
+        int tile_x, int tile_y, Scene& scene,
+        const vk::raii::DescriptorSetLayout& terrain_layout);
+
+    // Materialize pending doodad placements (accumulated by
+    // LoadAdtTileIntoScene) into one entity per unique M2 path. Each
+    // entity gets MeshComponent + DoodadInstanceComponent and is drawn
+    // via vkCmdDrawIndexed(idx_count, instance_count, ...).
+    //
+    // Safe to call multiple times - it only consumes whatever is
+    // pending and clears it. Typical flow:
+    //   for tile in (tx, ty) ... LoadAdtTileIntoScene(...)
+    //   FlushDoodadInstances(scene)
+    //
+    // The pending list is shared across tiles so cross-tile dedup works
+    // (pm_spawned_doodad_ids tracks unique_ids).
+    void FlushDoodadInstances(Scene& scene);
+
+    // Load GroundEffectTexture.dbc + GroundEffectDoodad.dbc out of the
+    // canonical assets/dbc/ folder. Call once at engine startup.
+    // Returns false if either table fails to parse, in which case
+    // ScatterGrassForTile() becomes a silent no-op (no grass renders).
+    bool LoadGroundEffectTables();
+
+    // Read-only access for code that wants to drive the scatter
+    // directly (e.g. tests or the terrain streamer).
+    const GroundEffectTables& GroundEffects() const { return pm_ground_effects; }
+
+    // Load Light.dbc + LightParams.dbc + LightIntBand.dbc +
+    // LightFloatBand.dbc. Call once at engine startup. The
+    // RenderSystem reads from this via LightCycle to drive the
+    // SceneUBO + sky cone push constants per frame.
+    bool LoadLightTables();
+    const LightTables& Lights() const { return pm_light_tables; }
+
+    // One resolved WMO placement, ready to spawn or visualise. The
+    // ADT MODF parsing collects these per tile, with positions
+    // already converted to engine space + bbox preserved as raw
+    // (lo, hi) in WoW pre-engine-swap coords (we use it as a size
+    // proxy only, not actually positioned).
+    struct WmoPlacement {
+        std::string wow_path;       // backslashed, e.g. WORLD\WMO\AZEROTH\...
+        glm::vec3   engine_pos{0.0f};
+        glm::vec3   bbox_extents{1.0f};   // size in yards
+        glm::vec3   rot_deg{0.0f};
+        uint32_t    unique_id = 0;
+    };
+    const std::vector<WmoPlacement>& PendingWmoPlacements() const {
+        return pm_pending_wmo_placements;
+    }
+    void ClearPendingWmoPlacements() { pm_pending_wmo_placements.clear(); }
+
+    // Load one queued WmoPlacement into the scene as a fully-meshed
+    // WMO entity (parses root + group files, builds GPU meshes,
+    // creates an entity with WmoInstanceComponent + TransformComponent).
+    // Returns the entity on success, nullptr on parse failure (caller
+    // can then fall back to the bbox-marker debug overlay).
+    Entity* LoadWmoPlacement(
+        const WmoPlacement& p, Scene& scene,
+        const vk::raii::DescriptorSetLayout& wmo_descriptor_layout);
+
+    // Sample the ground height (engine.y) at an engine-space (x, z)
+    // position. Returns true and writes out_y on success; returns
+    // false when the position falls outside any loaded tile (caller
+    // should keep the previous Y in that case).
+    //
+    // Used by the player controller in Phase 2B to make the placeholder
+    // character follow the terrain contour instead of floating at a
+    // fixed Y. Implementation: lookup the tile that contains the
+    // position, find the chunk inside that tile, then bilerp the
+    // MCVT 9x9 outer-vertex grid.
+    bool GetGroundY(const glm::vec3& engine_pos, float* out_y) const;
+
+    // Enqueue one detail-grass placement. Mirrors the MDDF doodad
+    // pending list but flags the M2 path as detail grass so the
+    // renderer can apply a shorter cull distance to it. The path is
+    // expected to be a backslashed WoW relative path (e.g.
+    // "WORLD\AZEROTH\ELWYNN\PASSIVEDOODADS\GRASS\ELWYNNGRASS01.M2").
+    void EnqueueDetailGrassInstance(const std::string& wow_m2_path,
+                                     const glm::mat4& model_matrix);
+
+    // Scatter detail grass for every MCNK in `tile` and queue the
+    // placements for the next FlushDoodadInstances() call. No-op if
+    // LoadGroundEffectTables() failed or wasn't called.
+    void ScatterGrassForTile(const AdtTile& tile);
+
+    // Load the diffuse BLP textures referenced by an ADT tile's MTEX
+    // list into a 2D-array image. Each unique BLP gets one slice.
+    // BLPs that fail to load (missing file, format mismatch with the
+    // first valid BLP, etc.) get tile_tex_to_slice[i] = -1; consumers
+    // typically map these to a checkerboard fallback.
+    //
+    // target_size is the per-slice width/height (square). The loader
+    // picks the appropriate mip out of each BLP. Typical value: 256.
+    AdtTextureSet LoadAdtTextures(const AdtTile& tile,
+                                   uint32_t target_size = 256);
 
     // Set the descriptor layout + pool that entities will use.
     // Must be called before loadM2IntoScene.
@@ -35,6 +180,17 @@ public:
     MeshHandle GetMesh(const std::string& key) const;
     TextureHandle GetTexture(const std::string& key) const;
     TextureHandle GetDefaultTexture();
+
+    // Exposed for callers that need to synchronize with the GPU before
+    // freeing resources (e.g. TerrainStreamer eviction must waitIdle
+    // before destroying a tile entity whose descriptor set might still
+    // be referenced by an in-flight command buffer).
+    Device& GetDevice() { return pm_device; }
+
+    // The descriptor pool entities allocate sets from. Exposed so
+    // TerrainStreamer can return tile sets to the pool on eviction
+    // (otherwise the pool exhausts after a few minutes of streaming).
+    DescriptorPool* GetDescriptorPool() { return pm_descriptor_pool; }
 
 private:
     Device& pm_device;
@@ -48,10 +204,118 @@ private:
     std::unordered_map<std::string, TextureHandle> pm_texture_cache;
     TextureHandle pm_default_texture;
 
+    // Per-M2-path cached descriptor + shared bone buffer + per-submesh
+    // texture bindings. R4.8 splits a single per-M2 descriptor set into
+    // N per-submesh sets so each submesh (tree trunk vs leaves vs
+    // glow overlay) can carry its own texture binding instead of all
+    // sharing texture_paths[0].
+    //
+    // The bone buffer is identity (static doodads); the instance SSBO
+    // is set later by FlushDoodadInstances.
+    struct M2SharedSubmesh {
+        TextureHandle     pm_texture;
+        vk::DescriptorSet pm_descriptor_set = VK_NULL_HANDLE;
+        uint32_t          pm_index_start = 0;
+        uint32_t          pm_index_count = 0;
+        uint16_t          pm_blend_mode  = 0;   // 0=opaque, 1=alpha key, 2=alpha
+        uint16_t          pm_render_flags = 0;  // bit 0x04 = two-sided, etc.
+    };
+    struct M2SharedMaterial {
+        std::unique_ptr<Buffer>      pm_bone_buffer;
+        std::vector<M2SharedSubmesh> pm_submeshes;
+
+        // Back-compat: the legacy single-arg LoadM2IntoScene uses a
+        // single descriptor set / texture (no per-submesh split). When
+        // pm_submeshes is empty this pair is used instead.
+        vk::DescriptorSet pm_descriptor_set = VK_NULL_HANDLE;
+        TextureHandle     pm_texture;
+    };
+    std::unordered_map<std::string, std::shared_ptr<M2SharedMaterial>>
+        pm_shared_m2_material;
+
+    // 1-entry "identity" instance buffer used by the legacy M2 path so
+    // binding 3 of the M2 descriptor set is always populated. Created
+    // lazily on first legacy LoadM2IntoScene call. The shader reads
+    // gl_InstanceIndex=0 -> identity matrix, so the legacy math collapses
+    // to the pre-R4.5 behaviour (push.mvp * identity * skinned_pos).
+    std::unique_ptr<Buffer> pm_identity_instance_buffer;
+
+    // MDDF doodad unique_ids that have already been spawned across any
+    // tile. Used to dedupe edge-shared doodads in the multi-tile R3
+    // streamer: WoW places the same prop in multiple tiles' MDDF when
+    // it sits near a tile boundary, so without dedup we'd render N
+    // overlapping copies.
+    std::unordered_set<uint32_t> pm_spawned_doodad_ids;
+
+    // Doodad placements parked by LoadAdtTileIntoScene, awaiting flush.
+    // Keyed by resolved M2 path so multiple tiles' placements of the
+    // same model coalesce into one entity at flush time. Each entry is
+    // a TRS already converted to engine space.
+    struct PendingDoodadInstance {
+        glm::mat4 model_matrix;
+    };
+    std::unordered_map<std::string, std::vector<PendingDoodadInstance>>
+        pm_pending_doodad_instances;
+
+    // ALL placements ever flushed for a given M2 path, in instance-buffer
+    // order. Used by FlushDoodadInstances to extend existing entities
+    // when new tiles stream in: we rebuild the SSBO with old + new so
+    // the existing entity's instance_count grows rather than the scene
+    // accumulating one entity per flush call.
+    //
+    // Doodads are never evicted in v1 - they live for the lifetime of
+    // the AssetManager. Tile eviction only frees terrain meshes/textures.
+    std::unordered_map<std::string, std::vector<glm::mat4>>
+        pm_flushed_doodad_matrices;
+    std::unordered_map<std::string, EntityId>
+        pm_doodad_entity_for_path;
+
     // Descriptor resources (set externally by RenderSystem or main)
     const vk::raii::DescriptorSetLayout* pm_descriptor_layout = nullptr;
     DescriptorPool* pm_descriptor_pool = nullptr;
     const Buffer* pm_scene_ubo = nullptr;
+
+    // GroundEffectTexture.dbc + GroundEffectDoodad.dbc, loaded once at
+    // engine init. Empty until LoadGroundEffectTables() succeeds.
+    GroundEffectTables pm_ground_effects;
+    bool pm_ground_effects_loaded = false;
+
+    // Light.dbc + LightParams.dbc + LightIntBand.dbc + LightFloatBand.dbc,
+    // loaded once at engine init. The LightCycle held by RenderSystem
+    // points at this; nothing else owns it.
+    LightTables pm_light_tables;
+
+    // Per-tile cached MCVT height grid for GetGroundY queries. The
+    // full AdtTile is parsed-and-dropped during LoadAdtTileIntoScene
+    // (~5 MB of mesh+texture data we'd rather not retain) so we copy
+    // just the chunks' 9x9 outer height grid + NW-corner positions
+    // out before the tile drops. ~80 KB per tile, ~2 MB total at
+    // a 5x5 preload. Keyed by tile_x * 64 + tile_y.
+    struct ChunkHeightCache {
+        float wow_x = 0.0f;          // chunk's NW corner, south-axis
+        float wow_y = 0.0f;          // chunk's NW corner, east-axis
+        float y_outer[81] = {0.0f};  // 9x9 grid, y_outer[r*9+c]
+    };
+    struct TileHeightCache {
+        ChunkHeightCache chunks[256];
+    };
+    std::unordered_map<uint32_t, TileHeightCache> pm_tile_height_cache;
+
+    // Phase 2E stage 1: WMO placements parsed out of every loaded
+    // ADT MODF, deduped by unique_id (Stormwind alone spans 10+
+    // tiles and each tile lists it). Populated by LoadAdtTileIntoScene;
+    // main.cpp drains this after the initial PreloadAround completes
+    // and pushes bbox markers to RenderSystem.
+    std::vector<WmoPlacement>          pm_pending_wmo_placements;
+    std::unordered_set<uint32_t>       pm_wmo_seen_unique_ids;
+
+    // The set of resolved fs paths that came from the detail-grass
+    // scatter (rather than MDDF). Used by FlushDoodadInstances to
+    // tag the resulting DoodadInstanceComponent so the renderer can
+    // apply a shorter cull distance. Detail-grass paths are never
+    // shared with MDDF (grass M2s live under
+    // .../PassiveDoodads/Grass/ which trees never use).
+    std::unordered_set<std::string> pm_detail_grass_paths;
 };
 
 } // namespace mve
