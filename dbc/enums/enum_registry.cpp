@@ -49,6 +49,8 @@
 #include "enum_skill_category.h"
 #include "enum_totem_category.h"
 #include "enum_creature_elite_type.h"
+#include "enum_spell_effects.h"
+#include "enum_spell_aura_type.h"
 
 namespace {
 
@@ -97,6 +99,8 @@ const DbcEnum* const k_all_enums[] = {
     &skill_category_enum,
     &totem_category_enum,
     &creature_elite_type_enum,
+    &spell_effects_enum,
+    &spell_aura_type_enum,
 };
 
 constexpr uint32_t k_enum_count = sizeof(k_all_enums) / sizeof(k_all_enums[0]);
