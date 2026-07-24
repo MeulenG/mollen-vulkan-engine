@@ -4,7 +4,7 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef durability_costs_fields[] = {
-    { "Id",                 DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
     { "WeaponSubClassCost1", DbcFieldType::UInt32 },
     { "WeaponSubClassCost2", DbcFieldType::UInt32 },
     { "WeaponSubClassCost3", DbcFieldType::UInt32 },
@@ -26,14 +26,14 @@ static const DbcFieldDef durability_costs_fields[] = {
     { "WeaponSubClassCost19", DbcFieldType::UInt32 },
     { "WeaponSubClassCost20", DbcFieldType::UInt32 },
     { "WeaponSubClassCost21", DbcFieldType::UInt32 },
-    { "ArmorSubClassCost1",  DbcFieldType::UInt32 },
-    { "ArmorSubClassCost2",  DbcFieldType::UInt32 },
-    { "ArmorSubClassCost3",  DbcFieldType::UInt32 },
-    { "ArmorSubClassCost4",  DbcFieldType::UInt32 },
-    { "ArmorSubClassCost5",  DbcFieldType::UInt32 },
-    { "ArmorSubClassCost6",  DbcFieldType::UInt32 },
-    { "ArmorSubClassCost7",  DbcFieldType::UInt32 },
-    { "ArmorSubClassCost8",  DbcFieldType::UInt32 },
+    { "ArmorSubClassCost1", DbcFieldType::UInt32 },
+    { "ArmorSubClassCost2", DbcFieldType::UInt32 },
+    { "ArmorSubClassCost3", DbcFieldType::UInt32 },
+    { "ArmorSubClassCost4", DbcFieldType::UInt32 },
+    { "ArmorSubClassCost5", DbcFieldType::UInt32 },
+    { "ArmorSubClassCost6", DbcFieldType::UInt32 },
+    { "ArmorSubClassCost7", DbcFieldType::UInt32 },
+    { "ArmorSubClassCost8", DbcFieldType::UInt32 },
 };
 
 static const DbcSchema schema_durability_costs = {

@@ -17,9 +17,15 @@
 #include "animation/skeleton.h"
 #include "formats/wdt_loader.h"
 #include "formats/adt_types.h"
+#include "resources/dbc_registry.h"
+#include "resources/icon_cache.h"
+#include "db/db_connection.h"
 #include "systems/render_system.h"
 #include "systems/animation_system.h"
 #include "systems/editor_ui_system.h"
+#include "systems/dbc_browser_system.h"
+#include "systems/dbc_form_system.h"
+#include "systems/spell_editor_system.h"
 
 #include <imgui.h>
 
@@ -41,9 +47,14 @@ int main() {
             renderer.GetDepthFormat());
 
         // Systems
-        mve::Scene scene;
+        // Declaration order matters: render_system owns the descriptor pool,
+        // scene owns entities whose MaterialComponents allocate descriptor
+        // sets from that pool. C++ destroys in reverse, so scene must be
+        // declared *after* render_system to die first.
         mve::RenderSystem render_system{device, *offscreen};
         render_system.Init();
+
+        mve::Scene scene;
 
         mve::AssetManager assets{device};
         assets.SetDescriptorResources(
@@ -53,6 +64,21 @@ int main() {
 
         mve::AnimationSystem animation_system;
         mve::EditorUISystem editor_ui{window, imgui_ctx, *offscreen};
+
+        mve::DbcRegistry dbc_registry{"assets/dbc"};
+
+        // Best-effort connect - failure leaves the browser in file-only mode.
+        mve::DbConnection db;
+        if (!db.Connect("db_config.toml")) {
+            std::cerr << "DB connect: " << db.LastError() << "\n";
+        }
+
+        mve::DbcBrowserSystem dbc_browser{dbc_registry, db};
+        mve::DbcFormSystem dbc_form{dbc_registry, db};
+        dbc_browser.SetFormSystem(&dbc_form);
+
+        mve::IconCache icon_cache{device, imgui_ctx};
+        mve::SpellEditorSystem spell_editor{db, icon_cache};
 
         // Editor camera
         auto* cam_entity = scene.CreateEntity("EditorCamera");
@@ -149,6 +175,9 @@ int main() {
 
             // Systems
             editor_ui.Update(scene, render_system, dt);
+            dbc_browser.Update();
+            dbc_form.Update();
+            spell_editor.Update();
             animation_system.Update(scene, dt);
             render_system.UpdateSceneUBO();
             scene.FlushDestroyed();

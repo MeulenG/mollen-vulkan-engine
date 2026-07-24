@@ -137,10 +137,8 @@ Entity* AssetManager::LoadM2IntoScene(const std::string& m2_path, Scene& scene) 
     std::vector<glm::mat4> identity(Skeleton::MAX_BONES, glm::mat4{1.0f});
     mat->pm_bone_buffer->Write(identity.data(), bone_buffer_size);
 
-    // Move the raii handle directly into the component so the descriptor
-    // set's lifetime is tied to the entity. Holding only the raw
-    // VkDescriptorSet (the old behavior) dangles once the local raii goes
-    // out of scope.
+    // Move the RAII descriptor set into the component so its lifetime
+    // matches the entity's, not this function's stack frame.
     mat->pm_descriptor_set = pm_descriptor_pool->AllocateSet(*pm_descriptor_layout);
 
     vk::DescriptorBufferInfo ubo_info{*pm_scene_ubo->GetBuffer(), 0, sizeof(float) * 8};

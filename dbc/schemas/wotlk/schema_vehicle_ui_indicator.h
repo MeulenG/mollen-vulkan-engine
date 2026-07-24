@@ -4,8 +4,8 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef vehicle_ui_indicator_fields[] = {
-    { "Id",             DbcFieldType::UInt32 },
-    { "BackgroundTex",  DbcFieldType::String },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "BackgroundTex", DbcFieldType::String },
 };
 
 static const DbcSchema schema_vehicle_ui_indicator = {

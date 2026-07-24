@@ -4,11 +4,11 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef spell_visual_effect_name_fields[] = {
-    { "Id",            DbcFieldType::UInt32 },
-    { "Name",          DbcFieldType::String },
-    { "FilePath",      DbcFieldType::String },
-    { "AreaEffectSize", DbcFieldType::Float  },
-    { "Scale",         DbcFieldType::Float  },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "Name", DbcFieldType::String, DbcSemantic::Default, nullptr, "Identity" },
+    { "FilePath", DbcFieldType::String },
+    { "AreaEffectSize", DbcFieldType::Float },
+    { "Scale", DbcFieldType::Float },
     { "MinAllowedScale", DbcFieldType::Float },
     { "MaxAllowedScale", DbcFieldType::Float },
 };

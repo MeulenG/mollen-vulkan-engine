@@ -4,9 +4,9 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef sound_ambience_fields[] = {
-    { "Id",           DbcFieldType::UInt32 },
-    { "DaySoundID",   DbcFieldType::UInt32 },
-    { "NightSoundID", DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "DaySoundID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "daysound", "Visuals" },
+    { "NightSoundID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "nightsound", "Visuals" },
 };
 
 static const DbcSchema schema_sound_ambience = {

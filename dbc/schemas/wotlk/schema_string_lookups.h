@@ -4,8 +4,8 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef string_lookups_fields[] = {
-    { "Id",      DbcFieldType::UInt32 },
-    { "String",  DbcFieldType::String },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "String", DbcFieldType::String },
 };
 
 static const DbcSchema schema_string_lookups = {

@@ -36,6 +36,10 @@ DescriptorPool::DescriptorPool(
     vk::DescriptorPoolCreateInfo pool_info{};
     pool_info.setPoolSizes(pool_sizes);
     pool_info.maxSets = max_sets;
+    // Required because we hand out vk::raii::DescriptorSet, whose destructor
+    // calls vkFreeDescriptorSets. Without this flag that call is a spec
+    // violation even when the pool is still alive.
+    pool_info.flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet;
 
     pool_ = device_.GetDevice().createDescriptorPool(pool_info);
 }
