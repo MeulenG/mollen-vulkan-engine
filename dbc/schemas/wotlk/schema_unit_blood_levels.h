@@ -4,7 +4,7 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef unit_blood_levels_fields[] = {
-    { "Id",        DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
     { "Violance1", DbcFieldType::UInt32 },
     { "Violance2", DbcFieldType::UInt32 },
     { "Violance3", DbcFieldType::UInt32 },

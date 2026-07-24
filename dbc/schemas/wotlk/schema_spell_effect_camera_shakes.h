@@ -4,10 +4,10 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef spell_effect_camera_shakes_fields[] = {
-    { "Id",             DbcFieldType::UInt32 },
-    { "CameraShake1",   DbcFieldType::UInt32 },
-    { "CameraShake2",   DbcFieldType::UInt32 },
-    { "CameraShake3",   DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "CameraShake1", DbcFieldType::UInt32 },
+    { "CameraShake2", DbcFieldType::UInt32 },
+    { "CameraShake3", DbcFieldType::UInt32 },
 };
 
 static const DbcSchema schema_spell_effect_camera_shakes = {

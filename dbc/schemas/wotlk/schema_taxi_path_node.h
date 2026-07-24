@@ -4,17 +4,17 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef taxi_path_node_fields[] = {
-    { "Id",             DbcFieldType::UInt32 },
-    { "PathID",         DbcFieldType::UInt32 },
-    { "NodeIndex",      DbcFieldType::UInt32 },
-    { "MapID",          DbcFieldType::UInt32 },
-    { "X",              DbcFieldType::Float  },
-    { "Y",              DbcFieldType::Float  },
-    { "Z",              DbcFieldType::Float  },
-    { "Flags",          DbcFieldType::UInt32 },
-    { "Delay",          DbcFieldType::UInt32 },
-    { "ArrivalEventID", DbcFieldType::UInt32 },
-    { "DepartureEventID", DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "PathID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "path" },
+    { "NodeIndex", DbcFieldType::UInt32 },
+    { "MapID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "map" },
+    { "X", DbcFieldType::Float },
+    { "Y", DbcFieldType::Float },
+    { "Z", DbcFieldType::Float },
+    { "Flags", DbcFieldType::UInt32, DbcSemantic::Bitmask, nullptr, "Classification" },
+    { "Delay", DbcFieldType::UInt32 },
+    { "ArrivalEventID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "arrivalevent" },
+    { "DepartureEventID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "departureevent" },
 };
 
 static const DbcSchema schema_taxi_path_node = {

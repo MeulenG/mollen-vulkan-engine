@@ -52,9 +52,9 @@ BlpTexture BlpLoader::loadDxt(const BlpHeader& header, const uint8_t* data) {
     tex.compressed = true;
 
     // Determine DXT format from alpha_type:
-    //   alpha_type 0 → DXT1 (BC1) — 8 bytes per 4x4 block, 0 or 1-bit alpha
-    //   alpha_type 1 → DXT3 (BC2) — 16 bytes per 4x4 block, explicit 4-bit alpha
-    //   alpha_type 7 → DXT5 (BC3) — 16 bytes per 4x4 block, interpolated alpha
+    //   alpha_type 0 → DXT1 (BC1) - 8 bytes per 4x4 block, 0 or 1-bit alpha
+    //   alpha_type 1 → DXT3 (BC2) - 16 bytes per 4x4 block, explicit 4-bit alpha
+    //   alpha_type 7 → DXT5 (BC3) - 16 bytes per 4x4 block, interpolated alpha
     //
     // BC1 block = 8 bytes:  2 RGB565 colors + 4x4 2-bit lookup table
     // BC2 block = 16 bytes: 4x4 4-bit alpha values + BC1 color block

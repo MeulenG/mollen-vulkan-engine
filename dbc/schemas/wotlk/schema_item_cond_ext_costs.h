@@ -4,10 +4,10 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef item_cond_ext_costs_fields[] = {
-    { "Id",             DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
     { "CondExtendedCost", DbcFieldType::UInt32 },
     { "ItemExtendedCostEntry", DbcFieldType::UInt32 },
-    { "ArenaSeason",    DbcFieldType::UInt32 },
+    { "ArenaSeason", DbcFieldType::UInt32 },
 };
 
 static const DbcSchema schema_item_cond_ext_costs = {

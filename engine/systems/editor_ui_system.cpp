@@ -24,12 +24,11 @@ void EditorUISystem::DrawViewport(Scene& scene, float delta_time) {
         uint32_t vp_h = static_cast<uint32_t>(viewport_size.y);
 
         if (vp_w != pm_offscreen.Width() || vp_h != pm_offscreen.Height()) {
-            // Free the old descriptor set BEFORE re-registering. ImGui's
-            // AddTexture allocates from a fixed-size internal pool; every
-            // resize that registers a new texture without freeing the old
-            // one leaks one slot. Once the pool fills up, AddTexture
-            // returns an uninitialized handle (0xcc... in debug) and the
-            // subsequent vkUpdateDescriptorSets fails.
+            // OffscreenPass::Resize calls waitIdle, so the old descriptor set
+            // is no longer referenced by any in-flight frame and we can free
+            // it. Without this we leak one ImGui descriptor per resize, and
+            // ImGui's 100-set pool exhausts after a minute or two of dragging
+            // - AddTexture then returns uninitialized memory (0xcc...).
             pm_imgui_ctx.UnregisterTexture(pm_viewport_tex);
             pm_viewport_tex = ImTextureID_Invalid;
 

@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [devel, master]
+  push:
+    branches: [devel, master]
+
+# Cancel older in-progress runs when a new commit lands on the
+# same PR or branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build (Windows, Debug)
+    runs-on: windows-latest
+
+    # 30 min upper bound.
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Installs the Vulkan SDK from LunarG.
+      -name: Install Vulkan SDK
+       uses: humbletim/install-vulkan-sdk@v1.2
+       with:
+         version: 1.4.309.0
+         cache: true
+
+      # The cache holds the BUILT artifacts too (build/_deps/*-build),
+      # not just the sources, so cache hits skip linking large libs
+      - name: Cache CMake _deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/_deps
+            build/CMakeCache.txt
+            build/CMakeFiles
+          key: ${{ runner.os }}-cmake-deps-${{ hashFiles('**/CMakeLists.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-cmake-deps-
+
+      - name: Configure
+        run: >
+          cmake -B build -S .
+          -DMVE_BUILD_DBC_TOOLS=OFF
+          -DMVE_ENABLE_PSQL=OFF
+          -DMVE_BUILD_TESTS=OFF
+
+      - name: Build
+        run: cmake --build build --config Debug --parallel
+
+      # Smoke-test: does the app executable actually exist after the
+      # build?
+      - name: Verify build outputs
+        shell: pwsh
+        run: |
+          $exe = "build/app/Debug/mollen-wow-tools.exe"
+          if (-not (Test-Path $exe)) {
+            Write-Error "Expected build output missing: $exe"
+            exit 1
+          }
+          Write-Host "Build artifact present:"
+          Get-Item $exe | Select-Object FullName, Length, LastWriteTime

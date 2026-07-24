@@ -4,9 +4,9 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef character_facial_hair_styles_fields[] = {
-    { "RaceID",    DbcFieldType::UInt32 },
-    { "SexID",     DbcFieldType::UInt32 },
-    { "VariationID", DbcFieldType::UInt32 },
+    { "RaceID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "chrraces" },
+    { "SexID", DbcFieldType::UInt32, DbcSemantic::Enum, "Sex" },
+    { "VariationID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "variation" },
     { "Geoset1",   DbcFieldType::UInt32 },
     { "Geoset2",   DbcFieldType::UInt32 },
     { "Geoset3",   DbcFieldType::UInt32 },

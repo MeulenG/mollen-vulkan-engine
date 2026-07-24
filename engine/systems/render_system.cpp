@@ -111,7 +111,7 @@ void RenderSystem::Init() {
     ground_config.pipeline_layout = *pm_ground_pipeline_layout;
     ground_config.color_attachment_format = pm_offscreen.ColorFormat();
     ground_config.depth_attachment_format = pm_offscreen.DepthFormat();
-    // Ground shader only consumes position — declare just that to avoid
+    // Ground shader only consumes position - declare just that to avoid
     // "Vertex attribute not consumed" validation warnings.
     ground_config.binding_descriptions = Vertex::GetBindingDescriptions();
     ground_config.attribute_descriptions = {

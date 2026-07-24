@@ -4,7 +4,7 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef terrain_type_sounds_fields[] = {
-    { "Id",  DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
 };
 
 static const DbcSchema schema_terrain_type_sounds = {

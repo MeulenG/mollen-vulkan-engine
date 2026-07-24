@@ -1,4 +1,5 @@
 #include "imgui_context.h"
+#include "editor_style.h"
 
 #include <stdexcept>
 
@@ -15,7 +16,7 @@ ImGuiContext::~ImGuiContext() {
 }
 
 void ImGuiContext::initImGui(Window& window, Device& device, vk::Format swapchain_format) {
-    // ImGui's descriptor pool — covers all binding types ImGui internally uses.
+    // ImGui's descriptor pool - covers all binding types ImGui internally uses.
     // The `eFreeDescriptorSet` flag is required because ImGui frees descriptor
     // sets (e.g., when textures are unregistered).
     std::vector<vk::DescriptorPoolSize> pool_sizes = {
@@ -45,11 +46,11 @@ void ImGuiContext::initImGui(Window& window, Device& device, vk::Format swapchai
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
-    ImGui::StyleColorsDark();
-    ImGuiStyle& style = ImGui::GetStyle();
-    style.WindowRounding = 4.0f;
-    style.FrameRounding = 2.0f;
-    style.GrabRounding = 2.0f;
+    // Apply editor theme + load Inter / Fork Awesome merged atlas. Both
+    // must run before ImGui_ImplVulkan_Init, which uploads the atlas to
+    // GPU memory and bakes the font texture.
+    editor_style::Apply(*ImGui::GetCurrentContext());
+    editor_style::LoadFonts(*io.Fonts);
 
     ImGui_ImplGlfw_InitForVulkan(window.GetGLFWWindow(), true);
 
@@ -97,9 +98,9 @@ ImTextureID ImGuiContext::RegisterTexture(vk::Sampler sampler, vk::ImageView vie
     return (ImTextureID)ds;
 }
 
-void ImGuiContext::UnregisterTexture(ImTextureID id) {
-    if (id == ImTextureID_Invalid) return;
-    ImGui_ImplVulkan_RemoveTexture(reinterpret_cast<VkDescriptorSet>(id));
+void ImGuiContext::UnregisterTexture(ImTextureID tex) {
+    if (tex == ImTextureID_Invalid) return;
+    ImGui_ImplVulkan_RemoveTexture(reinterpret_cast<VkDescriptorSet>(tex));
 }
 
 } // namespace mve

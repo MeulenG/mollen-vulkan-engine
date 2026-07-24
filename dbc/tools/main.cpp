@@ -11,9 +11,11 @@
 #include "dbc_writer.h"
 #include "schema_registry.h"
 #include "dbc_generator.h"
+#ifdef MVE_ENABLE_PSQL
 #include "db_config.h"
 #include "psql_connector.h"
 #include "dbc_db_import.h"
+#endif
 
 namespace fs = std::filesystem;
 
@@ -282,6 +284,7 @@ int main(int argc, char* argv[]) {
                 printf("Error: --export requires an output directory\n");
                 return 1;
             }
+#ifdef MVE_ENABLE_PSQL
         } else if (strcmp(argv[i], "--database") == 0) {
             if (i + 1 < argc) {
                 db_config_path = argv[++i];
@@ -289,6 +292,7 @@ int main(int argc, char* argv[]) {
                 printf("Error: --database requires a config file path\n");
                 return 1;
             }
+#endif
         } else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0) {
             verbose = true;
         } else if (!data_dir) {
@@ -368,6 +372,7 @@ int main(int argc, char* argv[]) {
     printf("Resolved %zu DBC files.\n", dbc_data.size());
 
     // Connect to database if requested
+#ifdef MVE_ENABLE_PSQL
     psql_connector db;
     if (db_config_path) {
         DbConfig cfg;
@@ -381,6 +386,7 @@ int main(int argc, char* argv[]) {
         }
         printf("Connected to database: %s\n", cfg.dbname.c_str());
     }
+#endif
 
     bool single_target = (target_dbc != nullptr);
 
@@ -422,6 +428,7 @@ int main(int argc, char* argv[]) {
                 }
             } else if (generate_dir) {
                 GenerateHeader(dbc, schema, generate_dir);
+#ifdef MVE_ENABLE_PSQL
             } else if (db.IsConnected()) {
                 if (schema) {
                     if (DbCreateTable(db, schema) && DbImportDbc(db, dbc, schema, false)) {
@@ -430,6 +437,7 @@ int main(int argc, char* argv[]) {
                 } else {
                     printf("  No schema available, skipping database import\n");
                 }
+#endif
             } else {
                 DumpDbcDetailed(dbc, schema);
             }
@@ -503,10 +511,12 @@ int main(int argc, char* argv[]) {
             }
         } else if (generate_dir && res.warning.empty()) {
             res.generated = GenerateHeader(dbc, schema, generate_dir, !verbose);
+#ifdef MVE_ENABLE_PSQL
         } else if (db.IsConnected() && schema && res.warning.empty()) {
             if (DbCreateTable(db, schema)) {
                 res.imported = DbImportDbc(db, dbc, schema, !verbose);
             }
+#endif
         }
 
         results.push_back(res);
@@ -534,6 +544,7 @@ int main(int argc, char* argv[]) {
         if (export_dir) {
             printf("Output: %s\n", export_dir);
         }
+#ifdef MVE_ENABLE_PSQL
     } else if (db.IsConnected()) {
         uint32_t imp_ok = 0, imp_skip = 0;
         for (const auto& r : results) {
@@ -542,6 +553,7 @@ int main(int argc, char* argv[]) {
         }
         printf("Imported %u DBC tables, %u skipped\n", imp_ok, imp_skip);
         db.Disconnect();
+#endif
     } else {
         printf("  %-35s %8s %6s %8s  %s\n", "Name", "Records", "Fields", "RecSize", "Schema");
         printf("  %-35s %8s %6s %8s  %s\n",
