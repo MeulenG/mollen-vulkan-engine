@@ -380,12 +380,15 @@ void EditorUISystem::DrawViewport(Scene& scene, float delta_time) {
 
         if (active_cam) {
             float aspect = viewport_size.x / viewport_size.y;
-            // Far plane sized for multi-tile terrain. A single ADT tile is
-            // ~533 yards on a side, the camera orbits at ~800 yards, so the
-            // back of even a single tile already pushed past the old 1000
-            // far plane (tile diagonal / 2 + orbit ~= 1180). R3 will load
-            // a 3x3 grid spanning ~1600 yards, so 50000 leaves headroom.
-            active_cam->SetPerspective(45.0f, aspect, 0.1f, 50000.0f);
+            // Far plane sized for a 5x5 tile preload viewed from orbit
+            // 1500. Tile diagonal is ~754 yards, the loaded 5x5 region
+            // spans ~2700 yards. Camera-to-far-corner at orbit 1500 is
+            // roughly 2500 yards. 3000 covers the visible area without
+            // wasting depth precision on tiles that aren't loaded.
+            //
+            // Combined with distance fog (see scene UBO), the visible
+            // far cutoff is hidden by the fog gradient.
+            active_cam->SetPerspective(45.0f, aspect, 1.0f, 3000.0f);
         }
     }
     ImGui::End();

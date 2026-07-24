@@ -3,10 +3,66 @@
 #include "../scene/components/mesh_component.h"
 #include "../scene/components/material_component.h"
 #include "../scene/components/terrain_component.h"
+#include "../scene/components/terrain_tile_component.h"
 #include "../scene/components/doodad_instance_component.h"
 #include "../scene/terrain_mesh.h"
 
+#include <array>
 #include <string>
+
+namespace {
+
+// 6 frustum planes (left, right, bottom, top, near, far) extracted
+// from a column-major view-projection matrix per the Gribb/Hartmann
+// 2001 paper. Each plane is (n.x, n.y, n.z, d) where n is the inward
+// normal and `dot(n, p) + d >= 0` means p is on or inside the plane.
+std::array<glm::vec4, 6> ExtractFrustumPlanes(const glm::mat4& vp) {
+    std::array<glm::vec4, 6> planes;
+    // Left  = row4 + row1
+    planes[0] = glm::vec4{
+        vp[0][3] + vp[0][0], vp[1][3] + vp[1][0],
+        vp[2][3] + vp[2][0], vp[3][3] + vp[3][0]};
+    // Right = row4 - row1
+    planes[1] = glm::vec4{
+        vp[0][3] - vp[0][0], vp[1][3] - vp[1][0],
+        vp[2][3] - vp[2][0], vp[3][3] - vp[3][0]};
+    // Bottom = row4 + row2
+    planes[2] = glm::vec4{
+        vp[0][3] + vp[0][1], vp[1][3] + vp[1][1],
+        vp[2][3] + vp[2][1], vp[3][3] + vp[3][1]};
+    // Top = row4 - row2
+    planes[3] = glm::vec4{
+        vp[0][3] - vp[0][1], vp[1][3] - vp[1][1],
+        vp[2][3] - vp[2][1], vp[3][3] - vp[3][1]};
+    // Near = row4 + row3
+    planes[4] = glm::vec4{
+        vp[0][3] + vp[0][2], vp[1][3] + vp[1][2],
+        vp[2][3] + vp[2][2], vp[3][3] + vp[3][2]};
+    // Far = row4 - row3
+    planes[5] = glm::vec4{
+        vp[0][3] - vp[0][2], vp[1][3] - vp[1][2],
+        vp[2][3] - vp[2][2], vp[3][3] - vp[3][2]};
+    for (auto& p : planes) {
+        float len = glm::length(glm::vec3(p));
+        if (len > 0.0f) p /= len;
+    }
+    return planes;
+}
+
+// Sphere vs frustum. Returns false if the sphere is fully outside any
+// of the 6 planes; true otherwise (inside or intersecting). The bias
+// (radius) is added so a sphere straddling a plane still counts as
+// visible.
+bool SphereInFrustum(const std::array<glm::vec4, 6>& planes,
+                      const glm::vec3& center, float radius) {
+    for (const auto& p : planes) {
+        float d = glm::dot(glm::vec3(p), center) + p.w;
+        if (d < -radius) return false;
+    }
+    return true;
+}
+
+}  // namespace
 
 namespace mve {
 
@@ -18,6 +74,14 @@ RenderSystem::RenderSystem(Device& device, OffscreenPass& offscreen)
     pm_scene_data.pm_ambient = 0.15f;
     pm_scene_data.pm_light_color = glm::vec3{1.0f};
     pm_scene_data.pm_light_intensity = 0.85f;
+    // Fog tuned to the 3000-yard far plane. Geometry past 2400 yards
+    // starts to fade; at 3000 it's fully fog-colored. The sky-blue tint
+    // matches the background gradient so the fade looks like atmosphere
+    // rather than a hard cutoff.
+    pm_scene_data.pm_fog_color = glm::vec3{0.55f, 0.62f, 0.72f};
+    pm_scene_data.pm_fog_start = 1200.0f;
+    pm_scene_data.pm_fog_end   = 2800.0f;
+    pm_scene_data.pm_camera_pos = glm::vec3{0.0f};
 }
 
 void RenderSystem::Init() {
@@ -169,6 +233,24 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
                            const vk::raii::CommandBuffer& cmd) {
     pm_offscreen.BeginRendering(cmd);
 
+    // Stamp the camera position into the UBO so the fragment shaders'
+    // fog math has it. Host-coherent + host-visible memory, so the
+    // write is visible to the GPU immediately - no flush required.
+    glm::vec3 cam_pos = active_camera.GetPosition();
+    pm_scene_data.pm_camera_pos = cam_pos;
+    pm_scene_ubo->Write(&pm_scene_data, sizeof(SceneUBO));
+
+    // Extract frustum planes once - reused for terrain tile culling
+    // and the doodad group bounding-sphere test below.
+    glm::mat4 view_proj_for_cull =
+        active_camera.GetProjectionMatrix() * active_camera.GetViewMatrix();
+    auto frustum = ExtractFrustumPlanes(view_proj_for_cull);
+
+    // Doodad draw radius. Past this distance a group is skipped
+    // entirely. Slightly less than the fog end so anything we draw
+    // still contributes a visible (if faded) pixel.
+    constexpr float kDoodadCullDistance = 2600.0f;
+
     // Background gradient
     pm_bg_pipeline->Bind(cmd);
     cmd.draw(3, 1, 0, 0);
@@ -189,13 +271,20 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
 
     // Terrain entities. Drawn before model entities so the depth buffer
     // has terrain depth written first; model entities (doodads in R4)
-    // then test against it. The two pipelines use different descriptor
-    // set layouts so we re-bind a fresh set per terrain entity.
+    // then test against it. Frustum culled by TerrainTileComponent's
+    // centroid + radius (sphere test). At orbit 1500 with a 5x5 preload,
+    // roughly 4-8 of the 25 tiles are visible in any direction - the
+    // cull skips ~70% of terrain draws.
     pm_terrain_pipeline->Bind(cmd);
-    scene.Each<TransformComponent, MeshComponent, TerrainComponent>(
-        [&](Entity&, TransformComponent& transform, MeshComponent& mesh_comp, TerrainComponent& terrain) {
+    scene.Each<TransformComponent, MeshComponent, TerrainComponent, TerrainTileComponent>(
+        [&](Entity&, TransformComponent& transform, MeshComponent& mesh_comp,
+            TerrainComponent& terrain, TerrainTileComponent& tile) {
             if (!mesh_comp.pm_visible || !mesh_comp.pm_mesh) return;
             if (!terrain.pm_descriptor_set) return;
+
+            if (!SphereInFrustum(frustum, tile.pm_centroid_engine, tile.pm_radius)) {
+                return;
+            }
 
             cmd.bindDescriptorSets(
                 vk::PipelineBindPoint::eGraphics,
@@ -205,7 +294,7 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
             glm::mat4 model = transform.ModelMatrix();
             PushConstants push{};
             push.pm_model = model;
-            push.pm_mvp = active_camera.GetProjectionMatrix() * active_camera.GetViewMatrix() * model;
+            push.pm_mvp = view_proj_for_cull * model;
             cmd.pushConstants<PushConstants>(
                 *pm_terrain_pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, push);
 
@@ -254,14 +343,28 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
     // (Transform = identity), and the per-MDDF-placement TRS lives in
     // the SSBO that the vertex shader reads via gl_InstanceIndex. So
     // push.pm_model stays identity and push.pm_mvp = proj * view.
-    glm::mat4 view_proj =
-        active_camera.GetProjectionMatrix() * active_camera.GetViewMatrix();
+    //
+    // Two-stage culling per group:
+    //   1. Distance check from camera. Groups whose nearest possible
+    //      instance is past kDoodadCullDistance are skipped entirely.
+    //   2. Frustum sphere test on the group's coarse bbox.
+    // Both bounds are loose (a group spanning many tiles has a huge
+    // sphere), so the cull is conservative - cheap CPU, no correctness
+    // risk.
     scene.Each<TransformComponent, MeshComponent, DoodadInstanceComponent>(
         [&](Entity&, TransformComponent&, MeshComponent& mesh_comp,
             DoodadInstanceComponent& inst) {
             if (!mesh_comp.pm_visible || !mesh_comp.pm_mesh) return;
             if (inst.pm_instance_count == 0) return;
             if (!inst.pm_descriptor_set) return;
+
+            float dist_to_nearest =
+                glm::length(inst.pm_bbox_center - cam_pos) - inst.pm_bbox_radius;
+            if (dist_to_nearest > kDoodadCullDistance) return;
+
+            if (!SphereInFrustum(frustum, inst.pm_bbox_center, inst.pm_bbox_radius)) {
+                return;
+            }
 
             cmd.bindDescriptorSets(
                 vk::PipelineBindPoint::eGraphics,
@@ -270,7 +373,7 @@ void RenderSystem::Render(Scene& scene, const Camera& active_camera,
 
             PushConstants push{};
             push.pm_model = glm::mat4{1.0f};
-            push.pm_mvp   = view_proj;
+            push.pm_mvp   = view_proj_for_cull;
             cmd.pushConstants<PushConstants>(
                 *pm_model_pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, push);
 
