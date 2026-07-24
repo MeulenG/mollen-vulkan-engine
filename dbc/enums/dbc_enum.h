@@ -3,7 +3,7 @@
 
 #include <cstdint>
 
-// A single (value, label) pair — e.g. {0, "Male"} for the Sex enum.
+// A single (value, label) pair - e.g. {0, "Male"} for the Sex enum.
 //
 // Values are int32 so we can encode signed integer codes too (e.g. PowerType
 // uses -2 for Health). DBC fields that hold these values may be UInt32 in

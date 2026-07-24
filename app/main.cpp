@@ -56,7 +56,7 @@ int main() {
 
         mve::DbcRegistry dbc_registry{"assets/dbc"};
 
-        // Best-effort connect — failure leaves the browser in file-only mode.
+        // Best-effort connect - failure leaves the browser in file-only mode.
         mve::DbConnection db;
         if (!db.Connect("db_config.toml")) {
             std::cerr << "DB connect: " << db.LastError() << "\n";

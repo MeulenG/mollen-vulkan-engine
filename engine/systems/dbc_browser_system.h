@@ -14,10 +14,10 @@ namespace mve {
 //
 // Two source modes, chosen per-DBC at display time:
 //
-//   - PSQL mode    — DbConnection is connected AND the table exists in the
+//   - PSQL mode    - DbConnection is connected AND the table exists in the
 //                    public schema. Rows come from SELECT, cells are
 //                    editable, edits commit via UPDATE.
-//   - file mode    — fallback for any other case (no connection, table
+//   - file mode    - fallback for any other case (no connection, table
 //                    missing, schema mismatch, no schema registered).
 //                    Rows come from the .dbc file via DbcRegistry, cells
 //                    are read-only.
@@ -83,7 +83,7 @@ private:
     int pm_max_rows = 1000;
 
     // Cache of fetched PSQL tables, keyed by DBC name (NOT lowercased table
-    // name — keeps lookups consistent with the registry).
+    // name - keeps lookups consistent with the registry).
     std::unordered_map<std::string, DbConnection::Table> pm_psql_cache;
 
     // Foreign-key label cache. Keyed by target SQL table name (lowercase).
@@ -123,7 +123,7 @@ private:
     struct LocaleEditState {
         std::string dbc;
         int64_t row_id = 0;
-        std::string hint;          // e.g. "Name" — shared across cluster members
+        std::string hint;          // e.g. "Name" - shared across cluster members
 
         // Parallel arrays: one entry per locale, matching the schema field order.
         std::vector<std::string> field_names;   // e.g. "Name_enUS"

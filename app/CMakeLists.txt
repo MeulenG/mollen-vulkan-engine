@@ -61,7 +61,7 @@ if(MVE_ENABLE_PSQL AND WIN32)
             pqxx.dll libpq.dll
             libssl-3-x64.dll libcrypto-3-x64.dll)
 
-        # Pick out the ones that exist in BOTH dirs — anything missing from
+        # Pick out the ones that exist in BOTH dirs - anything missing from
         # either side is silently skipped to keep the build green if vcpkg
         # ships a slimmer config than expected.
         set(_copy_args "")
@@ -76,7 +76,7 @@ if(MVE_ENABLE_PSQL AND WIN32)
         # We use a custom target with ALL (rather than add_custom_command's
         # POST_BUILD form) so the copy is checked on every build, even when
         # the .exe didn't relink. POST_BUILD only fires when MSBuild re-runs
-        # the link step — meaning if the DLLs are deleted externally (IDE
+        # the link step - meaning if the DLLs are deleted externally (IDE
         # clean, git clean -fdx, antivirus, etc.) and the .exe is still
         # up-to-date, the next incremental build won't restore them and
         # launching the .exe fails with "pqxx.dll not found".

@@ -62,7 +62,7 @@ void DbcFormSystem::RefreshRow() {
     std::string table = DbcTableName(pm_dbc_name.c_str());
 
     // We need both the column ordering and the row values. FetchRow gives
-    // us values but the row alone doesn't expose its columns — fetch the
+    // us values but the row alone doesn't expose its columns - fetch the
     // whole table descriptor once to learn columns, then just the one row.
     DbConnection::Table tbl;
     if (!pm_db.FetchTable(table, tbl)) {
@@ -88,6 +88,7 @@ void DbcFormSystem::RefreshRow() {
 void DbcFormSystem::Update() {
     // Always begin the window so docking layouts stay stable. When closed
     // we just show a friendly placeholder.
+    ImGui::SetNextWindowSize(ImVec2(640, 480), ImGuiCond_FirstUseEver);
     ImGui::Begin("Form");
 
     if (!IsOpen()) {
@@ -116,7 +117,7 @@ void DbcFormSystem::Update() {
         ImGui::Separator();
     }
 
-    // Collect distinct categories in field order — same approach as the
+    // Collect distinct categories in field order - same approach as the
     // browser's section toggles. Stable order matters for muscle memory.
     std::vector<const char*> categories;
     std::unordered_set<std::string> seen;
@@ -151,7 +152,7 @@ void DbcFormSystem::DrawHeader(const DbcSchema* schema) {
 
 void DbcFormSystem::DrawSection(const DbcSchema* schema, const char* category) {
     // Default-open Identity / Cast / first-effect-style sections; everything
-    // else starts collapsed. Picks "important" by name — cheap heuristic.
+    // else starts collapsed. Picks "important" by name - cheap heuristic.
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_None;
     if (!std::strcmp(category, "Identity") ||
         !std::strcmp(category, "Cast")     ||
@@ -216,7 +217,7 @@ bool DbcFormSystem::DrawFieldRow(const DbcSchema* schema,
 
     // v1 value editor: a single InputText that commits on focus loss.
     // Future enhancement: per-semantic widgets (combo, checkbox, etc.)
-    // — same dispatch logic as the browser's table cells.
+    // - same dispatch logic as the browser's table cells.
     constexpr size_t kBufCap = 1024;
     std::string& buf = pm_edit_buffers[db_col];
     if (buf.capacity() < kBufCap) buf.reserve(kBufCap);

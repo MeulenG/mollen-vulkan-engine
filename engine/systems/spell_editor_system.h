@@ -11,7 +11,7 @@
 
 namespace mve {
 
-// Curated Spell.dbc editor — the friendly "spell card" view (vs. the generic
+// Curated Spell.dbc editor - the friendly "spell card" view (vs. the generic
 // table in DbcBrowserSystem). Optimized for the workflow "find Fireball rank
 // 3, change a value, save".
 //
@@ -39,7 +39,7 @@ private:
     void DrawFinder();
     void DrawDetail();
 
-    // Convenience accessors over the cached row data — return defaults on miss.
+    // Convenience accessors over the cached row data - return defaults on miss.
     std::string GetCell(size_t row_index, int col_index) const;
     int64_t GetCellInt(size_t row_index, int col_index) const;
 
@@ -67,7 +67,7 @@ private:
         int rank        = -1;
         int description = -1;
         int icon_id     = -1;
-        // Mana / power costs — Spell.dbc uses several columns; non-zero
+        // Mana / power costs - Spell.dbc uses several columns; non-zero
         // entries are summed/combined at runtime by the WoW client.
         int mana_cost            = -1;
         int mana_cost_percentage = -1;
@@ -75,7 +75,7 @@ private:
         int mana_per_second      = -1;
         int mana_per_second_per_level = -1;
         int power_type           = -1;
-        // Timing FKs — small lookup DBCs.
+        // Timing FKs - small lookup DBCs.
         int cast_time_index = -1;
         int range_index     = -1;
         int duration_index  = -1;
@@ -85,14 +85,14 @@ private:
         int spell_family = -1;
         int max_targets  = -1;
         int proc_chance  = -1;
-        // Effects (slot 1 — slot 2/3 added in next branch).
+        // Effects (slot 1 - slot 2/3 added in next branch).
         int effect_1                = -1;
         int effect_base_points_1    = -1;
         int effect_die_sides_1      = -1;
         int effect_amplitude_1      = -1;  // tick period in ms for periodic effects
         int effect_radius_index_1   = -1;
         // Per-effect (we read 2/3 for description token substitution even though
-        // we don't render their section yet — $s2, $o3 might be referenced).
+        // we don't render their section yet - $s2, $o3 might be referenced).
         int effect_2                = -1;
         int effect_base_points_2    = -1;
         int effect_die_sides_2      = -1;
@@ -103,8 +103,23 @@ private:
         int effect_die_sides_3      = -1;
         int effect_amplitude_3      = -1;
         int effect_radius_index_3   = -1;
+
+        // Attributes - 8 bitmask columns total.
+        int attributes_attr[8] = { -1, -1, -1, -1, -1, -1, -1, -1 };
+
+        // Reagents - 8 slots of (item id, count).
+        int reagent[8]       = { -1, -1, -1, -1, -1, -1, -1, -1 };
+        int reagent_count[8] = { -1, -1, -1, -1, -1, -1, -1, -1 };
+
+        // Cooldown / category
+        int category = -1;
     };
     Cols pm_cols;
+
+    // ---- Cooldown category index ----
+    // category_id -> list of row indices in pm_spells that share it. Built
+    // once at load time so the "shares cooldown with" lookup is O(1).
+    std::unordered_map<int64_t, std::vector<int>> pm_category_to_rows;
 
     // ---- FK lookup caches ----
     // Each maps the row's id to a small struct of resolved values. Loaded
@@ -121,7 +136,7 @@ private:
     bool pm_fk_loaded = false;
     void EnsureFkTablesLoaded();
 
-    // Resolvers — return formatted display strings; empty if id unknown.
+    // Resolvers - return formatted display strings; empty if id unknown.
     std::string ResolveCastTime(int64_t id) const;
     std::string ResolveRange(int64_t id) const;
     std::string ResolveDuration(int64_t id) const;
@@ -138,7 +153,11 @@ private:
     void DrawIdentitySection(int64_t spell_id, size_t row_idx);
     void DrawDescriptionSection(int64_t spell_id, size_t row_idx);
     void DrawCostCastSection(int64_t spell_id, size_t row_idx);
-    void DrawEffect1Section(int64_t spell_id, size_t row_idx);
+    // Generic effect renderer: slot = 0 / 1 / 2 corresponds to Effect 1/2/3.
+    void DrawEffectSection(int slot, int64_t spell_id, size_t row_idx);
+    void DrawAttributesSection(int64_t spell_id, size_t row_idx);
+    void DrawReagentsSection(size_t row_idx);
+    void DrawCooldownDetailsSection(size_t row_idx);
 
     // Helper used by DrawDetail's per-row label/InputText editor pattern.
     // Returns true if a commit happened.
@@ -146,7 +165,7 @@ private:
                        int64_t spell_id, size_t row_idx,
                        DbcFieldType type);
 
-    // Render a value-only display cell ("3.0 sec", "35 yd") — non-editable
+    // Render a value-only display cell ("3.0 sec", "35 yd") - non-editable
     // because resolving back to an FK index is non-trivial; for editing the
     // raw index, expose the index field separately.
     void DrawResolvedField(const char* label, const std::string& value,

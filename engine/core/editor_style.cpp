@@ -198,7 +198,7 @@ void LoadFonts(::ImFontAtlas& atlas) {
         atlas.AddFontFromFileTTF(icons.c_str(), kIconPixelSize, &cfg, kIconRange);
     }
 
-    atlas.Build();
+    // atlas.Build(); deprecated call
 }
 
 } // namespace mve::editor_style

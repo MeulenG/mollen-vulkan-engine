@@ -22,7 +22,7 @@ enum class DbcFieldType {
 
 // Semantic annotation: what does this field MEAN, beyond its storage type?
 //
-// Editors and tools dispatch on this to render the right widget — checkbox
+// Editors and tools dispatch on this to render the right widget - checkbox
 // for Boolean, dropdown for Enum, picker for ForeignKey, etc. Storage and
 // SQL serialization are unaffected; this only governs presentation and
 // human-meaningful editing affordances.

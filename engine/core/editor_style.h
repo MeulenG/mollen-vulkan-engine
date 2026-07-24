@@ -1,7 +1,7 @@
 #ifndef MVE_EDITOR_STYLE_H
 #define MVE_EDITOR_STYLE_H
 
-// Forward declares — fully-qualified so they don't collide with `mve::ImGuiContext`
+// Forward declares - fully-qualified so they don't collide with `mve::ImGuiContext`
 // (the project's wrapper class in engine/core/imgui_context.h).
 struct ImGuiContext;
 struct ImFontAtlas;

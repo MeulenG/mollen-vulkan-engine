@@ -3,7 +3,7 @@
 
 #include "dbc_enum.h"
 
-// Item material — drives the audio cue when items are picked up / dropped
+// Item material - drives the audio cue when items are picked up / dropped
 // and the equip animation in some cases. Item.dbc and ItemDisplayInfo.dbc.
 static const DbcEnumValue material_values[] = {
     { -1, "None"        },

@@ -22,7 +22,7 @@ namespace mve {
 // registers it with ImGui, and returns an `ImTextureID` the UI can drop into
 // `ImGui::Image(...)`.
 //
-// Failures are sticky and silent — a missing icon returns `ImTextureID_Invalid`
+// Failures are sticky and silent - a missing icon returns `ImTextureID_Invalid`
 // and the cache remembers the miss so we don't retry every frame.
 //
 // Lifetime: the cache owns its Images, so all `ImTextureID`s remain valid for
@@ -39,11 +39,11 @@ public:
 
     // Returns a texture for the given DBC-style path
     // (e.g. "Interface\\Icons\\Spell_Fire_FlameBolt"). Path is normalized
-    // internally — case-insensitive, .blp appended if missing. Returns
+    // internally - case-insensitive, .blp appended if missing. Returns
     // `ImTextureID_Invalid` if the file is missing or fails to decode.
     ImTextureID Get(const std::string& dbc_path);
 
-    // Number of icons currently loaded — useful for telemetry / debug.
+    // Number of icons currently loaded - useful for telemetry / debug.
     size_t LoadedCount() const { return pm_entries.size(); }
 
 private:
