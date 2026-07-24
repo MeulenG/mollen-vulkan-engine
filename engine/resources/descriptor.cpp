@@ -35,6 +35,7 @@ DescriptorPool::DescriptorPool(
     : device_{device} {
 
     vk::DescriptorPoolCreateInfo pool_info{};
+    pool_info.flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet;
     pool_info.setPoolSizes(pool_sizes);
     pool_info.maxSets = max_sets;
     pool_info.flags = flags;
