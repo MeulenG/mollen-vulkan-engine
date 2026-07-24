@@ -24,6 +24,7 @@ add_library(mollen-engine STATIC
     core/imgui_context.cpp
     formats/blp_loader.cpp
     formats/m2_loader.cpp
+    db/db_connection.cpp
 )
 
 target_include_directories(mollen-engine PUBLIC

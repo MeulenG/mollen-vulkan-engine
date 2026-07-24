@@ -97,4 +97,9 @@ ImTextureID ImGuiContext::RegisterTexture(vk::Sampler sampler, vk::ImageView vie
     return (ImTextureID)ds;
 }
 
+void ImGuiContext::UnregisterTexture(ImTextureID tex) {
+    if (tex == ImTextureID_Invalid) return;
+    ImGui_ImplVulkan_RemoveTexture(reinterpret_cast<VkDescriptorSet>(tex));
+}
+
 } // namespace mve

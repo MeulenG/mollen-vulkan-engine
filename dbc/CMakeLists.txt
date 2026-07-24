@@ -3,6 +3,7 @@ set(DBC_SOURCES
     dbc_writer.cpp
     schema_registry.cpp
     dbc_generator.cpp
+    dbc_naming.cpp
 )
 
 if(MVE_ENABLE_PSQL)
