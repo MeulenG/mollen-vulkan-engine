@@ -4,16 +4,16 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef sound_emitters_fields[] = {
-    { "Id",            DbcFieldType::UInt32 },
-    { "PositionX",     DbcFieldType::Float  },
-    { "PositionY",     DbcFieldType::Float  },
-    { "PositionZ",     DbcFieldType::Float  },
-    { "DirectionX",    DbcFieldType::Float  },
-    { "DirectionY",    DbcFieldType::Float  },
-    { "DirectionZ",    DbcFieldType::Float  },
-    { "SoundEntriesID", DbcFieldType::UInt32 },
-    { "MapID",         DbcFieldType::UInt32 },
-    { "Name",          DbcFieldType::String },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "PositionX", DbcFieldType::Float },
+    { "PositionY", DbcFieldType::Float },
+    { "PositionZ", DbcFieldType::Float },
+    { "DirectionX", DbcFieldType::Float },
+    { "DirectionY", DbcFieldType::Float },
+    { "DirectionZ", DbcFieldType::Float },
+    { "SoundEntriesID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "soundentries", "Visuals" },
+    { "MapID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "map" },
+    { "Name", DbcFieldType::String, DbcSemantic::Default, nullptr, "Identity" },
 };
 
 static const DbcSchema schema_sound_emitters = {

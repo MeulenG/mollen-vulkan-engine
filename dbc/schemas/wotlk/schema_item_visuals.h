@@ -4,12 +4,12 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef item_visuals_fields[] = {
-    { "Id",     DbcFieldType::UInt32 },
-    { "Slot1",  DbcFieldType::UInt32 },
-    { "Slot2",  DbcFieldType::UInt32 },
-    { "Slot3",  DbcFieldType::UInt32 },
-    { "Slot4",  DbcFieldType::UInt32 },
-    { "Slot5",  DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "Slot1", DbcFieldType::UInt32 },
+    { "Slot2", DbcFieldType::UInt32 },
+    { "Slot3", DbcFieldType::UInt32 },
+    { "Slot4", DbcFieldType::UInt32 },
+    { "Slot5", DbcFieldType::UInt32 },
 };
 
 static const DbcSchema schema_item_visuals = {
