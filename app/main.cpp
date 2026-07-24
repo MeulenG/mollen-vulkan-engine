@@ -13,6 +13,7 @@
 #include "systems/animation_system.h"
 #include "systems/editor_ui_system.h"
 #include "systems/dbc_browser_system.h"
+#include "systems/dbc_form_system.h"
 
 #include <imgui.h>
 
@@ -60,6 +61,8 @@ int main() {
         }
 
         mve::DbcBrowserSystem dbc_browser{dbc_registry, db};
+        mve::DbcFormSystem dbc_form{dbc_registry, db};
+        dbc_browser.SetFormSystem(&dbc_form);
 
         // Editor camera
         auto* cam_entity = scene.CreateEntity("EditorCamera");
@@ -93,6 +96,7 @@ int main() {
             // Systems
             editor_ui.Update(scene, render_system, dt);
             dbc_browser.Update();
+            dbc_form.Update();
             animation_system.Update(scene, dt);
             render_system.UpdateSceneUBO();
             scene.FlushDestroyed();

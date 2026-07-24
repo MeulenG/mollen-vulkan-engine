@@ -561,6 +561,17 @@ void DbcBrowserSystem::DrawPsqlTable(DbcRegistry::Entry& entry,
                                  v.db_column, static_cast<int>(cv));
                 }
 
+                // Right-click anywhere in the row -> "Open in form" gesture.
+                // The popup attaches to the last-drawn item, so it's per-cell;
+                // any cell of the row works as a trigger.
+                if (pm_form && row_id > 0 &&
+                    ImGui::BeginPopupContextItem("##row_ctx")) {
+                    if (ImGui::MenuItem("Open row in form editor")) {
+                        pm_form->Open(pm_selected, row_id);
+                    }
+                    ImGui::EndPopup();
+                }
+
                 ImGui::PopID();
                 ImGui::PopID();
             }

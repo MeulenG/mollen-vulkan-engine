@@ -13,6 +13,7 @@ add_library(mollen-engine STATIC
     systems/animation_system.cpp
     systems/editor_ui_system.cpp
     systems/dbc_browser_system.cpp
+    systems/dbc_form_system.cpp
     scene/mesh.cpp
     scene/camera.cpp
     scene/entity.cpp
