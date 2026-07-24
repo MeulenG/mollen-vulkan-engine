@@ -4,10 +4,10 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef spell_duration_fields[] = {
-    { "Id",               DbcFieldType::UInt32 },
-    { "Duration",         DbcFieldType::Int32  },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "Duration", DbcFieldType::Int32 },
     { "DurationPerLevel", DbcFieldType::UInt32 },
-    { "MaxDuration",      DbcFieldType::Int32  },
+    { "MaxDuration", DbcFieldType::Int32 },
 };
 
 static const DbcSchema schema_spell_duration = {

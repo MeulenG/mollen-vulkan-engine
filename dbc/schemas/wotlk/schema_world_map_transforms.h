@@ -4,16 +4,16 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef world_map_transforms_fields[] = {
-    { "Id",              DbcFieldType::UInt32 },
-    { "MapID",           DbcFieldType::UInt32 },
-    { "RegionMinX",      DbcFieldType::Float  },
-    { "RegionMinY",      DbcFieldType::Float  },
-    { "RegionMaxX",      DbcFieldType::Float  },
-    { "RegionMaxY",      DbcFieldType::Float  },
-    { "NewMapID",        DbcFieldType::UInt32 },
-    { "RegionOffsetX",   DbcFieldType::Float  },
-    { "RegionOffsetY",   DbcFieldType::Float  },
-    { "NewDungeonMapID", DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "MapID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "map" },
+    { "RegionMinX", DbcFieldType::Float },
+    { "RegionMinY", DbcFieldType::Float },
+    { "RegionMaxX", DbcFieldType::Float },
+    { "RegionMaxY", DbcFieldType::Float },
+    { "NewMapID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "newmap" },
+    { "RegionOffsetX", DbcFieldType::Float },
+    { "RegionOffsetY", DbcFieldType::Float },
+    { "NewDungeonMapID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "newdungeonmap" },
 };
 
 static const DbcSchema schema_world_map_transforms = {

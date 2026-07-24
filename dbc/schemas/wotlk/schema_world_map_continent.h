@@ -4,20 +4,20 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef world_map_continent_fields[] = {
-    { "Id",              DbcFieldType::UInt32 },
-    { "MapID",           DbcFieldType::UInt32 },
-    { "LeftBoundary",    DbcFieldType::UInt32 },
-    { "RightBoundary",   DbcFieldType::UInt32 },
-    { "TopBoundary",     DbcFieldType::UInt32 },
-    { "BottomBoundary",  DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "MapID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "map" },
+    { "LeftBoundary", DbcFieldType::UInt32 },
+    { "RightBoundary", DbcFieldType::UInt32 },
+    { "TopBoundary", DbcFieldType::UInt32 },
+    { "BottomBoundary", DbcFieldType::UInt32 },
     { "ContinentOffsetX", DbcFieldType::Float },
     { "ContinentOffsetY", DbcFieldType::Float },
-    { "Scale",           DbcFieldType::Float  },
-    { "TaxiMinX",        DbcFieldType::Float  },
-    { "TaxiMinY",        DbcFieldType::Float  },
-    { "TaxiMaxX",        DbcFieldType::Float  },
-    { "TaxiMaxY",        DbcFieldType::Float  },
-    { "WorldMapID",      DbcFieldType::UInt32 },
+    { "Scale", DbcFieldType::Float },
+    { "TaxiMinX", DbcFieldType::Float },
+    { "TaxiMinY", DbcFieldType::Float },
+    { "TaxiMaxX", DbcFieldType::Float },
+    { "TaxiMaxY", DbcFieldType::Float },
+    { "WorldMapID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "worldmap" },
 };
 
 static const DbcSchema schema_world_map_continent = {

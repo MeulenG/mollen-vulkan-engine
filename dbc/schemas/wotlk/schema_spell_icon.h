@@ -4,8 +4,8 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef spell_icon_fields[] = {
-    { "Id",       DbcFieldType::UInt32 },
-    { "IconPath", DbcFieldType::String },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "IconPath", DbcFieldType::String, DbcSemantic::Default, nullptr, "Visuals" },
 };
 
 static const DbcSchema schema_spell_icon = {

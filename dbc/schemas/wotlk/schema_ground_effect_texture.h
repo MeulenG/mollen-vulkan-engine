@@ -4,17 +4,17 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef ground_effect_texture_fields[] = {
-    { "Id",            DbcFieldType::UInt32 },
-    { "DoodadID1",     DbcFieldType::UInt32 },
-    { "DoodadID2",     DbcFieldType::UInt32 },
-    { "DoodadID3",     DbcFieldType::UInt32 },
-    { "DoodadID4",     DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "DoodadID1", DbcFieldType::UInt32 },
+    { "DoodadID2", DbcFieldType::UInt32 },
+    { "DoodadID3", DbcFieldType::UInt32 },
+    { "DoodadID4", DbcFieldType::UInt32 },
     { "DoodadWeight1", DbcFieldType::UInt32 },
     { "DoodadWeight2", DbcFieldType::UInt32 },
     { "DoodadWeight3", DbcFieldType::UInt32 },
     { "DoodadWeight4", DbcFieldType::UInt32 },
-    { "Density",       DbcFieldType::UInt32 },
-    { "Sound",         DbcFieldType::UInt32 },
+    { "Density", DbcFieldType::UInt32 },
+    { "Sound", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Visuals" },
 };
 
 static const DbcSchema schema_ground_effect_texture = {

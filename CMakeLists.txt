@@ -8,7 +8,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Options
 option(MVE_BUILD_DBC_TOOLS "Build dbc-extract CLI tool (requires mollen-storm + pqxx)" OFF)
 option(MVE_BUILD_TESTS "Build unit tests" ON)
-option(MVE_ENABLE_PSQL "Enable PostgreSQL support (requires libpq)" OFF)
+option(MVE_ENABLE_PSQL "Enable PostgreSQL support (requires libpq + libpqxx)" ON)
 
 # =============================================================================
 # Dependencies
@@ -104,8 +104,8 @@ endif()
 # =============================================================================
 # Subdirectories
 # =============================================================================
-add_subdirectory(engine)
 add_subdirectory(dbc)
+add_subdirectory(engine)
 add_subdirectory(app)
 
 if(MVE_BUILD_TESTS AND MVE_ENABLE_PSQL)
