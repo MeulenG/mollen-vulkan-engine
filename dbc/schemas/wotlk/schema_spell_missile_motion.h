@@ -4,10 +4,10 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef spell_missile_motion_fields[] = {
-    { "Id",       DbcFieldType::UInt32 },
-    { "Name",     DbcFieldType::String },
-    { "Script",   DbcFieldType::String },
-    { "Flags",    DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "Name", DbcFieldType::String, DbcSemantic::Default, nullptr, "Identity" },
+    { "Script", DbcFieldType::String },
+    { "Flags", DbcFieldType::UInt32, DbcSemantic::Bitmask, nullptr, "Classification" },
     { "MissileCount", DbcFieldType::UInt32 },
 };
 

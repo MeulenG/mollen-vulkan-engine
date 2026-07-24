@@ -4,11 +4,11 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef creature_spell_data_fields[] = {
-    { "Id",       DbcFieldType::UInt32 },
-    { "Spell1",   DbcFieldType::UInt32 },
-    { "Spell2",   DbcFieldType::UInt32 },
-    { "Spell3",   DbcFieldType::UInt32 },
-    { "Spell4",   DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "Spell1", DbcFieldType::UInt32 },
+    { "Spell2", DbcFieldType::UInt32 },
+    { "Spell3", DbcFieldType::UInt32 },
+    { "Spell4", DbcFieldType::UInt32 },
     { "Cooldown1", DbcFieldType::UInt32 },
     { "Cooldown2", DbcFieldType::UInt32 },
     { "Cooldown3", DbcFieldType::UInt32 },

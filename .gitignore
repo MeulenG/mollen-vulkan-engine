@@ -377,3 +377,7 @@ db_config.toml
 # Assets and docs
 assets/
 docs/
+
+# Engine ships its own assets (fonts) -- do NOT ignore them.
+!engine/assets/
+!engine/assets/**

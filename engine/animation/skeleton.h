@@ -17,7 +17,7 @@ struct Bone {
     std::string name;
     int32_t parent_index = -1;
 
-    // Bind pose — the bone's default local transform (in parent space).
+    // Bind pose - the bone's default local transform (in parent space).
     // This is the T-pose or rest pose of the model.
     glm::vec3 bind_position{0.0f};
     glm::quat bind_rotation{1.0f, 0.0f, 0.0f, 0.0f}; // identity quaternion (w,x,y,z)

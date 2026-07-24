@@ -8,7 +8,7 @@
 
 namespace mve {
 
-// Builds a descriptor set layout — defines the "interface" of what a shader expects.
+// Builds a descriptor set layout - defines the "interface" of what a shader expects.
 // Example: binding 0 = uniform buffer, binding 1 = texture sampler
 class DescriptorSetLayoutBuilder {
 public:

@@ -9,7 +9,7 @@
 
 namespace mve {
 
-// BLP2 file format — Blizzard's texture format used in WoW.
+// BLP2 file format - Blizzard's texture format used in WoW.
 //
 // Two main compression modes:
 // 1. Palettized: 256-color BGRA palette + 8-bit indices per pixel
