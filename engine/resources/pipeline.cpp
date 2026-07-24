@@ -23,7 +23,14 @@ PipelineConfig PipelineConfig::DefaultConfig() {
     config.rasterization_info.depthBiasEnable = vk::False;
 
     config.multisample_info.sampleShadingEnable = vk::False;
-    config.multisample_info.rasterizationSamples = vk::SampleCountFlagBits::e1;
+    // 4x MSAA. Must match OffscreenPass::kSampleCount. Every pipeline
+    // that writes into the OffscreenPass color attachment needs
+    // rasterizationSamples = e4; the resolve attachment averages the
+    // 4 samples per pixel into the single-sample ImGui-visible target.
+    // Sample-shading stays off - coverage-resolve is cheaper than
+    // per-sample shading and gets us the alpha-test edge smoothing
+    // we actually want.
+    config.multisample_info.rasterizationSamples = vk::SampleCountFlagBits::e4;
 
     config.color_blend_attachment.colorWriteMask =
         vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |

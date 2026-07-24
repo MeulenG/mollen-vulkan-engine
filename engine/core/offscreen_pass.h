@@ -52,6 +52,12 @@ public:
     // captures exactly what the engine renders.
     bool SaveColorToPng(const std::string& path);
 
+    // 4x MSAA sample count used for the multisample color + depth
+    // attachments. Exposed so RenderSystem / PipelineConfig can declare
+    // matching rasterization-sample state on every pipeline.
+    static constexpr vk::SampleCountFlagBits kSampleCount =
+        vk::SampleCountFlagBits::e4;
+
 private:
     void createResources();
     void transitionImage(const vk::raii::CommandBuffer& cmd, vk::Image image,
@@ -62,10 +68,23 @@ private:
     uint32_t width_, height_;
     vk::Format color_format_, depth_format_;
 
+    // 4-sample multisample color image. Render targets bind THIS, with
+    // color_image_ (single sample, declared below) as the resolve
+    // target. We never sample MSAA images directly; the resolve target
+    // is what ImGui sees.
+    vk::raii::Image msaa_color_image_{nullptr};
+    vk::raii::DeviceMemory msaa_color_memory_{nullptr};
+    vk::raii::ImageView msaa_color_view_{nullptr};
+
+    // Single-sample resolve target. Pre-2A this was the render target;
+    // post-2A it's where the GPU writes resolved MSAA samples. ImGui
+    // continues to sample this for the viewport panel.
     vk::raii::Image color_image_{nullptr};
     vk::raii::DeviceMemory color_memory_{nullptr};
     vk::raii::ImageView color_view_{nullptr};
 
+    // 4-sample multisample depth image. No resolve - depth is consumed
+    // entirely on-tile (depth test + early-Z) and discarded.
     vk::raii::Image depth_image_{nullptr};
     vk::raii::DeviceMemory depth_memory_{nullptr};
     vk::raii::ImageView depth_view_{nullptr};

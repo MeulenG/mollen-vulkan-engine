@@ -8,7 +8,7 @@
 
 namespace mve {
 
-// Two modes:
+// Three modes:
 //   Orbit (default): camera rotates around a fixed target at a fixed
 //     distance. Used to inspect a model or a fixed location. The R3/R4
 //     editor preview uses this on the Northshire tile centroid.
@@ -16,9 +16,16 @@ namespace mve {
 //     where it's looking, WASD-style movement translates it. Used to
 //     "walk through" the scene, which makes the trees / ground feel
 //     like a real environment instead of a diorama.
+//   ThirdPerson: same view math as Orbit, but the TARGET is expected
+//     to be updated externally each frame (typically by a player
+//     controller calling SetTarget with the player's world position).
+//     WASD input doesn't move the camera - it moves the PLAYER, and
+//     the camera follows automatically. Mouse drag rotates the orbit
+//     yaw/pitch around the player. This is the canonical WoW camera.
 enum class CameraMode {
     Orbit,
     FlyFirstPerson,
+    ThirdPerson,
 };
 
 class Camera {
@@ -58,7 +65,7 @@ private:
 
     glm::vec3 target_{0.0f, 0.0f, 0.0f};
     glm::vec3 position_{0.0f, 0.0f, 3.0f};
-    glm::vec3 up_{0.0f, 1.0f, 0.0f};
+    glm::vec3 up_{0.0f, 0.0f, 1.0f};   // engine is Z-up
 
     float distance_ = 3.0f;
     float yaw_ = 0.0f;       // radians

@@ -57,8 +57,9 @@ struct AdtChunkVertexColors {
 };
 
 // One ADT texture layer inside a chunk. The MCLY sub-chunk gives 16 bytes
-// per layer: { texture_index, flags, ofs_mcal, effect_id }. We capture the
-// first three; effect_id is unused for now.
+// per layer: { texture_index, flags, ofs_mcal, effect_id }. We capture all
+// four. effect_id is a foreign key into GroundEffectTexture.dbc and drives
+// the per-MCNK detail-grass scatter (the "ground cover" doodad system).
 //
 // alpha[] is the layer's 64x64 alpha map decoded out of MCAL. Per WoW's
 // blending convention, layer 0 has no alpha map (it's the base, full
@@ -67,6 +68,7 @@ struct AdtChunkVertexColors {
 struct AdtLayer {
     int      texture_index = -1;   // -1 = no layer
     uint32_t flags = 0;
+    uint32_t effect_id = 0;        // GroundEffectTexture.dbc row id (0 = none)
     uint8_t  alpha[64 * 64] = {};
 };
 
@@ -93,6 +95,42 @@ struct AdtChunk {
     // completeness; the R2 mesh builder ignores it. R3 honors holes by
     // skipping the affected triangles.
     uint16_t holes_low_res = 0;
+};
+
+// One MODF entry. Each ADT tile lists 0..N of these to place WMO
+// buildings (the Abbey, Stormwind walls, Lion's Pride Inn, gnoll tents,
+// etc.) at specific world positions. Same on-disk pos/rot/scale
+// convention as MDDF, but the entry is 64 bytes instead of 36 - the
+// extra fields are an axis-aligned bounding box, the doodad_set
+// selector (each WMO ships with up to N "doodad sets" of interior
+// props; this picks which set is active), and a name_set.
+//
+// On-disk format (64 bytes per entry):
+//   uint32 name_id      - index into AdtTile::wmo_paths
+//   uint32 unique_id    - global dedup key (same convention as MDDF)
+//   float  pos[3]       - (X south, Y up, Z east) in WoW coords
+//   float  rot[3]       - Euler degrees, applied YXZ
+//   float  bbox_lo[3]   - AABB in world-space, used for visibility cull
+//   float  bbox_hi[3]
+//   uint16 flags        - bit 0x1 = "destructible", others ignored for v1
+//   uint16 doodad_set   - selects which MODS (doodad set) is active
+//   uint16 name_set     - selects which set of overlay textures
+//   uint16 scale        - WoW pre-Cata: ignored, scale always 1.0
+struct AdtWmoPlacement {
+    uint32_t name_id    = 0;
+    uint32_t unique_id  = 0;
+    float    pos_x      = 0.0f;
+    float    pos_y      = 0.0f;
+    float    pos_z      = 0.0f;
+    float    rot_x_deg  = 0.0f;
+    float    rot_y_deg  = 0.0f;
+    float    rot_z_deg  = 0.0f;
+    float    bbox_lo[3] = {0.0f, 0.0f, 0.0f};
+    float    bbox_hi[3] = {0.0f, 0.0f, 0.0f};
+    uint16_t flags      = 0;
+    uint16_t doodad_set = 0;
+    uint16_t name_set   = 0;
+    uint16_t scale      = 1024;
 };
 
 // One MDDF entry. Each ADT tile lists 0..N of these to place static
@@ -124,6 +162,47 @@ struct AdtDoodadPlacement {
     uint16_t flags        = 0;
 };
 
+// One liquid (water/ocean/magma/slime) instance parsed from a single
+// SMLiquidInstance inside the top-level MH2O chunk. WotLK 3.3.5a uses
+// MH2O exclusively; the legacy per-MCNK MCLQ format is not parsed here.
+//
+// Coordinate frame: positions are computed at mesh-build time from
+// (chunk_index, x_offset, y_offset). The chunk_index references which
+// MCNK (0..255, row-major iy*16+ix) the liquid is anchored to; the
+// offsets and dimensions then carve out a (width x height) cell
+// rectangle inside that MCNK, where each cell is kAdtChunkSize / 8 =
+// 4.1666... yards on a side. So the patch spans width*cell_size by
+// height*cell_size yards starting at the MCNK's NW + offset cells.
+//
+// LVF (LiquidVertexFormat) selected per liquid_object_or_lvf in the
+// on-disk SMLiquidInstance (when <= 41, it IS the LVF directly):
+//   0 = Height + Depth   (Elwynn rivers, lakes - standard)
+//   1 = Height + UV      (magma/slime with painted UVs)
+//   2 = Depth only       (ocean - flat, height = min_height_level)
+//   3 = Height + UV + Depth
+// Vertex count is always (width+1) * (height+1) regardless of LVF.
+struct AdtLiquidInstance {
+    uint16_t chunk_index = 0;        // 0..255, iy*16+ix into AdtTile::chunks
+    uint16_t liquid_type = 0;        // FK -> LiquidType.dbc; 1=Slow Water (Elwynn)
+    uint16_t lvf         = 0;        // 0..3 per LVF table above
+    uint8_t  x_offset    = 0;        // 0..7 cells from MCNK NW
+    uint8_t  y_offset    = 0;
+    uint8_t  width       = 0;        // 1..8 cells wide
+    uint8_t  height      = 0;        // 1..8 cells tall
+    float    min_height  = 0.0f;     // WoW Z min/max (used for LVF=2 flat ocean)
+    float    max_height  = 0.0f;
+    // Per-vertex height in WoW absolute Z. (width+1)*(height+1) entries
+    // row-major. For LVF=2 (ocean), populated to min_height for all verts.
+    std::vector<float> heights;
+    // Per-vertex depth in [0,1]. Drives the shallow/deep alpha blend.
+    // Same packing as heights. For LVF=1 (no depth on disk), all 1.0.
+    std::vector<float> depths;
+    // Existence bitmap: bit (y*width + x) set means the cell at local
+    // (x, y) is rendered. Empty vector = "all cells exist" (the wiki's
+    // convention when offset_exists_bitmap == 0 in the on-disk struct).
+    std::vector<uint8_t> exists_bits;
+};
+
 // Parsed ADT terrain content.
 struct AdtTile {
     int tile_x = 0;             // 0..63 along WoW X axis
@@ -143,9 +222,23 @@ struct AdtTile {
     // Parsed MDDF placements. Typical Elwynn tile has 100-500 entries.
     std::vector<AdtDoodadPlacement> doodads;
 
+    // WMO (building) paths resolved from MWMO via MWID byte offsets.
+    // wmo_paths[i] is the .wmo path for any MODF entry whose name_id
+    // == i. Same backslashed-WoW-path convention as doodad_paths.
+    std::vector<std::string> wmo_paths;
+
+    // Parsed MODF placements. Typical Elwynn tile has 0-10 entries
+    // (buildings are large and sparse vs. the dense MDDF prop list).
+    std::vector<AdtWmoPlacement> wmos;
+
     // 256 MCNK chunks, indexed as [y * 16 + x] where x and y are the chunk
     // coordinates within the tile (0..15).
     AdtChunk chunks[kAdtChunksPerTile];
+
+    // Parsed MH2O liquid instances (water/ocean/magma/slime patches).
+    // Typical Elwynn tile: 0-30 instances mostly along Crystal Brook
+    // and the Stormwind moat. Empty for tiles with no water.
+    std::vector<AdtLiquidInstance> liquids;
 };
 
 class AdtLoader {

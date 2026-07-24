@@ -161,19 +161,17 @@ void FixAlphaEdges(uint8_t out_alpha[64 * 64]) {
 // row layout as MCVT. Each signed byte in [-127, 127] divided by 127 gives
 // the [-1, 1] component.
 //
-// The on-disk axes are WoW (X south, Y east, Z up). We remap to engine
-// space (X east, Y up, Z south) at parse time so the mesh builder can use
-// the values directly.
+// The on-disk axes are WoW (nx=south, ny=east, nz=up). Engine render is
+// Z-up: renderX=canonical.X (north) = -south, renderY=canonical.Y
+// (west) = -east, renderZ=canonical.Z (up).
 void DecodeMcnr(const uint8_t* mcnr_body, AdtChunkNormals& out) {
     auto read_one = [&](size_t base, float* dst) {
         int8_t nx = static_cast<int8_t>(mcnr_body[base + 0]);
         int8_t nz = static_cast<int8_t>(mcnr_body[base + 1]);
         int8_t ny = static_cast<int8_t>(mcnr_body[base + 2]);
-        // WoW: (nx=south, ny=east, nz=up).
-        // Engine: (X=east, Y=up, Z=south) -> (ny, nz, nx) / 127.
-        dst[0] = static_cast<float>(ny) / 127.0f;
-        dst[1] = static_cast<float>(nz) / 127.0f;
-        dst[2] = static_cast<float>(nx) / 127.0f;
+        dst[0] = -static_cast<float>(nx) / 127.0f;   // renderX (north)
+        dst[1] = -static_cast<float>(ny) / 127.0f;   // renderY (west)
+        dst[2] =  static_cast<float>(nz) / 127.0f;   // renderZ (up)
     };
 
     int outer_i = 0, inner_i = 0;
@@ -318,9 +316,12 @@ bool ParseMcnk(const uint8_t* mcnk_data, size_t mcnk_payload_size,
         }
     }
 
-    // MCLY sub-chunk: 16 bytes per layer. We capture
-    // texture_index (uint32 @ +0), flags (uint32 @ +4), and ofs_mcal
-    // (uint32 @ +8). effect_id (+12) is unused for now.
+    // MCLY sub-chunk: 16 bytes per layer:
+    //   texture_index (uint32 @ +0), flags (uint32 @ +4),
+    //   ofs_mcal      (uint32 @ +8), effect_id (uint32 @ +12)
+    // effect_id is the GroundEffectTexture.dbc row id - the key the
+    // detail-grass system uses to look up which grass M2s to scatter
+    // on this layer. 0 means "no ground cover for this layer".
     out.layer_count = static_cast<int>(n_layers > 4 ? 4 : n_layers);
 
     // Track each layer's MCAL offset so the MCAL decode pass below can
@@ -337,11 +338,13 @@ bool ParseMcnk(const uint8_t* mcnk_data, size_t mcnk_payload_size,
                 mcly_off + 8 + mcly_size <= mcnk_payload_size) {
                 const uint8_t* mcly_body = mcnk_data + mcly_off + 8;
                 for (int l = 0; l < out.layer_count; l++) {
-                    uint32_t tex_idx = ReadU32(mcly_body, l * 16 + 0);
-                    uint32_t flags   = ReadU32(mcly_body, l * 16 + 4);
-                    uint32_t ofs_a   = ReadU32(mcly_body, l * 16 + 8);
+                    uint32_t tex_idx   = ReadU32(mcly_body, l * 16 + 0);
+                    uint32_t flags     = ReadU32(mcly_body, l * 16 + 4);
+                    uint32_t ofs_a     = ReadU32(mcly_body, l * 16 + 8);
+                    uint32_t effect_id = ReadU32(mcly_body, l * 16 + 12);
                     out.layers[l].texture_index = static_cast<int>(tex_idx);
                     out.layers[l].flags = flags;
+                    out.layers[l].effect_id = effect_id;
                     per_layer_ofs_mcal[l] = ofs_a;
                 }
             }
@@ -409,6 +412,11 @@ bool AdtLoader::LoadFile(const std::string& path, AdtTile& out) {
     std::vector<uint8_t> mmdx_blob;
     std::vector<uint32_t> mmid_offsets;
 
+    // MWMO/MWID/MODF: same shape as the doodad pair but for WMO
+    // buildings. Captured here, resolved after the main walk.
+    std::vector<uint8_t> mwmo_blob;
+    std::vector<uint32_t> mwid_offsets;
+
     // Walk top-level chunks.
     size_t pos = 0;
     while (pos + 8 <= buf.size()) {
@@ -471,6 +479,154 @@ bool AdtLoader::LoadFile(const std::string& path, AdtTile& out) {
                 d.scale = s;
                 out.doodads.push_back(d);
             }
+        } else if (id == FourCC("MWMO")) {
+            // Null-separated WMO path strings. Same byte-addressable
+            // convention as MMDX - MWID stores byte offsets.
+            mwmo_blob.assign(buf.data() + pos, buf.data() + pos + payload_size);
+        } else if (id == FourCC("MWID")) {
+            uint32_t count = payload_size / 4;
+            mwid_offsets.resize(count);
+            for (uint32_t i = 0; i < count; i++) {
+                mwid_offsets[i] = ReadU32(buf.data(), pos + i * 4);
+            }
+        } else if (id == FourCC("MODF")) {
+            // 64-byte entries per wowdev.wiki/ADT/v18#MODF. Same
+            // pos/rot/scale layout as MDDF but with an extra AABB +
+            // doodad_set + name_set + flags. WoW 3.3.5a stores scale
+            // as 1024 (= 1.0) effectively constant.
+            uint32_t count = payload_size / 64;
+            out.wmos.reserve(count);
+            for (uint32_t i = 0; i < count; i++) {
+                size_t off = pos + i * 64;
+                AdtWmoPlacement w{};
+                w.name_id      = ReadU32(buf.data(), off + 0);
+                w.unique_id    = ReadU32(buf.data(), off + 4);
+                w.pos_x        = ReadF32(buf.data(), off + 8);
+                w.pos_y        = ReadF32(buf.data(), off + 12);
+                w.pos_z        = ReadF32(buf.data(), off + 16);
+                w.rot_x_deg    = ReadF32(buf.data(), off + 20);
+                w.rot_y_deg    = ReadF32(buf.data(), off + 24);
+                w.rot_z_deg    = ReadF32(buf.data(), off + 28);
+                w.bbox_lo[0]   = ReadF32(buf.data(), off + 32);
+                w.bbox_lo[1]   = ReadF32(buf.data(), off + 36);
+                w.bbox_lo[2]   = ReadF32(buf.data(), off + 40);
+                w.bbox_hi[0]   = ReadF32(buf.data(), off + 44);
+                w.bbox_hi[1]   = ReadF32(buf.data(), off + 48);
+                w.bbox_hi[2]   = ReadF32(buf.data(), off + 52);
+                w.flags        = static_cast<uint16_t>(
+                    ReadU32(buf.data(), off + 56) & 0xFFFF);
+                w.doodad_set   = static_cast<uint16_t>(
+                    (ReadU32(buf.data(), off + 56) >> 16) & 0xFFFF);
+                w.name_set     = static_cast<uint16_t>(
+                    ReadU32(buf.data(), off + 60) & 0xFFFF);
+                w.scale        = static_cast<uint16_t>(
+                    (ReadU32(buf.data(), off + 60) >> 16) & 0xFFFF);
+                out.wmos.push_back(w);
+            }
+        } else if (id == FourCC("MH2O")) {
+            // Top-level liquid chunk (TBC+ format, used by all WotLK ADTs).
+            // Layout (per wowdev.wiki/ADT/v18#MH2O and WebWowViewerCpp
+            // adtFileHeader.h SMLiquidChunk):
+            //
+            //   [0 .. 256 * 12)         = 256 SMLiquidChunk headers
+            //   [variable .. variable)  = SMLiquidInstance[] (24 B each)
+            //   [variable .. variable)  = mh2o_chunk_attributes (16 B)
+            //   [variable .. variable)  = exists bitmaps (variable B)
+            //   [variable .. variable)  = vertex data (LVF-dependent)
+            //
+            // All sub-offsets in the headers are RELATIVE to the start of
+            // the MH2O payload (not file-relative).
+            const uint8_t* base = buf.data() + pos;
+            size_t base_size    = payload_size;
+            for (uint32_t ci = 0; ci < 256u; ++ci) {
+                if (ci * 12u + 12u > base_size) break;
+                uint32_t ofs_inst = ReadU32(base, ci * 12u + 0);
+                uint32_t n_layers = ReadU32(base, ci * 12u + 4);
+                // ofs_attributes at +8 - we skip attributes (fishable/deep
+                // bitmasks) for v1; depth comes from vertex data instead.
+                for (uint32_t li = 0; li < n_layers; ++li) {
+                    size_t io = ofs_inst + li * 24u;
+                    if (io + 24u > base_size) break;
+                    AdtLiquidInstance inst{};
+                    inst.chunk_index = static_cast<uint16_t>(ci);
+                    inst.liquid_type = static_cast<uint16_t>(
+                        ReadU32(base, io + 0) & 0xFFFFu);
+                    uint16_t lvf_or_obj = static_cast<uint16_t>(
+                        (ReadU32(base, io + 0) >> 16) & 0xFFFFu);
+                    // In WotLK Elwynn, this is always the LVF directly
+                    // (values <= 41). LiquidObject.dbc lookups only kick
+                    // in at >= 42 which Cata+ used.
+                    inst.lvf        = lvf_or_obj <= 41 ? lvf_or_obj : 0;
+                    inst.min_height = ReadF32(base, io + 4);
+                    inst.max_height = ReadF32(base, io + 8);
+                    inst.x_offset   = base[io + 12];
+                    inst.y_offset   = base[io + 13];
+                    inst.width      = base[io + 14];
+                    inst.height     = base[io + 15];
+                    uint32_t ofs_exists = ReadU32(base, io + 16);
+                    uint32_t ofs_verts  = ReadU32(base, io + 20);
+
+                    // Clamp width/height defensively. The spec allows up
+                    // to 8; malformed values would overflow our buffers.
+                    if (inst.width  > 8) inst.width  = 8;
+                    if (inst.height > 8) inst.height = 8;
+                    if (inst.width  == 0 || inst.height == 0) continue;
+
+                    uint32_t n_verts = static_cast<uint32_t>(inst.width + 1) *
+                                       static_cast<uint32_t>(inst.height + 1);
+                    inst.heights.resize(n_verts, inst.min_height);
+                    inst.depths.resize(n_verts, 1.0f);
+
+                    // LVF=0 (Elwynn): float[N] heights, then uint8[N] depths.
+                    // LVF=1: float[N] heights, then int16[N*2] UVs. No depth.
+                    // LVF=2 (ocean): uint8[N] depths only, height = min.
+                    // LVF=3: float[N] heights, then int16[N*2] UVs, then uint8[N] depths.
+                    if (ofs_verts != 0 && ofs_verts < base_size) {
+                        size_t vo = ofs_verts;
+                        if (inst.lvf == 0 || inst.lvf == 1 || inst.lvf == 3) {
+                            if (vo + n_verts * 4u <= base_size) {
+                                for (uint32_t i = 0; i < n_verts; ++i) {
+                                    inst.heights[i] = ReadF32(base, vo + i * 4u);
+                                }
+                                vo += n_verts * 4u;
+                            }
+                            if (inst.lvf == 1 || inst.lvf == 3) {
+                                vo += n_verts * 4u;  // skip int16 s,t UVs
+                            }
+                            if (inst.lvf == 0 || inst.lvf == 3) {
+                                if (vo + n_verts <= base_size) {
+                                    for (uint32_t i = 0; i < n_verts; ++i) {
+                                        inst.depths[i] = base[vo + i] / 255.0f;
+                                    }
+                                }
+                            }
+                        } else if (inst.lvf == 2) {
+                            if (vo + n_verts <= base_size) {
+                                for (uint32_t i = 0; i < n_verts; ++i) {
+                                    inst.depths[i] = base[vo + i] / 255.0f;
+                                }
+                            }
+                        }
+                    }
+
+                    // Exists bitmap: (width*height + 7) / 8 bytes. When
+                    // ofs_exists == 0 the wiki convention is "all cells
+                    // exist" - we leave inst.exists_bits empty and the
+                    // mesh builder treats that as a full bitmap.
+                    if (ofs_exists != 0) {
+                        size_t n_bits  = static_cast<size_t>(inst.width) *
+                                         static_cast<size_t>(inst.height);
+                        size_t n_bytes = (n_bits + 7u) / 8u;
+                        if (ofs_exists + n_bytes <= base_size) {
+                            inst.exists_bits.assign(
+                                base + ofs_exists,
+                                base + ofs_exists + n_bytes);
+                        }
+                    }
+
+                    out.liquids.push_back(std::move(inst));
+                }
+            }
         } else if (id == FourCC("MCNK")) {
             // Up to 256 MCNK chunks. Order in the file is row-major (the
             // index_x and index_y inside the header give the canonical
@@ -508,6 +664,18 @@ bool AdtLoader::LoadFile(const std::string& path, AdtTile& out) {
         const char* s = reinterpret_cast<const char*>(mmdx_blob.data() + off);
         size_t max_len = mmdx_blob.size() - off;
         out.doodad_paths.emplace_back(s, strnlen(s, max_len));
+    }
+
+    // Same trick for WMO paths.
+    out.wmo_paths.reserve(mwid_offsets.size());
+    for (uint32_t off : mwid_offsets) {
+        if (off >= mwmo_blob.size()) {
+            out.wmo_paths.emplace_back();
+            continue;
+        }
+        const char* s = reinterpret_cast<const char*>(mwmo_blob.data() + off);
+        size_t max_len = mwmo_blob.size() - off;
+        out.wmo_paths.emplace_back(s, strnlen(s, max_len));
     }
 
     return mcnk_seen > 0;

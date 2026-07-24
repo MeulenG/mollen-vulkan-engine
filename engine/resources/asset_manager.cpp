@@ -9,7 +9,13 @@
 #include "../scene/components/terrain_component.h"
 #include "../scene/components/terrain_tile_component.h"
 #include "../scene/components/doodad_instance_component.h"
+#include "../scene/components/water_component.h"
+#include "../scene/components/wmo_instance_component.h"
 #include "../scene/terrain_mesh.h"
+#include "../scene/water_mesh.h"
+#include "../scene/wmo_mesh.h"
+#include "../formats/wmo_types.h"
+#include "../core/coordinates.h"
 #include "../systems/render_system.h"
 #include "../formats/blp_loader.h"
 #include "../formats/adt_types.h"
@@ -486,6 +492,72 @@ Entity* AssetManager::LoadAdtTileIntoScene(
     tile->tile_x = tile_x;
     tile->tile_y = tile_y;
 
+    // Phase 2E stage 1: capture every MODF WMO placement BEFORE the
+    // AdtTile drops at end of this function. Dedup by unique_id - the
+    // same WMO (e.g. Stormwind) is listed in every ADT it overlaps, so
+    // without dedup we'd spawn a dozen copies. Convert from MDDF-frame
+    // WoW coords to engine space using the same axis flip the MDDF
+    // doodad code uses.
+    for (const auto& w : tile->wmos) {
+        if (pm_wmo_seen_unique_ids.count(w.unique_id)) continue;
+        pm_wmo_seen_unique_ids.insert(w.unique_id);
+
+        // MDDF/MODF on-disk -> engine render coords via the single
+        // canonical adtToWorld conversion (engine/core/coordinates.h).
+        // Z-up basis: renderX = west, renderY = north, renderZ = up.
+        glm::vec3 engine_pos = coords::AdtToWorld(w.pos_x, w.pos_y, w.pos_z);
+
+        // Bbox extents from MODF bbox_lo/hi. The bbox is in WoW MDDF
+        // coords too, so the extents (hi - lo) are valid yard sizes
+        // regardless of axis swap. Clamp tiny/huge values defensively.
+        float ex = std::abs(w.bbox_hi[0] - w.bbox_lo[0]);
+        float ey = std::abs(w.bbox_hi[1] - w.bbox_lo[1]);
+        float ez = std::abs(w.bbox_hi[2] - w.bbox_lo[2]);
+        if (ex < 1.0f) ex = 5.0f;
+        if (ey < 1.0f) ey = 5.0f;
+        if (ez < 1.0f) ez = 5.0f;
+        // Map MODF bbox extents (adt-disk frame: x=south-north,
+        // y=up, z=east-west) into our Z-up engine basis (x=west,
+        // y=north, z=up). adtZ goes to engine.X; adtX goes to
+        // engine.Y; adtY goes to engine.Z.
+        glm::vec3 extents{ez, ex, ey};
+
+        std::string wmo_path;
+        if (w.name_id < tile->wmo_paths.size()) {
+            wmo_path = tile->wmo_paths[w.name_id];
+        }
+
+        WmoPlacement p{};
+        p.wow_path     = wmo_path;
+        p.engine_pos   = engine_pos;
+        p.bbox_extents = extents;
+        p.rot_deg      = glm::vec3{w.rot_x_deg, w.rot_y_deg, w.rot_z_deg};
+        p.unique_id    = w.unique_id;
+        pm_pending_wmo_placements.push_back(std::move(p));
+    }
+
+    // Cache the heightmap before the AdtTile gets dropped at end of
+    // this function. PlayerController queries this via GetGroundY to
+    // make the player follow terrain contour. Stored sparse - tiles
+    // evicted by the streamer aren't currently removed from this
+    // cache (memory leak in the strict sense, but ~80 KB/tile means
+    // even a full Azeroth = 64*64*80 = 320 MB which is fine).
+    {
+        const uint32_t key = static_cast<uint32_t>(tile_x) * 64u +
+                              static_cast<uint32_t>(tile_y);
+        TileHeightCache cache{};
+        for (int i = 0; i < kAdtChunksPerTile; ++i) {
+            const auto& src = tile->chunks[i];
+            auto& dst = cache.chunks[i];
+            dst.wow_x = src.wow_x;
+            dst.wow_y = src.wow_y;
+            for (int j = 0; j < 81; ++j) {
+                dst.y_outer[j] = src.heights.y_outer[j];
+            }
+        }
+        pm_tile_height_cache[key] = cache;
+    }
+
     // Build (or look up cached) mesh + alpha + chunk_meta.
     char mesh_key[32];
     std::snprintf(mesh_key, sizeof(mesh_key), "adt:%d_%d", tile_x, tile_y);
@@ -532,7 +604,12 @@ Entity* AssetManager::LoadAdtTileIntoScene(
             sum_wow.y += ch.wow_y;
             sum_wow.z += ch.wow_z_base;
             counted++;
-            glm::vec3 corner(ch.wow_y, ch.wow_z_base, ch.wow_x);
+            // Engine render basis: renderX=canonical.X (north),
+            // renderY=canonical.Y (west), renderZ=up. Parser stores
+            // canonical.X in ch.wow_y and canonical.Y in ch.wow_x, so
+            // swap the first two fields to land in render basis (same
+            // swap as WowToEngine in terrain_mesh.cpp).
+            glm::vec3 corner(ch.wow_y, ch.wow_x, ch.wow_z_base);
             vmin = glm::min(vmin, corner);
             vmax = glm::max(vmax, corner);
         }
@@ -540,8 +617,7 @@ Entity* AssetManager::LoadAdtTileIntoScene(
     glm::vec3 centroid{0.0f};
     if (counted > 0) {
         glm::dvec3 avg = sum_wow / double(counted);
-        // WowToEngine: (wow_x, wow_y, wow_z) -> (wow_y, wow_z, wow_x)
-        centroid = glm::vec3(avg.y, avg.z, avg.x);
+        centroid = glm::vec3(avg.y, avg.x, avg.z);
     }
     float radius = glm::length(vmax - vmin) * 0.5f;
 
@@ -595,6 +671,22 @@ Entity* AssetManager::LoadAdtTileIntoScene(
     tile_comp->pm_centroid_engine = centroid;
     tile_comp->pm_radius = radius;
 
+    // Build per-instance water meshes. Each AdtLiquidInstance becomes
+    // one Mesh; tiles with no liquids skip the component entirely.
+    // Meshes are owned by the tile entity, so eviction drops them.
+    if (!tile->liquids.empty()) {
+        auto* water_comp = entity->AddComponent<WaterComponent>();
+        water_comp->instances.reserve(tile->liquids.size());
+        for (const auto& li : tile->liquids) {
+            auto m = WaterMesh::Build(pm_device, *tile, li);
+            if (!m) continue;
+            WaterInstanceMesh wm{};
+            wm.mesh = std::move(m);
+            wm.liquid_type = li.liquid_type;
+            water_comp->instances.push_back(std::move(wm));
+        }
+    }
+
     // Spawn MDDF doodads. Each entry references a path via name_id ->
     // tile->doodad_paths. Dedupe by unique_id across tiles so a prop
     // listed in two neighboring tiles doesn't render twice (typical
@@ -625,44 +717,28 @@ Entity* AssetManager::LoadAdtTileIntoScene(
         // identical mesh loads).
         fs_path = ResolveM2Extension(fs_path);
 
-        // MDDF stores positions in a different coordinate origin than
-        // MCNK. MCNK puts the world origin at the map center (tile 32,
-        // 32); MDDF puts it at the south-west corner of the 64x64 grid
-        // (so values are 0..17066). Convert MDDF -> MCNK first, then
-        // do the WoW->engine axis remap.
-        //
-        // The flip math: in MCNK coords, X is south-positive and Y is
-        // east-positive but both axes grow toward NEGATIVE values when
-        // you move toward higher tile indices (because tile 32 is at
-        // origin and indices grow with WoW negation). MDDF values count
-        // up from the SW corner the same direction, so the conversion
-        // is just (kAdtMaxCoord - mddf_value) on each horizontal axis.
-        float mcnk_x = kAdtMaxCoord - d.pos_x;   // south axis
-        float mcnk_y = kAdtMaxCoord - d.pos_z;   // east axis
-        float mcnk_z =                d.pos_y;   // up (unchanged)
-        // WoW -> engine: (east, up, south).
-        glm::vec3 engine_pos(mcnk_y, mcnk_z, mcnk_x);
+        // MDDF on-disk -> engine render coords via coords::AdtToWorld
+        // (Z-up basis: renderX=west, renderY=north, renderZ=up).
+        glm::vec3 engine_pos = coords::AdtToWorld(d.pos_x, d.pos_y, d.pos_z);
 
-        // WoW MDDF rotation is Euler degrees applied YXZ (yaw, pitch,
-        // roll about the WoW axes). Build the quaternion in WoW frame
-        // then compose with the -90 X-axis rotation that converts WoW
-        // Z-up to engine Y-up.
-        glm::quat q_wow =
-              glm::angleAxis(glm::radians(d.rot_y_deg), glm::vec3{0, 1, 0})
-            * glm::angleAxis(glm::radians(d.rot_x_deg), glm::vec3{1, 0, 0})
-            * glm::angleAxis(glm::radians(d.rot_z_deg), glm::vec3{0, 0, 1});
-        glm::quat q_axis = glm::angleAxis(glm::radians(-90.0f), glm::vec3{1, 0, 0});
-        glm::quat q_final = q_axis * q_wow;
+        // MDDF rotation, ported directly from WoWee's M2 placement
+        // (src/rendering/terrain_manager.cpp:611-625 +
+        // src/rendering/m2_renderer.cpp:50-61). Scrambled Euler triple
+        // in radians = (-rot_z, -rot_x, rot_y + pi), applied as
+        // Rx * Ry * Rz (Rz innermost, vertex hit by Rz first). The
+        // +pi on yaw compensates for the double-mirror in AdtToWorld;
+        // the sign flips compensate for the same mirror landing on
+        // the pitch/roll axes.
+        float deg = 0.01745329252f;   // pi/180
+        float rx = -d.rot_z_deg * deg;
+        float ry = -d.rot_x_deg * deg;
+        float rz = (d.rot_y_deg + 180.0f) * deg;
 
-        glm::vec3 scale_vec(d.scale);
-
-        // Build the per-instance model matrix and park it in the
-        // pending list. The shader will multiply this against the
-        // skin-bind-pose position to land each vertex in world space.
-        //   M = T(engine_pos) * R(q_final) * S(scale)
         glm::mat4 m = glm::translate(glm::mat4{1.0f}, engine_pos);
-        m = m * glm::mat4_cast(q_final);
-        m = glm::scale(m, scale_vec);
+        m = glm::rotate(m, rx, glm::vec3{1, 0, 0});
+        m = glm::rotate(m, ry, glm::vec3{0, 1, 0});
+        m = glm::rotate(m, rz, glm::vec3{0, 0, 1});
+        m = glm::scale(m, glm::vec3{d.scale});
 
         PendingDoodadInstance pending{};
         pending.model_matrix = m;
@@ -676,7 +752,162 @@ Entity* AssetManager::LoadAdtTileIntoScene(
             spawn_attempts, spawn_failures, spawn_duplicates);
     }
 
+    // R4-grass: walk the MCNK / MCLY effect_ids and scatter grass M2s
+    // from the GroundEffect DBC tables. This is a separate pass from
+    // MDDF because grass is procedurally placed at runtime - it never
+    // appears in the ADT MDDF list. Skipped silently when the tables
+    // weren't loaded (LoadGroundEffectTables() failed or wasn't
+    // called).
+    ScatterGrassForTile(*tile);
+
     return entity;
+}
+
+bool AssetManager::LoadGroundEffectTables() {
+    // Asset layout: assets/dbc/GroundEffectTexture.dbc and
+    // assets/dbc/GroundEffectDoodad.dbc. Both ship with the WoW
+    // 3.3.5a client and were extracted at asset-prep time. Failure
+    // here is non-fatal - the rest of the engine renders without
+    // detail grass.
+    std::string tex_path =
+        std::string(MVE_ASSET_DIR) + "/dbc/GroundEffectTexture.dbc";
+    std::string doo_path =
+        std::string(MVE_ASSET_DIR) + "/dbc/GroundEffectDoodad.dbc";
+    pm_ground_effects_loaded =
+        pm_ground_effects.Load(tex_path, doo_path);
+    return pm_ground_effects_loaded;
+}
+
+bool AssetManager::GetGroundY(const glm::vec3& engine_pos,
+                                float* out_y) const {
+    // Engine is Z-up: renderX = canonical.X (north), renderY =
+    // canonical.Y (west), renderZ = height. The height cache stores
+    // per-chunk ch.wow_x = canonical.Y and ch.wow_y = canonical.X (same
+    // as the MCNK parser). So match the player's canonical.Y against
+    // ch.wow_x and canonical.X against ch.wow_y.
+    const float wow_x = engine_pos.y;   // canonical.Y (matches ch.wow_x)
+    const float wow_y = engine_pos.x;   // canonical.X (matches ch.wow_y)
+
+    // Tile coords. Tile (32, 32) sits at WoW origin; both axes count
+    // up TOWARD the southern/eastern edge with each tile spanning
+    // 533.333 yards. The +0.5 offset puts wow=0 in the centre of
+    // tile 32 not at its boundary.
+    const float kTileSize = kAdtTileSize;
+    int tile_x = 32 - static_cast<int>(std::floor(wow_x / kTileSize + 0.5f));
+    int tile_y = 32 - static_cast<int>(std::floor(wow_y / kTileSize + 0.5f));
+    // Try the analytic tile first, plus the 8 neighbours, since the
+    // analytic tile math can land just outside the chunk grid at
+    // tile borders.
+    for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            int tx = tile_x + dx;
+            int ty = tile_y + dy;
+            if (tx < 0 || tx > 63 || ty < 0 || ty > 63) continue;
+            uint32_t key = static_cast<uint32_t>(tx) * 64u +
+                            static_cast<uint32_t>(ty);
+            auto it = pm_tile_height_cache.find(key);
+            if (it == pm_tile_height_cache.end()) continue;
+
+            const TileHeightCache& cache = it->second;
+            for (int i = 0; i < kAdtChunksPerTile; ++i) {
+                const auto& ch = cache.chunks[i];
+                // Chunk footprint: wow_x in [ch.wow_x - kChunkSize,
+                // ch.wow_x] (the chunk's NW corner has the LARGEST
+                // wow_x; moving south decreases it). Same for wow_y
+                // (east axis). A tiny epsilon avoids missing edges
+                // where the position sits exactly on a chunk seam.
+                const float kChunk = kAdtChunkSize;
+                const float eps = 1e-3f;
+                if (wow_x > ch.wow_x + eps) continue;
+                if (wow_x < ch.wow_x - kChunk - eps) continue;
+                if (wow_y > ch.wow_y + eps) continue;
+                if (wow_y < ch.wow_y - kChunk - eps) continue;
+
+                // Position within chunk, normalised to [0, 1]:
+                //   col_norm = south-axis fraction (0 = north edge)
+                //   row_norm = east-axis fraction  (0 = east edge)
+                float col_norm = (ch.wow_x - wow_x) / kChunk;
+                float row_norm = (ch.wow_y - wow_y) / kChunk;
+                col_norm = std::clamp(col_norm, 0.0f, 1.0f);
+                row_norm = std::clamp(row_norm, 0.0f, 1.0f);
+
+                // Bilerp the 9x9 outer-vertex grid. Same convention
+                // as grass_scatter.cpp's SampleHeight - the indexing
+                // is y_outer[r * 9 + c] where r is east-axis index
+                // and c is south-axis index.
+                float fr = row_norm * 8.0f;
+                float fc = col_norm * 8.0f;
+                int r0 = static_cast<int>(std::floor(fr));
+                int c0 = static_cast<int>(std::floor(fc));
+                int r1 = std::min(r0 + 1, 8);
+                int c1 = std::min(c0 + 1, 8);
+                float tr = fr - r0;
+                float tc = fc - c0;
+                float h00 = ch.y_outer[r0 * 9 + c0];
+                float h10 = ch.y_outer[r1 * 9 + c0];
+                float h01 = ch.y_outer[r0 * 9 + c1];
+                float h11 = ch.y_outer[r1 * 9 + c1];
+                float h_c0 = h00 + (h10 - h00) * tr;
+                float h_c1 = h01 + (h11 - h01) * tr;
+                *out_y = h_c0 + (h_c1 - h_c0) * tc;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool AssetManager::LoadLightTables() {
+    // Asset layout: assets/dbc/{Light,LightParams,LightIntBand,
+    // LightFloatBand}.dbc. All four ship with the WoW 3.3.5a client.
+    // Failure is non-fatal: the RenderSystem's LightCycle will
+    // produce default snapshots if these aren't loaded, which means
+    // the engine renders with the hardcoded "Elwynn noon" colors
+    // baked into the LightSnapshot defaults.
+    return pm_light_tables.Load(std::string(MVE_ASSET_DIR));
+}
+
+void AssetManager::EnqueueDetailGrassInstance(
+    const std::string& wow_m2_path, const glm::mat4& model_matrix) {
+    if (wow_m2_path.empty()) return;
+    // Resolve identically to MDDF: ResolveWowAsset then ResolveM2Extension
+    // so the cache key matches whatever the M2 loader will use. Without
+    // this, two grass placements that differ only by .mdx vs .m2 in
+    // their source DBC produce two separate entities.
+    std::string fs_path = ResolveWowAsset(wow_m2_path);
+    fs_path = ResolveM2Extension(fs_path);
+
+    pm_detail_grass_paths.insert(fs_path);
+    PendingDoodadInstance pending{};
+    pending.model_matrix = model_matrix;
+    pm_pending_doodad_instances[fs_path].push_back(pending);
+}
+
+void AssetManager::ScatterGrassForTile(const AdtTile& tile) {
+    if (!pm_ground_effects_loaded) return;
+
+    // Conservative per-sub-cell cap so a 5x5 preload doesn't blow the
+    // descriptor pool. WoW's GroundEffectTexture.Density values reach
+    // 12+ in dense forest tiles; combined with 256 chunks * 64 sub-
+    // cells that's >150k placements per tile if we let it run free.
+    // 1 per sub-cell per layer means at most 4 * 64 * 256 = ~65k per
+    // tile, but in practice most sub-cells fall under the 10% alpha
+    // threshold or have effect_id=0 so real counts are ~5-15k.
+    constexpr int kMaxPerSubcell = 1;
+
+    std::vector<GrassPlacement> placements;
+    placements.reserve(8192);
+    mve::ScatterGrassForTile(tile, pm_ground_effects, kMaxPerSubcell, placements);
+
+    for (const auto& p : placements) {
+        EnqueueDetailGrassInstance(p.wow_m2_path, p.model_matrix);
+    }
+
+    if (!placements.empty()) {
+        std::fprintf(stderr,
+            "ScatterGrassForTile (%d, %d): %zu grass placements queued\n",
+            tile.tile_x, tile.tile_y, placements.size());
+    }
 }
 
 void AssetManager::FlushDoodadInstances(Scene& scene) {
@@ -816,8 +1047,9 @@ void AssetManager::FlushDoodadInstances(Scene& scene) {
                 ssm.pm_index_start = sub.index_start;
                 ssm.pm_index_count = sub.index_count;
                 if (sub.material_index < model.materials.size()) {
-                    ssm.pm_blend_mode =
-                        model.materials[sub.material_index].blend_mode;
+                    const auto& mat = model.materials[sub.material_index];
+                    ssm.pm_blend_mode   = mat.blend_mode;
+                    ssm.pm_render_flags = mat.flags;
                 }
                 ssm.pm_descriptor_set =
                     pm_descriptor_pool->AllocateSetRaw(*pm_descriptor_layout);
@@ -923,6 +1155,13 @@ void AssetManager::FlushDoodadInstances(Scene& scene) {
         auto* dic = entity->GetComponent<DoodadInstanceComponent>();
         dic->pm_instance_buffer = std::move(inst_buf);
         dic->pm_instance_count  = static_cast<uint32_t>(total_count);
+        // Tag the group as detail grass if any placement for this M2
+        // path came from the GroundEffect scatter (the set membership
+        // is sticky - once tagged, always tagged - since grass paths
+        // never alias to MDDF paths in practice).
+        dic->pm_is_detail_grass =
+            (pm_detail_grass_paths.find(m2_path) !=
+             pm_detail_grass_paths.end());
         dic->pm_submeshes.clear();
         dic->pm_submeshes.reserve(shared->pm_submeshes.size());
         for (const auto& ssm : shared->pm_submeshes) {
@@ -930,6 +1169,8 @@ void AssetManager::FlushDoodadInstances(Scene& scene) {
             ds.pm_descriptor_set = ssm.pm_descriptor_set;
             ds.pm_index_start    = ssm.pm_index_start;
             ds.pm_index_count    = ssm.pm_index_count;
+            ds.pm_blend_mode     = ssm.pm_blend_mode;
+            ds.pm_render_flags   = ssm.pm_render_flags;
             dic->pm_submeshes.push_back(ds);
         }
 
@@ -962,6 +1203,167 @@ void AssetManager::FlushDoodadInstances(Scene& scene) {
             "extended %zu)\n",
             new_instances, new_entities, extended_entities);
     }
+}
+
+Entity* AssetManager::LoadWmoPlacement(
+    const WmoPlacement& p, Scene& scene,
+    const vk::raii::DescriptorSetLayout& wmo_descriptor_layout) {
+    if (p.wow_path.empty()) return nullptr;
+
+    std::string root_path = ResolveWowAsset(p.wow_path);
+    auto root = WmoLoader::LoadRoot(root_path);
+    if (!root) return nullptr;
+
+    // Group files are <stem>_NNN.wmo where NNN is 3-digit zero-padded.
+    // Stem = root path minus the .wmo extension.
+    std::string stem = root_path;
+    size_t dot = stem.find_last_of('.');
+    if (dot != std::string::npos) stem.resize(dot);
+
+    std::vector<WmoGroupGpu> group_gpus;
+    group_gpus.reserve(root->header.n_groups);
+    std::vector<glm::vec4> bbox_mins;
+    std::vector<glm::vec4> bbox_maxs;
+    bbox_mins.reserve(root->header.n_groups);
+    bbox_maxs.reserve(root->header.n_groups);
+
+    size_t grp_load_fail = 0, grp_build_empty = 0;
+    for (uint32_t gi = 0; gi < root->header.n_groups; ++gi) {
+        char suffix[16];
+        std::snprintf(suffix, sizeof(suffix), "_%03u.wmo", gi);
+        std::string gpath = stem + suffix;
+        auto grp = WmoLoader::LoadGroup(gpath);
+        if (!grp) { ++grp_load_fail; continue; }
+
+        auto gpu = WmoMesh::Build(pm_device, *grp);
+        if (gpu.mesh) {
+            group_gpus.push_back(std::move(gpu));
+            const auto& gi_info = (gi < root->group_infos.size())
+                                      ? root->group_infos[gi]
+                                      : WmoMogi{};
+            bbox_mins.emplace_back(gi_info.bbox_min[0],
+                                    gi_info.bbox_min[1],
+                                    gi_info.bbox_min[2], 0.0f);
+            bbox_maxs.emplace_back(gi_info.bbox_max[0],
+                                    gi_info.bbox_max[1],
+                                    gi_info.bbox_max[2], 0.0f);
+        } else {
+            ++grp_build_empty;
+        }
+    }
+    if (group_gpus.empty()) {
+        std::fprintf(stderr,
+            "  WMO %s: n_groups=%u, loaded=%zu, build_empty=%zu, "
+            "load_fail=%zu -> bbox fallback\n",
+            p.wow_path.c_str(),
+            root->header.n_groups, group_gpus.size(),
+            grp_build_empty, grp_load_fail);
+        return nullptr;
+    }
+
+    // WMO model matrix, ported directly from WoWee
+    // (src/rendering/wmo_renderer.cpp:2237-2253). Our engine is now
+    // Z-up matching WoWee's render frame exactly, so this is a 1:1
+    // port - no SwapYZ, no mirror_x, no debug toggles.
+    //
+    //   M = T * Rz(rot_y + pi) * Ry(-rot_x) * Rx(-rot_z)
+    //
+    // applied to MOVT vertices that are in Z-up server frame and
+    // consumed raw. Verified to render Stormwind, Northshire abbey,
+    // and the footbridge with correct orientation.
+    float deg = 0.01745329252f;
+    float rx = -p.rot_deg.z * deg;
+    float ry = -p.rot_deg.x * deg;
+    float rz = (p.rot_deg.y + 180.0f) * deg;
+
+    glm::mat4 model = glm::translate(glm::mat4{1.0f}, p.engine_pos);
+    model = glm::rotate(model, rz, glm::vec3{0, 0, 1});
+    model = glm::rotate(model, ry, glm::vec3{0, 1, 0});
+    model = glm::rotate(model, rx, glm::vec3{1, 0, 0});
+
+    char entity_name[96];
+    std::snprintf(entity_name, sizeof(entity_name), "WMO_%u", p.unique_id);
+    Entity* entity = scene.CreateEntity(entity_name);
+    auto* tx = entity->AddComponent<TransformComponent>();
+    tx->pm_position = p.engine_pos;
+    auto* comp = entity->AddComponent<WmoInstanceComponent>();
+    auto root_shared = std::shared_ptr<WmoRoot>(root.release());
+    comp->groups         = std::move(group_gpus);
+    comp->group_bbox_min = std::move(bbox_mins);
+    comp->group_bbox_max = std::move(bbox_maxs);
+    comp->model_matrix   = model;
+    // Preserve raw MODF values so the render system can rebuild
+    // model_matrix per frame as the editor adjusts WMO debug tuning.
+    comp->raw_engine_pos = p.engine_pos;
+    comp->raw_rot_deg    = p.rot_deg;
+
+    // Allocate one descriptor set per material with SceneUBO + diffuse
+    // sampler. Texture loading mirrors the M2 load_blp pattern -
+    // resolve through ResolveWowAsset, load via BlpLoader, cache in
+    // pm_texture_cache, wrap in an Image. Missing textures land a
+    // null vk::DescriptorSet so the draw loop falls back gracefully.
+    if (pm_descriptor_pool && pm_scene_ubo) {
+        const auto& wmo_layout = wmo_descriptor_layout;
+        comp->material_sets.resize(root_shared->materials.size(),
+                                    VK_NULL_HANDLE);
+        comp->material_textures.resize(root_shared->materials.size());
+
+        size_t tex_ok = 0, tex_missing_path = 0, tex_missing_file = 0,
+               tex_load_fail = 0;
+        for (size_t mi = 0; mi < root_shared->materials.size(); ++mi) {
+            const std::string& wow_tex = root_shared->texture_paths[mi];
+            if (wow_tex.empty()) { ++tex_missing_path; continue; }
+            std::string fs_path = ResolveWowAsset(wow_tex);
+            if (!fs::exists(fs_path)) { ++tex_missing_file; continue; }
+
+            TextureHandle tex;
+            auto cached = pm_texture_cache.find(fs_path);
+            if (cached != pm_texture_cache.end()) {
+                tex = cached->second;
+            } else {
+                try {
+                    auto blp = BlpLoader::LoadFile(fs_path);
+                    tex = std::make_shared<Image>(pm_device, blp);
+                    pm_texture_cache[fs_path] = tex;
+                } catch (...) {
+                    ++tex_load_fail;
+                    continue;
+                }
+            }
+            if (!tex) { ++tex_load_fail; continue; }
+            ++tex_ok;
+
+            vk::DescriptorSet ds =
+                pm_descriptor_pool->AllocateSetRaw(wmo_layout);
+            if (!ds) continue;
+
+            vk::DescriptorBufferInfo ubo_info{
+                *pm_scene_ubo->GetBuffer(), 0, sizeof(SceneUBO)};
+            vk::DescriptorImageInfo img_info{
+                *tex->GetSampler(),
+                *tex->GetImageView(),
+                vk::ImageLayout::eShaderReadOnlyOptimal};
+            DescriptorWriter{}
+                .WriteBuffer(0, ubo_info, vk::DescriptorType::eUniformBuffer)
+                .WriteImage(1, img_info, vk::DescriptorType::eCombinedImageSampler)
+                .Apply(pm_device.GetDevice(), ds);
+
+            comp->material_sets[mi]     = ds;
+            comp->material_textures[mi] = tex;
+        }
+        // Only log when something went wrong - happy-path WMOs stay quiet.
+        size_t missing = tex_missing_path + tex_missing_file + tex_load_fail;
+        if (missing > 0) {
+            std::fprintf(stderr,
+                "  WMO %s: %zu materials, %zu textured, %zu missing\n",
+                p.wow_path.c_str(), root_shared->materials.size(),
+                tex_ok, missing);
+        }
+    }
+
+    comp->root = std::move(root_shared);
+
+    return entity;
 }
 
 } // namespace mve

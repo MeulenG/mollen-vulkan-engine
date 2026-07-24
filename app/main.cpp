@@ -12,6 +12,7 @@
 #include "scene/components/terrain_component.h"
 #include "scene/components/terrain_tile_component.h"
 #include "scene/terrain_streamer.h"
+#include "scene/player_controller.h"
 #include "resources/asset_manager.h"
 #include "resources/buffer.h"
 #include "resources/descriptor.h"
@@ -63,6 +64,26 @@ int main() {
             render_system.GetDescriptorPool(),
             render_system.SceneUBOBuffer());
 
+        // Load the GroundEffect DBC tables (texture + doodad) once,
+        // before any tiles stream in. ADT tile loading calls
+        // ScatterGrassForTile() which silently does nothing if the
+        // tables didn't load. A missing or unparseable DBC is logged
+        // by LoadGroundEffectTables but isn't fatal - the engine just
+        // renders without detail grass.
+        assets.LoadGroundEffectTables();
+
+        // Load the Light DBC tables (Light + LightParams + LightIntBand
+        // + LightFloatBand) and attach a LightCycle to the render
+        // system. The cycle interpolates the 18 LightIntBand colors +
+        // 6 LightFloatBand floats across a 16-keyframe per-day curve
+        // and drives the scene UBO + sky cone push constants every
+        // frame. Without it the renderer uses the hardcoded canonical
+        // Elwynn noon values seeded by the RenderSystem constructor.
+        assets.LoadLightTables();
+        mve::LightCycle light_cycle;
+        light_cycle.SetTables(&assets.Lights());
+        render_system.SetLightCycle(&light_cycle);
+
         mve::AnimationSystem animation_system;
         mve::EditorUISystem editor_ui{window, imgui_ctx, *offscreen,
                                        device, assets};
@@ -109,10 +130,39 @@ int main() {
         // from the file would be slightly more accurate, but the file
         // load happens DURING the preload below - so we use the analytic
         // tile center to bootstrap.
-        glm::vec3 center{-8800.0f, 170.0f, -250.0f};
-        cam->pm_camera.SetTarget(center);
-        // Bigger orbit so the full 3x3 (1600 yards across) fits in view.
-        cam->pm_camera.SetOrbit(1500.0f, 0.5f, 0.5f);
+        //
+        // Default camera is ground-level FPS now - the orbit-1500
+        // bird's-eye made the editor read as a diorama. Ground level
+        // (matches the target reference) shows trees + terrain at
+        // proper density. User can switch via Tools menu.
+        // Ground-eye close shot at the Northshire road, designed to
+        // catch detail-grass blades scattered around the camera and
+        // the cobblestone path in the same frame. orbit 8y radius +
+        // pitch +0.15 (~9deg downward look) puts the camera at
+        // ~91 yards Y (just above the ground at Y=89) so we're
+        // standing on the road looking slightly down at our feet.
+        // Grass cull radius is 60 yards so foreground blades render.
+        // Phase 2B: third-person mode with a player controller.
+        // Player spawns on the road in tile (32, 48) at Northshire Valley.
+        // Engine is Z-up: renderX = canonical.Y (west), renderY =
+        // canonical.X (north), renderZ = height. Spawn coords below
+        // place the player in tile (32, 48) at canonical X ~ -30 and
+        // canonical Y ~ -9000, eye height 89.
+        //
+        // Orbit yaw convention (Camera::updatePosition in Z-up):
+        //   position = target + R * (ch*sin(yaw), ch*cos(yaw), sin(pitch))
+        // So:
+        //   yaw=0    -> camera at target + (0, R, 0) = +Y side of target
+        //   yaw=pi/2 -> camera at target + (R, 0, 0) = +X side of target
+        //   yaw=pi   -> camera at target + (0,-R, 0) = -Y side of target
+        glm::vec3 player_spawn{-9000.0f, -30.0f, 89.0f};
+        glm::vec3 eye_target = player_spawn + glm::vec3{0, 0, 1.7f};
+        cam->pm_camera.SetTarget(eye_target);
+        cam->pm_camera.SetOrbit(15.0f, 0.0f, 0.35f);
+        cam->pm_camera.SetMode(mve::CameraMode::ThirdPerson);
+
+        mve::PlayerController player;
+        player.SetPosition(player_spawn);
 
         // Preload around wherever the camera actually sits (which may be
         // a neighboring tile because of the orbit offset). Radius 2 (5x5)
@@ -134,6 +184,38 @@ int main() {
         // Without this call the doodads never enter the scene.
         assets.FlushDoodadInstances(scene);
 
+        // Phase 2E: load each MODF WMO placement as a real meshed
+        // entity. On parse failure (missing asset, malformed group
+        // file) we fall back to the colored bbox marker debug overlay
+        // so the building's position is still visible on screen.
+        size_t wmo_ok = 0, wmo_fail = 0;
+        for (const auto& w : assets.PendingWmoPlacements()) {
+            if (assets.LoadWmoPlacement(w, scene,
+                                         render_system.WmoDescriptorLayout())) {
+                ++wmo_ok;
+                continue;
+            }
+            ++wmo_fail;
+            mve::RenderSystem::WmoBboxMarker m{};
+            m.pos     = w.engine_pos;
+            m.extents = w.bbox_extents;
+            uint32_t h = w.unique_id * 2654435761u;
+            m.color = glm::vec3{
+                ((h >>  0) & 0xff) / 255.0f * 0.7f + 0.3f,
+                ((h >>  8) & 0xff) / 255.0f * 0.7f + 0.3f,
+                ((h >> 16) & 0xff) / 255.0f * 0.7f + 0.3f,
+            };
+            render_system.AddWmoBbox(m);
+            std::fprintf(stderr,
+                "  WMO (bbox fallback): %s at engine=(%.0f, %.0f, %.0f)\n",
+                w.wow_path.c_str(),
+                w.engine_pos.x, w.engine_pos.y, w.engine_pos.z);
+        }
+        std::fprintf(stderr,
+            "WMO placements: %zu loaded, %zu fell back to bbox\n",
+            wmo_ok, wmo_fail);
+        assets.ClearPendingWmoPlacements();
+
         auto last_time = std::chrono::high_resolution_clock::now();
 
         while (!window.ShouldClose()) {
@@ -144,6 +226,63 @@ int main() {
 
             // ImGui frame
             imgui_ctx.NewFrame();
+
+            // Advance the day/night cycle clock. light_cycle.Tick
+            // wraps to a no-op when paused, which is the editor's
+            // default state - the user pins a specific time-of-day
+            // for stable comparisons and clicks "Real-time" to let
+            // it advance.
+            light_cycle.Tick(dt);
+
+            // Noclip toggle (N): swap between ThirdPerson (player-
+            // following) and FlyFirstPerson (free camera). When
+            // re-entering ThirdPerson, re-anchor the camera to the
+            // player so the view snaps back to where the player is
+            // standing (otherwise the orbit target would still point
+            // wherever the free camera was last looking).
+            if (ImGui::IsKeyPressed(ImGuiKey_N, false)) {
+                if (cam->pm_camera.Mode() == mve::CameraMode::ThirdPerson) {
+                    cam->pm_camera.SetMode(mve::CameraMode::FlyFirstPerson);
+                } else if (cam->pm_camera.Mode() ==
+                           mve::CameraMode::FlyFirstPerson) {
+                    cam->pm_camera.SetMode(mve::CameraMode::ThirdPerson);
+                    cam->pm_camera.SetTarget(player.GetEyePos());
+                }
+            }
+
+            // Phase 2B player update. Runs ONLY when the active camera
+            // is in ThirdPerson mode - in Orbit / FlyFirstPerson the
+            // WASD keys drive the camera via EditorUISystem instead.
+            //
+            // The player marker stays VISIBLE in every mode (rendered
+            // at player.GetPosition()) so noclip users have a "you-
+            // were-here" reference to fly back to.
+            render_system.SetPlayerPos(player.GetPosition());
+
+            if (cam->pm_camera.Mode() == mve::CameraMode::ThirdPerson) {
+                bool w = ImGui::IsKeyDown(ImGuiKey_W);
+                bool a = ImGui::IsKeyDown(ImGuiKey_A);
+                bool s = ImGui::IsKeyDown(ImGuiKey_S);
+                bool d = ImGui::IsKeyDown(ImGuiKey_D);
+                bool sprint = ImGui::GetIO().KeyShift;
+                player.Update(dt, cam->pm_camera, w, a, s, d, sprint);
+
+                // Snap the player's height to the terrain. Engine is
+                // Z-up so height is the Z component. Without this the
+                // player floats at fixed height while the ground slopes
+                // underneath. GetGroundY returns false off-tile, in
+                // which case we leave the previous height alone (player
+                // glides off the loaded region instead of falling).
+                glm::vec3 pos = player.GetPosition();
+                float ground_z;
+                if (assets.GetGroundY(pos, &ground_z)) {
+                    pos.z = ground_z;
+                    player.SetPosition(pos);
+                }
+
+                cam->pm_camera.SetTarget(player.GetEyePos());
+                render_system.SetPlayerPos(player.GetPosition());
+            }
 
             // Systems. EditorUISystem owns the dockspace + menu/status
             // bars, so the host viewport gets its layout from there.

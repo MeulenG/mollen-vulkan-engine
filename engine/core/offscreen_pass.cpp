@@ -23,6 +23,37 @@ OffscreenPass::OffscreenPass(Device& device, uint32_t width, uint32_t height,
 }
 
 void OffscreenPass::createResources() {
+    // --- Multisample color (render target) ---
+    // 4x MSAA. Used only as a color attachment - we never sample it
+    // directly. The GPU resolves the 4 samples per pixel into the
+    // single-sample color_image_ below at EndRendering time.
+    vk::ImageCreateInfo msaa_color_info{};
+    msaa_color_info.imageType = vk::ImageType::e2D;
+    msaa_color_info.format = color_format_;
+    msaa_color_info.extent = vk::Extent3D{width_, height_, 1};
+    msaa_color_info.mipLevels = 1;
+    msaa_color_info.arrayLayers = 1;
+    msaa_color_info.samples = kSampleCount;
+    msaa_color_info.tiling = vk::ImageTiling::eOptimal;
+    msaa_color_info.usage = vk::ImageUsageFlagBits::eColorAttachment;
+
+    msaa_color_image_ = device_.GetDevice().createImage(msaa_color_info);
+    auto msaa_reqs = msaa_color_image_.getMemoryRequirements();
+    msaa_color_memory_ = device_.GetDevice().allocateMemory({
+        msaa_reqs.size,
+        device_.FindMemoryType(msaa_reqs.memoryTypeBits,
+                                vk::MemoryPropertyFlagBits::eDeviceLocal)
+    });
+    msaa_color_image_.bindMemory(*msaa_color_memory_, 0);
+
+    vk::ImageViewCreateInfo msaa_view_info{};
+    msaa_view_info.image = *msaa_color_image_;
+    msaa_view_info.viewType = vk::ImageViewType::e2D;
+    msaa_view_info.format = color_format_;
+    msaa_view_info.subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
+    msaa_color_view_ = device_.GetDevice().createImageView(msaa_view_info);
+
+    // --- Single-sample resolve target (ImGui samples this) ---
     vk::ImageCreateInfo color_info{};
     color_info.imageType = vk::ImageType::e2D;
     color_info.format = color_format_;
@@ -31,9 +62,11 @@ void OffscreenPass::createResources() {
     color_info.arrayLayers = 1;
     color_info.samples = vk::SampleCountFlagBits::e1;
     color_info.tiling = vk::ImageTiling::eOptimal;
-    // COLOR_ATTACHMENT: we render to it. SAMPLED: ImGui reads it as a
-    // texture. TRANSFER_SRC: SaveColorToPng copies the bytes out for
-    // PNG dumps via vkCmdCopyImageToBuffer.
+    // COLOR_ATTACHMENT: we bind it as the resolve target in the render
+    // pass (Vulkan classifies resolve attachments as a color attachment
+    // usage). SAMPLED: ImGui reads it as a texture. TRANSFER_SRC:
+    // SaveColorToPng copies the bytes out for PNG dumps via
+    // vkCmdCopyImageToBuffer.
     color_info.usage = vk::ImageUsageFlagBits::eColorAttachment
                      | vk::ImageUsageFlagBits::eSampled
                      | vk::ImageUsageFlagBits::eTransferSrc;
@@ -53,13 +86,18 @@ void OffscreenPass::createResources() {
     color_view_info.subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
     color_view_ = device_.GetDevice().createImageView(color_view_info);
 
+    // --- Multisample depth attachment ---
+    // 4x to match the MSAA color attachment (Vulkan requires all
+    // attachments in a render pass to share the same sample count).
+    // No resolve: depth is consumed for early-Z + depth-test then
+    // discarded; we never sample it.
     vk::ImageCreateInfo depth_info{};
     depth_info.imageType = vk::ImageType::e2D;
     depth_info.format = depth_format_;
     depth_info.extent = vk::Extent3D{width_, height_, 1};
     depth_info.mipLevels = 1;
     depth_info.arrayLayers = 1;
-    depth_info.samples = vk::SampleCountFlagBits::e1;
+    depth_info.samples = kSampleCount;
     depth_info.tiling = vk::ImageTiling::eOptimal;
     depth_info.usage = vk::ImageUsageFlagBits::eDepthStencilAttachment;
 
@@ -88,6 +126,15 @@ void OffscreenPass::createResources() {
 }
 
 void OffscreenPass::BeginRendering(const vk::raii::CommandBuffer& cmd) {
+    // Transition the MSAA color image to ColorAttachmentOptimal - it's
+    // the render target the GPU writes 4 samples per pixel into.
+    transitionImage(cmd, *msaa_color_image_,
+        vk::ImageLayout::eUndefined,
+        vk::ImageLayout::eColorAttachmentOptimal);
+
+    // Transition the single-sample resolve target to ColorAttachmentOptimal
+    // too. Vulkan classifies resolve attachments as a color-attachment
+    // usage during the render pass, so the layout must match.
     transitionImage(cmd, *color_image_,
         vk::ImageLayout::eUndefined,
         vk::ImageLayout::eColorAttachmentOptimal);
@@ -98,11 +145,18 @@ void OffscreenPass::BeginRendering(const vk::raii::CommandBuffer& cmd) {
         vk::ImageAspectFlagBits::eDepth);
 
     vk::RenderingAttachmentInfo color_attachment{};
-    color_attachment.imageView = *color_view_;
+    color_attachment.imageView   = *msaa_color_view_;
     color_attachment.imageLayout = vk::ImageLayout::eColorAttachmentOptimal;
-    color_attachment.loadOp = vk::AttachmentLoadOp::eClear;
-    color_attachment.storeOp = vk::AttachmentStoreOp::eStore;
-    color_attachment.clearValue.color = vk::ClearColorValue{std::array{0.02f, 0.02f, 0.02f, 1.0f}};
+    // Resolve: at end-of-render-pass, the GPU averages the 4 MSAA
+    // samples per pixel and writes the result to color_view_. After
+    // this, ImGui samples color_view_ for the viewport panel.
+    color_attachment.resolveMode        = vk::ResolveModeFlagBits::eAverage;
+    color_attachment.resolveImageView   = *color_view_;
+    color_attachment.resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal;
+    color_attachment.loadOp  = vk::AttachmentLoadOp::eClear;
+    color_attachment.storeOp = vk::AttachmentStoreOp::eDontCare;
+    color_attachment.clearValue.color = vk::ClearColorValue{
+        std::array{0.02f, 0.02f, 0.02f, 1.0f}};
 
     vk::RenderingAttachmentInfo depth_attachment{};
     depth_attachment.imageView = *depth_view_;
@@ -129,7 +183,11 @@ void OffscreenPass::BeginRendering(const vk::raii::CommandBuffer& cmd) {
 void OffscreenPass::EndRendering(const vk::raii::CommandBuffer& cmd) {
     cmd.endRendering();
 
-    // Transition color image to shader-readable for ImGui to sample
+    // Transition the resolve target to ShaderReadOnly so ImGui can
+    // sample it. The MSAA color image stays in ColorAttachmentOptimal -
+    // we never sample it directly, and the next frame's BeginRendering
+    // transitions it from Undefined again (a no-op since loadOp = Clear
+    // discards prior contents anyway).
     transitionImage(cmd, *color_image_,
         vk::ImageLayout::eColorAttachmentOptimal,
         vk::ImageLayout::eShaderReadOnlyOptimal);
@@ -144,12 +202,16 @@ void OffscreenPass::Resize(uint32_t width, uint32_t height) {
     width_ = width;
     height_ = height;
 
-    // Destroy old resources (RAII handles this when we reassign)
-    color_view_ = nullptr;
-    color_image_ = nullptr;
+    // Destroy old resources (RAII handles this when we reassign).
+    // Include the MSAA color image + memory + view introduced in 2A.
+    msaa_color_view_   = nullptr;
+    msaa_color_image_  = nullptr;
+    msaa_color_memory_ = nullptr;
+    color_view_   = nullptr;
+    color_image_  = nullptr;
     color_memory_ = nullptr;
-    depth_view_ = nullptr;
-    depth_image_ = nullptr;
+    depth_view_   = nullptr;
+    depth_image_  = nullptr;
     depth_memory_ = nullptr;
 
     createResources();

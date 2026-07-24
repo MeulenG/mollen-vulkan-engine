@@ -6,6 +6,7 @@
 #include "../scene/components/terrain_tile_component.h"
 #include "../scene/components/transform_component.h"
 #include "../scene/components/mesh_component.h"
+#include "../resources/wmo_debug_tuning.h"
 
 #include <imgui_internal.h>
 
@@ -23,6 +24,12 @@
 namespace fs = std::filesystem;
 
 namespace mve {
+
+// Process-wide WMO transform tuning. The render system reads this
+// every frame; the inspector slider writes to it. Default values are
+// the brute-force starting point - all zeros, as we're searching for
+// the correct combination.
+WmoDebugTuning g_wmo_debug{};
 
 namespace {
 
@@ -58,14 +65,14 @@ const char* GroupForPath(const std::string& path) {
 // reference (the editor UI is rendered every frame and the streamer
 // is owned by main, not the scene).
 //
-// wow_x = engine.z, wow_y = engine.x, tile size = 533.33 yards,
-// tile 32 sits at wow=0.
+// Engine is Z-up: renderX = canonical.Y (west), renderY = canonical.X
+// (north). Tile (tile_x, tile_y) covers canonical.X = renderY in
+// [(32-tile_x-1)*TILE, (32-tile_x)*TILE] and canonical.Y = renderX
+// likewise. tile 32 sits at the world origin.
 void CamToTile(const glm::vec3& engine_pos, int& tile_x, int& tile_y) {
     constexpr float kTileSize = 533.3333f;
-    float wow_x = engine_pos.z;
-    float wow_y = engine_pos.x;
-    int tx = static_cast<int>(32.0f - wow_x / kTileSize);
-    int ty = static_cast<int>(32.0f - wow_y / kTileSize);
+    int tx = static_cast<int>(32.0f - engine_pos.y / kTileSize);
+    int ty = static_cast<int>(32.0f - engine_pos.x / kTileSize);
     tile_x = std::clamp(tx, 0, 63);
     tile_y = std::clamp(ty, 0, 63);
 }
@@ -419,8 +426,15 @@ void EditorUISystem::DrawViewport(Scene& scene, float delta_time) {
             float dist       = active_cam->Distance();
             float pan_speed  = dist * 0.001f;
             float zoom_speed = dist * 0.05f;
+            // FPS-mode speed knobs. Base = 25 yd/s (a brisk walk).
+            //   Shift = sprint, 5x  -> 125 yd/s
+            //   Ctrl  = noclip warp, 20x -> 500 yd/s, crosses a tile in
+            //          ~1 second; combined with Shift you get 2500 yd/s
+            //          which covers the entire 5x5 preload in under a
+            //          second (useful for "verify the layout" surveys).
             float fps_walk   = 25.0f * delta_time;   // yards per frame
             if (ImGui::GetIO().KeyShift) fps_walk *= 5.0f;
+            if (ImGui::GetIO().KeyCtrl)  fps_walk *= 20.0f;
             float fps_look   = 0.003f;               // radians per pixel
 
             if (ImGui::IsMouseDown(ImGuiMouseButton_Right) || fps) {
@@ -514,14 +528,50 @@ void EditorUISystem::DrawInspector(Scene& scene, RenderSystem& render_system) {
         ImGui::Separator();
 
         auto& ubo = render_system.SceneData();
-        ImGui::SeparatorText("Scene Lighting");
+        ImGui::SeparatorText("Scene Lighting (WoW Light.dbc semantics)");
         float light_dir[3] = {ubo.pm_light_dir.x, ubo.pm_light_dir.y, ubo.pm_light_dir.z};
         if (ImGui::SliderFloat3("Light Direction", light_dir, -1.0f, 1.0f)) {
             ubo.pm_light_dir = glm::normalize(
                 glm::vec3{light_dir[0], light_dir[1], light_dir[2]});
         }
-        ImGui::SliderFloat("Ambient",   &ubo.pm_ambient,         0.0f, 1.0f);
-        ImGui::SliderFloat("Intensity", &ubo.pm_light_intensity, 0.0f, 2.0f);
+        // Promoted from scalar to vec3 (matches LightIntBand row 1
+        // AmbientColor). Color picker so the editor can read the
+        // cool-blue vs warm-grey ambient tone at a glance.
+        ImGui::ColorEdit3("Direct Color (sun)",  &ubo.pm_direct_color.x);
+        ImGui::ColorEdit3("Ambient Color",       &ubo.pm_ambient_color.x);
+        ImGui::ColorEdit3("Fog Color",           &ubo.pm_fog_color.x);
+        ImGui::SliderFloat("Intensity",          &ubo.pm_light_intensity, 0.0f, 2.0f);
+        ImGui::SliderFloat("Fog Start",          &ubo.pm_fog_start, 0.0f, 1000.0f);
+        ImGui::SliderFloat("Fog End",            &ubo.pm_fog_end,   0.0f, 2000.0f);
+        // Fog rate (the pow exponent on the linear fog ramp). 1.0 =
+        // pure linear; higher values bend the ramp toward fog_end
+        // (most fog accumulates near the far edge). 2.875 is Elwynn's
+        // canonical client-computed value.
+        ImGui::SliderFloat("Fog Rate",           &ubo.pm_fog_rate,  0.5f, 7.0f);
+
+        // Live tuning for the WMO model-matrix construction. Used to
+        // brute-force the correct combination of magic offset + sign
+        // flips needed to make Stormwind/Northshire/etc face the right
+        // direction. Changes take effect next frame.
+        ImGui::SeparatorText("WMO Transform Tuning (debug)");
+        ImGui::SliderFloat("WMO Yaw Offset",
+                            &g_wmo_debug.yaw_offset_deg, -360.0f, 360.0f);
+        if (ImGui::Button("0"))    g_wmo_debug.yaw_offset_deg = 0.0f;
+        ImGui::SameLine();
+        if (ImGui::Button("+90"))  g_wmo_debug.yaw_offset_deg = 90.0f;
+        ImGui::SameLine();
+        if (ImGui::Button("-90"))  g_wmo_debug.yaw_offset_deg = -90.0f;
+        ImGui::SameLine();
+        if (ImGui::Button("+180")) g_wmo_debug.yaw_offset_deg = 180.0f;
+        ImGui::Checkbox("Yaw sign flip",   &g_wmo_debug.yaw_sign_flip);
+        ImGui::Checkbox("Pitch sign flip", &g_wmo_debug.pitch_sign_flip);
+        ImGui::Checkbox("Roll sign flip",  &g_wmo_debug.roll_sign_flip);
+        ImGui::Checkbox("Swap pitch/roll axes", &g_wmo_debug.swap_pitch_roll_axes);
+        ImGui::Separator();
+        ImGui::TextDisabled("Extra mirror (un-mirror the SwapYZ reflection)");
+        ImGui::Checkbox("Mirror X (negate engine.X)", &g_wmo_debug.mirror_x);
+        ImGui::Checkbox("Mirror Y (negate engine.Y)", &g_wmo_debug.mirror_y);
+        ImGui::Checkbox("Mirror Z (negate engine.Z)", &g_wmo_debug.mirror_z);
 
         ImGui::End();
         return;

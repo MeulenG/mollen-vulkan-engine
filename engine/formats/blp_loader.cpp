@@ -59,17 +59,34 @@ BlpTexture BlpLoader::loadDxt(const BlpHeader& header, const uint8_t* data) {
     // BC1 block = 8 bytes:  2 RGB565 colors + 4x4 2-bit lookup table
     // BC2 block = 16 bytes: 4x4 4-bit alpha values + BC1 color block
     // BC3 block = 16 bytes: 2 alpha values + 4x4 3-bit alpha lookup + BC1 color block
+    // sRGB variants. BLPs store color data in sRGB space (the artists
+    // painted in sRGB, the BLPs preserve those values), but our final
+    // swapchain target is also sRGB. Loading the texture as a UNorm
+    // format causes the GPU to sample sRGB data WITHOUT decoding it
+    // to linear, so all lighting math (NdotL multiplies, mixes, etc.)
+    // runs in nonlinear space. Then the sRGB swapchain output applies
+    // gamma encoding on top of that, double-encoding everything and
+    // producing muddy / dark midtones.
+    //
+    // The correct chain is:
+    //   sample (sRGB texel -> linear via hardware)
+    //   lighting math in linear space
+    //   write (linear result -> sRGB via hardware on the target)
+    //
+    // The Vulkan *_SrgbBlock formats trigger the hardware sRGB->linear
+    // decode on sample for free. No shader change is needed because
+    // the conversion happens before the texel reaches the shader.
     switch (header.alpha_type) {
         case 0:
             tex.format = (header.alpha_depth > 0)
-                ? vk::Format::eBc1RgbaUnormBlock   // DXT1 with alpha
-                : vk::Format::eBc1RgbUnormBlock;   // DXT1 no alpha
+                ? vk::Format::eBc1RgbaSrgbBlock   // DXT1 with alpha
+                : vk::Format::eBc1RgbSrgbBlock;   // DXT1 no alpha
             break;
         case 1:
-            tex.format = vk::Format::eBc2UnormBlock; // DXT3
+            tex.format = vk::Format::eBc2SrgbBlock; // DXT3
             break;
         case 7:
-            tex.format = vk::Format::eBc3UnormBlock; // DXT5
+            tex.format = vk::Format::eBc3SrgbBlock; // DXT5
             break;
         default:
             throw std::runtime_error("Unknown BLP DXT alpha_type: " + std::to_string(header.alpha_type));
@@ -104,7 +121,11 @@ BlpTexture BlpLoader::loadPalettized(const BlpHeader& header, const uint8_t* dat
     tex.width = header.width;
     tex.height = header.height;
     tex.compressed = false;
-    tex.format = vk::Format::eR8G8B8A8Unorm;
+    // sRGB on sample - see DXT path above for the gamma-chain
+    // reasoning. Palettized BLPs are uncommon for diffuse art (mostly
+    // UI icons and minimap pieces) but the same sRGB->linear-on-
+    // sample rule applies.
+    tex.format = vk::Format::eR8G8B8A8Srgb;
 
     // Palette: 256 BGRA entries (1024 bytes) immediately after the header
     struct BgrxColor { uint8_t b, g, r, x; };

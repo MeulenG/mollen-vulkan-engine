@@ -1,11 +1,14 @@
 #include "terrain_streamer.h"
 
+#include "components/terrain_component.h"
 #include "components/terrain_tile_component.h"
 #include "../formats/adt_types.h"
 #include "../formats/wdt_loader.h"
+#include "../resources/descriptor.h"
 
 #include <algorithm>
 #include <cstdio>
+#include <unordered_set>
 
 namespace mve {
 
@@ -59,11 +62,12 @@ bool TerrainStreamer::TileExists(int tile_x, int tile_y) const {
 
 void TerrainStreamer::EngineToTile(const glm::vec3& engine_pos,
                                     int& tile_x, int& tile_y) const {
-    // Engine.x = WoW Y (east). Engine.z = WoW X (south).
-    // For any WoW coord w, the tile index is 32 - w / kAdtTileSize.
-    // That's because tile 32 sits at the world's WoW origin and tile
-    // indices grow toward NEGATIVE WoW coords (per the file format).
-    float tx_f = 32.0f - engine_pos.z / kAdtTileSize;
+    // Engine is Z-up: renderX = canonical.X (north), renderY =
+    // canonical.Y (west). ADT filename convention is
+    // Azeroth_<col>_<row>.adt where col = floor(32 - canonical.Y/TILE)
+    // and row = floor(32 - canonical.X/TILE), so tile_x comes from
+    // renderY and tile_y from renderX.
+    float tx_f = 32.0f - engine_pos.y / kAdtTileSize;
     float ty_f = 32.0f - engine_pos.x / kAdtTileSize;
     tile_x = Clamp63(static_cast<int>(std::floor(tx_f)));
     tile_y = Clamp63(static_cast<int>(std::floor(ty_f)));
@@ -133,11 +137,21 @@ void TerrainStreamer::Update(const glm::vec3& camera_pos_engine,
     // Drain the GPU before destroying entities. The component
     // destructors release CPU resources (textures, buffers,
     // vertex/index buffer raii wrappers) which the in-flight command
-    // buffer is still sampling. Descriptor sets stay valid because we
-    // hold them as raw handles in the components - the pool reclaims
-    // them at shutdown.
+    // buffer is still sampling. With the pool created using
+    // eFreeDescriptorSet, returning the sets back is now spec-legal
+    // and necessary - without it the pool exhausts after a few
+    // minutes of flight (R3 was hitting ErrorOutOfPoolMemory).
     if (!to_destroy.empty()) {
         pm_assets.GetDevice().GetDevice().waitIdle();
+        DescriptorPool* pool = pm_assets.GetDescriptorPool();
+        std::unordered_set<uint32_t> doomed(to_destroy.begin(), to_destroy.end());
+        pm_scene.Each<TerrainComponent>(
+            [&](Entity& e, TerrainComponent& tc) {
+                if (doomed.count(e.Id()) && tc.pm_descriptor_set && pool) {
+                    pool->FreeSet(tc.pm_descriptor_set);
+                    tc.pm_descriptor_set = VK_NULL_HANDLE;
+                }
+            });
     }
     for (uint32_t id : to_destroy) {
         pm_scene.DestroyEntity(id);
