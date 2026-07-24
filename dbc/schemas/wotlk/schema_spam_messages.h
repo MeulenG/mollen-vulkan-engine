@@ -4,8 +4,8 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef spam_messages_fields[] = {
-    { "Id",    DbcFieldType::UInt32 },
-    { "Text",  DbcFieldType::String },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "Text", DbcFieldType::String },
 };
 
 static const DbcSchema schema_spam_messages = {

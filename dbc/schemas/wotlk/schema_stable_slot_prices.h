@@ -4,8 +4,8 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef stable_slot_prices_fields[] = {
-    { "Id",    DbcFieldType::UInt32 },
-    { "Cost",  DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "Cost", DbcFieldType::UInt32 },
 };
 
 static const DbcSchema schema_stable_slot_prices = {

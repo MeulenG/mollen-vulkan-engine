@@ -4,10 +4,10 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef spell_radius_fields[] = {
-    { "Id",          DbcFieldType::UInt32 },
-    { "Radius",      DbcFieldType::Float  },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "Radius", DbcFieldType::Float },
     { "RadiusPerLevel", DbcFieldType::Float },
-    { "MaxRadius",   DbcFieldType::Float  },
+    { "MaxRadius", DbcFieldType::Float },
 };
 
 static const DbcSchema schema_spell_radius = {
