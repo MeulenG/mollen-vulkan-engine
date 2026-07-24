@@ -14,8 +14,8 @@ static const DbcFieldDef item_display_info_fields[] = {
     { "GeosetGroup1",         DbcFieldType::UInt32 },
     { "GeosetGroup2",         DbcFieldType::UInt32 },
     { "GeosetGroup3",         DbcFieldType::UInt32 },
-    { "Flags",                DbcFieldType::UInt32 },
-    { "SpellVisualID",        DbcFieldType::UInt32 },
+    { "Flags", DbcFieldType::UInt32, DbcSemantic::Bitmask },
+    { "SpellVisualID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "spellvisual" },
     { "GroupSoundIndex",      DbcFieldType::UInt32 },
     { "HelmetGeosetVisID1",   DbcFieldType::UInt32 },
     { "HelmetGeosetVisID2",   DbcFieldType::UInt32 },
@@ -28,7 +28,7 @@ static const DbcFieldDef item_display_info_fields[] = {
     { "Texture7",             DbcFieldType::String },
     { "Texture8",             DbcFieldType::String },
     { "ItemVisual",           DbcFieldType::UInt32 },
-    { "ParticleColorID",      DbcFieldType::UInt32 },
+    { "ParticleColorID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "particlecolor" },
 };
 
 static const DbcSchema schema_item_display_info = {

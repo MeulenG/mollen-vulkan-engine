@@ -6,7 +6,7 @@
 static const DbcFieldDef emotes_text_fields[] = {
     { "Id",            DbcFieldType::UInt32 },
     { "Name",          DbcFieldType::String },
-    { "EmoteID",       DbcFieldType::UInt32 },
+    { "EmoteID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "emote" },
     { "EmoteText1",    DbcFieldType::UInt32 },
     { "EmoteText2",    DbcFieldType::UInt32 },
     { "EmoteText3",    DbcFieldType::UInt32 },

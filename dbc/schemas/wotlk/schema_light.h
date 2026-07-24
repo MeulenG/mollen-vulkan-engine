@@ -5,7 +5,7 @@
 
 static const DbcFieldDef light_fields[] = {
     { "Id",              DbcFieldType::UInt32 },
-    { "ContinentID",     DbcFieldType::UInt32 },
+    { "ContinentID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "continent" },
     { "X",               DbcFieldType::Float  },
     { "Y",               DbcFieldType::Float  },
     { "Z",               DbcFieldType::Float  },

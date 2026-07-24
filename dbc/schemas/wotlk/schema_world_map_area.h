@@ -5,16 +5,16 @@
 
 static const DbcFieldDef world_map_area_fields[] = {
     { "Id",          DbcFieldType::UInt32 },
-    { "MapID",       DbcFieldType::UInt32 },
-    { "AreaID",      DbcFieldType::UInt32 },
+    { "MapID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "map" },
+    { "AreaID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "areatable" },
     { "AreaName",    DbcFieldType::String },
     { "LocLeft",     DbcFieldType::Float  },
     { "LocRight",    DbcFieldType::Float  },
     { "LocTop",      DbcFieldType::Float  },
     { "LocBottom",   DbcFieldType::Float  },
-    { "DisplayMapID", DbcFieldType::Int32  },
+    { "DisplayMapID", DbcFieldType::Int32, DbcSemantic::ForeignKey, "displaymap" },
     { "DefaultDungeonFloor", DbcFieldType::Int32  },
-    { "ParentWorldMapID", DbcFieldType::UInt32 },
+    { "ParentWorldMapID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "parentworldmap" },
 };
 
 static const DbcSchema schema_world_map_area = {

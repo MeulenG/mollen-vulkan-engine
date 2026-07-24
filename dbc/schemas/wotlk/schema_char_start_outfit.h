@@ -7,10 +7,10 @@
 // Layout: uint32 Id, uint8 race/class/sex/outfit, then 24 items × 3 arrays
 static const DbcFieldDef char_start_outfit_fields[] = {
     { "Id",               DbcFieldType::UInt32 },
-    { "RaceID",           DbcFieldType::UInt8  },
-    { "ClassID",          DbcFieldType::UInt8  },
-    { "SexID",            DbcFieldType::UInt8  },
-    { "OutfitID",         DbcFieldType::UInt8  },
+    { "RaceID", DbcFieldType::UInt8, DbcSemantic::ForeignKey, "chrraces" },
+    { "ClassID", DbcFieldType::UInt8, DbcSemantic::ForeignKey, "chrclasses" },
+    { "SexID", DbcFieldType::UInt8, DbcSemantic::Enum, "Sex" },
+    { "OutfitID", DbcFieldType::UInt8, DbcSemantic::ForeignKey, "outfit" },
     { "ItemID1",          DbcFieldType::Int32  },
     { "ItemID2",          DbcFieldType::Int32  },
     { "ItemID3",          DbcFieldType::Int32  },

@@ -5,11 +5,11 @@
 
 static const DbcFieldDef char_hair_geosets_fields[] = {
     { "Id",        DbcFieldType::UInt32 },
-    { "RaceID",    DbcFieldType::UInt32 },
-    { "SexID",     DbcFieldType::UInt32 },
-    { "VariationID", DbcFieldType::UInt32 },
-    { "GeosetID",  DbcFieldType::UInt32 },
-    { "Bald",      DbcFieldType::UInt32 },
+    { "RaceID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "chrraces" },
+    { "SexID", DbcFieldType::UInt32, DbcSemantic::Enum, "Sex" },
+    { "VariationID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "variation" },
+    { "GeosetID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "geoset" },
+    { "Bald", DbcFieldType::UInt32, DbcSemantic::Boolean },
 };
 
 static const DbcSchema schema_char_hair_geosets = {

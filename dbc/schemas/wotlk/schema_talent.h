@@ -5,8 +5,8 @@
 
 static const DbcFieldDef talent_fields[] = {
     { "Id",              DbcFieldType::UInt32 },
-    { "TabID",           DbcFieldType::UInt32 },
-    { "TierID",          DbcFieldType::UInt32 },
+    { "TabID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "tab" },
+    { "TierID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "tier" },
     { "ColumnIndex",     DbcFieldType::UInt32 },
     { "SpellRank1",      DbcFieldType::UInt32 },
     { "SpellRank2",      DbcFieldType::UInt32 },
@@ -23,8 +23,8 @@ static const DbcFieldDef talent_fields[] = {
     { "PrereqRank1",     DbcFieldType::UInt32 },
     { "PrereqRank2",     DbcFieldType::UInt32 },
     { "PrereqRank3",     DbcFieldType::UInt32 },
-    { "Flags",           DbcFieldType::UInt32 },
-    { "RequiredSpellID", DbcFieldType::UInt32 },
+    { "Flags", DbcFieldType::UInt32, DbcSemantic::Bitmask },
+    { "RequiredSpellID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "requiredspell" },
     { "CategoryMask1",   DbcFieldType::UInt32 },
     { "CategoryMask2",   DbcFieldType::UInt32 },
 };

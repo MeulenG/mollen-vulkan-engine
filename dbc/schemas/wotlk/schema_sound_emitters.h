@@ -11,8 +11,8 @@ static const DbcFieldDef sound_emitters_fields[] = {
     { "DirectionX",    DbcFieldType::Float  },
     { "DirectionY",    DbcFieldType::Float  },
     { "DirectionZ",    DbcFieldType::Float  },
-    { "SoundEntriesID", DbcFieldType::UInt32 },
-    { "MapID",         DbcFieldType::UInt32 },
+    { "SoundEntriesID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "soundentries" },
+    { "MapID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "map" },
     { "Name",          DbcFieldType::String },
 };
 

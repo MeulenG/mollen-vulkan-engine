@@ -5,7 +5,7 @@
 
 static const DbcFieldDef sound_filter_elem_fields[] = {
     { "Id",              DbcFieldType::UInt32 },
-    { "SoundFilterID",   DbcFieldType::UInt32 },
+    { "SoundFilterID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "soundfilter" },
     { "OrderIndex",      DbcFieldType::UInt32 },
     { "FilterType",      DbcFieldType::UInt32 },
     { "Param1",          DbcFieldType::Float  },

@@ -53,12 +53,12 @@ static const DbcFieldDef holidays_fields[] = {
     { "CalendarFlags8",  DbcFieldType::UInt32 },
     { "CalendarFlags9",  DbcFieldType::UInt32 },
     { "CalendarFlags10", DbcFieldType::UInt32 },
-    { "HolidayNameID",  DbcFieldType::UInt32 },
-    { "HolidayDescriptionID", DbcFieldType::UInt32 },
+    { "HolidayNameID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "holidayname" },
+    { "HolidayDescriptionID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "holidaydescription" },
     { "TextureFilename", DbcFieldType::String },
     { "Priority",        DbcFieldType::UInt32 },
     { "CalendarFilterType", DbcFieldType::UInt32 },
-    { "Flags",           DbcFieldType::UInt32 },
+    { "Flags", DbcFieldType::UInt32, DbcSemantic::Bitmask },
 };
 
 static const DbcSchema schema_holidays = {

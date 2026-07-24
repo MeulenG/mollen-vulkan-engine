@@ -5,8 +5,8 @@
 
 static const DbcFieldDef sound_ambience_fields[] = {
     { "Id",           DbcFieldType::UInt32 },
-    { "DaySoundID",   DbcFieldType::UInt32 },
-    { "NightSoundID", DbcFieldType::UInt32 },
+    { "DaySoundID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "daysound" },
+    { "NightSoundID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "nightsound" },
 };
 
 static const DbcSchema schema_sound_ambience = {

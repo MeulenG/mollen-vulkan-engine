@@ -5,7 +5,7 @@
 
 static const DbcFieldDef declined_word_cases_fields[] = {
     { "Id",              DbcFieldType::UInt32 },
-    { "DeclinedWordID",  DbcFieldType::UInt32 },
+    { "DeclinedWordID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "declinedword" },
     { "CaseIndex",       DbcFieldType::UInt32 },
     { "DeclinedWord",    DbcFieldType::String },
 };

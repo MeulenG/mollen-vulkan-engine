@@ -5,16 +5,16 @@
 
 static const DbcFieldDef taxi_path_node_fields[] = {
     { "Id",             DbcFieldType::UInt32 },
-    { "PathID",         DbcFieldType::UInt32 },
+    { "PathID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "path" },
     { "NodeIndex",      DbcFieldType::UInt32 },
-    { "MapID",          DbcFieldType::UInt32 },
+    { "MapID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "map" },
     { "X",              DbcFieldType::Float  },
     { "Y",              DbcFieldType::Float  },
     { "Z",              DbcFieldType::Float  },
-    { "Flags",          DbcFieldType::UInt32 },
+    { "Flags", DbcFieldType::UInt32, DbcSemantic::Bitmask },
     { "Delay",          DbcFieldType::UInt32 },
-    { "ArrivalEventID", DbcFieldType::UInt32 },
-    { "DepartureEventID", DbcFieldType::UInt32 },
+    { "ArrivalEventID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "arrivalevent" },
+    { "DepartureEventID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "departureevent" },
 };
 
 static const DbcSchema schema_taxi_path_node = {

@@ -5,13 +5,13 @@
 
 static const DbcFieldDef dungeon_map_fields[] = {
     { "Id",            DbcFieldType::UInt32 },
-    { "MapID",         DbcFieldType::UInt32 },
+    { "MapID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "map" },
     { "FloorIndex",    DbcFieldType::UInt32 },
     { "MinX",          DbcFieldType::Float  },
     { "MaxX",          DbcFieldType::Float  },
     { "MinY",          DbcFieldType::Float  },
     { "MaxY",          DbcFieldType::Float  },
-    { "ParentWorldMapID", DbcFieldType::UInt32 },
+    { "ParentWorldMapID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "parentworldmap" },
 };
 
 static const DbcSchema schema_dungeon_map = {

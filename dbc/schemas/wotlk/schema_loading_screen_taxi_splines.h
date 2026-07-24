@@ -5,7 +5,7 @@
 
 static const DbcFieldDef loading_screen_taxi_splines_fields[] = {
     { "Id",          DbcFieldType::UInt32 },
-    { "PathID",      DbcFieldType::UInt32 },
+    { "PathID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "path" },
     { "Leg1X1",      DbcFieldType::Float  },
     { "Leg1Y1",      DbcFieldType::Float  },
     { "Leg1X2",      DbcFieldType::Float  },

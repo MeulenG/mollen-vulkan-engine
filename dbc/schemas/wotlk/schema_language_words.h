@@ -5,7 +5,7 @@
 
 static const DbcFieldDef language_words_fields[] = {
     { "Id",         DbcFieldType::UInt32 },
-    { "LanguageID", DbcFieldType::UInt32 },
+    { "LanguageID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "languages" },
     { "Word",       DbcFieldType::String },
 };
 

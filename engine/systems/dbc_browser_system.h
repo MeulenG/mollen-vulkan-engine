@@ -53,6 +53,18 @@ private:
                        DbConnection::Table& table);
     void DrawFileTable(DbcRegistry::Entry& entry);
 
+    // Per-cell semantic dispatch. Each renders the appropriate widget for
+    // the field's DbcSemantic and, on user change, commits via UpdateCell
+    // and refreshes the cached row in `table`.
+    //
+    // `cv` is the index into the visible-column view for ImGui ID scoping;
+    // we don't need to pass it around for SQL purposes.
+    void DrawPsqlCell(const DbcSchema* schema,
+                      int field_index,
+                      DbConnection::Table& table,
+                      int row, int row_id, int db_column,
+                      int cv);
+
     DbcRegistry& pm_registry;
     DbConnection& pm_db;
 
@@ -63,6 +75,16 @@ private:
     // Cache of fetched PSQL tables, keyed by DBC name (NOT lowercased table
     // name — keeps lookups consistent with the registry).
     std::unordered_map<std::string, DbConnection::Table> pm_psql_cache;
+
+    // Foreign-key label cache. Keyed by target SQL table name (lowercase).
+    // Built lazily on first FK render that points at a given table; survives
+    // for the lifetime of the connection (invalidated on RefreshSchema).
+    struct FkLabelCache {
+        std::unordered_map<int64_t, std::string> id_to_label;
+        bool resolved = false;  // true once we attempted to populate it
+    };
+    std::unordered_map<std::string, FkLabelCache> pm_fk_cache;
+    const std::string& ResolveFkLabel(const std::string& target_table, int64_t id);
 
     EditState pm_edit;
 };

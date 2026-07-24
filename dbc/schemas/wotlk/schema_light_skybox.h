@@ -6,7 +6,7 @@
 static const DbcFieldDef light_skybox_fields[] = {
     { "Id",       DbcFieldType::UInt32 },
     { "Name",     DbcFieldType::String },
-    { "Flags",    DbcFieldType::UInt32 },
+    { "Flags", DbcFieldType::UInt32, DbcSemantic::Bitmask },
 };
 
 static const DbcSchema schema_light_skybox = {

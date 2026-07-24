@@ -5,9 +5,9 @@
 
 static const DbcFieldDef stationery_fields[] = {
     { "Id",          DbcFieldType::UInt32 },
-    { "ItemID",      DbcFieldType::UInt32 },
+    { "ItemID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "item" },
     { "Texture",     DbcFieldType::String },
-    { "Flags",       DbcFieldType::UInt32 },
+    { "Flags", DbcFieldType::UInt32, DbcSemantic::Bitmask },
 };
 
 static const DbcSchema schema_stationery = {

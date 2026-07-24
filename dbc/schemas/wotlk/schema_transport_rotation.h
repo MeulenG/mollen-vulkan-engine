@@ -5,7 +5,7 @@
 
 static const DbcFieldDef transport_rotation_fields[] = {
     { "Id",             DbcFieldType::UInt32 },
-    { "GameObjectsID",  DbcFieldType::UInt32 },
+    { "GameObjectsID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "gameobjects" },
     { "TimeIndex",      DbcFieldType::UInt32 },
     { "RotX",           DbcFieldType::Float  },
     { "RotY",           DbcFieldType::Float  },

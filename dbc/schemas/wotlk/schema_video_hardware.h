@@ -5,8 +5,8 @@
 
 static const DbcFieldDef video_hardware_fields[] = {
     { "Id",               DbcFieldType::UInt32 },
-    { "VendorID",         DbcFieldType::UInt32 },
-    { "DeviceID",         DbcFieldType::UInt32 },
+    { "VendorID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "vendor" },
+    { "DeviceID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "device" },
     { "FarclipIdx",       DbcFieldType::UInt32 },
     { "TerrainLODDistIdx",DbcFieldType::UInt32 },
     { "TerrainShadowLOD", DbcFieldType::UInt32 },

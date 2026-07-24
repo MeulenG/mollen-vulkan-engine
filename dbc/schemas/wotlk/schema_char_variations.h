@@ -4,9 +4,9 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef char_variations_fields[] = {
-    { "RaceID",    DbcFieldType::UInt32 },
-    { "SexID",     DbcFieldType::UInt32 },
-    { "TextureHoldID", DbcFieldType::UInt32 },
+    { "RaceID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "chrraces" },
+    { "SexID", DbcFieldType::UInt32, DbcSemantic::Enum, "Sex" },
+    { "TextureHoldID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "texturehold" },
     { "Unknown1",  DbcFieldType::UInt32 },
     { "Unknown2",  DbcFieldType::UInt32 },
     { "Unknown3",  DbcFieldType::UInt32 },

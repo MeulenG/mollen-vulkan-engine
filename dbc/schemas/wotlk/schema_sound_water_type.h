@@ -7,7 +7,7 @@ static const DbcFieldDef sound_water_type_fields[] = {
     { "Id",              DbcFieldType::UInt32 },
     { "SoundType",       DbcFieldType::UInt32 },
     { "SoundSubType",    DbcFieldType::UInt32 },
-    { "SoundEntriesID",  DbcFieldType::UInt32 },
+    { "SoundEntriesID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "soundentries" },
 };
 
 static const DbcSchema schema_sound_water_type = {

@@ -5,9 +5,9 @@
 
 static const DbcFieldDef spell_visual_kit_fields[] = {
     { "Id",               DbcFieldType::UInt32 },
-    { "StartAnimID",      DbcFieldType::UInt32 },
-    { "AnimID",           DbcFieldType::UInt32 },
-    { "AnimKitID",        DbcFieldType::UInt32 },
+    { "StartAnimID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "startanim" },
+    { "AnimID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "anim" },
+    { "AnimKitID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "animkit" },
     { "HeadEffect",       DbcFieldType::UInt32 },
     { "ChestEffect",      DbcFieldType::UInt32 },
     { "BaseEffect",       DbcFieldType::UInt32 },
@@ -20,8 +20,8 @@ static const DbcFieldDef spell_visual_kit_fields[] = {
     { "SpecialEffect2",   DbcFieldType::UInt32 },
     { "SpecialEffect3",   DbcFieldType::UInt32 },
     { "WorldEffect",      DbcFieldType::UInt32 },
-    { "SoundID",          DbcFieldType::UInt32 },
-    { "ShakeID",          DbcFieldType::UInt32 },
+    { "SoundID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "soundentries" },
+    { "ShakeID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "shake" },
     { "CharProc1",        DbcFieldType::UInt32 },
     { "CharProc2",        DbcFieldType::UInt32 },
     { "CharProc3",        DbcFieldType::UInt32 },
@@ -41,7 +41,7 @@ static const DbcFieldDef spell_visual_kit_fields[] = {
     { "CharParamThree1",  DbcFieldType::Float  },
     { "CharParamThree2",  DbcFieldType::Float  },
     { "CharParamThree3",  DbcFieldType::Float  },
-    { "Flags",            DbcFieldType::UInt32 },
+    { "Flags", DbcFieldType::UInt32, DbcSemantic::Bitmask },
 };
 
 static const DbcSchema schema_spell_visual_kit = {

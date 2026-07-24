@@ -14,7 +14,7 @@ static const DbcFieldDef banned_add_ons_fields[] = {
     { "VersionMD5_3",  DbcFieldType::UInt32 },
     { "VersionMD5_4",  DbcFieldType::UInt32 },
     { "LastModified",  DbcFieldType::UInt32 },
-    { "Flags",         DbcFieldType::UInt32 },
+    { "Flags", DbcFieldType::UInt32, DbcSemantic::Bitmask },
 };
 
 static const DbcSchema schema_banned_add_ons = {

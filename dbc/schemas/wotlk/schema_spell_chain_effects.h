@@ -14,7 +14,7 @@ static const DbcFieldDef spell_chain_effects_fields[] = {
     { "SegDuration",                  DbcFieldType::UInt32 },
     { "SegDelay",                     DbcFieldType::UInt32 },
     { "Texture",                      DbcFieldType::String },
-    { "Flags",                        DbcFieldType::UInt32 },
+    { "Flags", DbcFieldType::UInt32, DbcSemantic::Bitmask },
     { "JointCount",                   DbcFieldType::UInt32 },
     { "JointOffsetRadius",            DbcFieldType::Float  },
     { "JointsPerMinorJoint",          DbcFieldType::UInt32 },

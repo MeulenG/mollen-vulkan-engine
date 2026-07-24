@@ -5,9 +5,9 @@
 
 static const DbcFieldDef footstep_terrain_lookup_fields[] = {
     { "Id",                  DbcFieldType::UInt32 },
-    { "CreatureFootstepID",  DbcFieldType::UInt32 },
-    { "TerrainSoundID",      DbcFieldType::UInt32 },
-    { "SoundID",             DbcFieldType::UInt32 },
+    { "CreatureFootstepID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "creaturefootstep" },
+    { "TerrainSoundID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "terrainsound" },
+    { "SoundID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "soundentries" },
     { "SoundIDSplash",       DbcFieldType::UInt32 },
 };
 

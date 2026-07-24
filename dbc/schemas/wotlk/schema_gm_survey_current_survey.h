@@ -5,7 +5,7 @@
 
 static const DbcFieldDef gm_survey_current_survey_fields[] = {
     { "Id",              DbcFieldType::UInt32 },
-    { "GMSurveySurveyID", DbcFieldType::UInt32 },
+    { "GMSurveySurveyID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "gmsurveysurvey" },
 };
 
 static const DbcSchema schema_gm_survey_current_survey = {

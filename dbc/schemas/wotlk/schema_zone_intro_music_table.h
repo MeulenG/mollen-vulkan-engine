@@ -6,7 +6,7 @@
 static const DbcFieldDef zone_intro_music_table_fields[] = {
     { "Id",               DbcFieldType::UInt32 },
     { "Name",             DbcFieldType::String },
-    { "SoundEntriesID",   DbcFieldType::UInt32 },
+    { "SoundEntriesID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "soundentries" },
     { "Priority",         DbcFieldType::UInt32 },
     { "MinDelayMinutes",  DbcFieldType::UInt32 },
 };

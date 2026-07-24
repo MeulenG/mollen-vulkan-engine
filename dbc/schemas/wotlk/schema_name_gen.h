@@ -6,8 +6,8 @@
 static const DbcFieldDef name_gen_fields[] = {
     { "Id",       DbcFieldType::UInt32 },
     { "Name",     DbcFieldType::String },
-    { "RaceID",   DbcFieldType::UInt32 },
-    { "Sex",      DbcFieldType::UInt32 },
+    { "RaceID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "chrraces" },
+    { "Sex", DbcFieldType::UInt32, DbcSemantic::Enum, "Sex" },
 };
 
 static const DbcSchema schema_name_gen = {

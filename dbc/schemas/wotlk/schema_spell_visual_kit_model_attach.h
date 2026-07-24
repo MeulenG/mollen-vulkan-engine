@@ -5,9 +5,9 @@
 
 static const DbcFieldDef spell_visual_kit_model_attach_fields[] = {
     { "Id",                  DbcFieldType::UInt32 },
-    { "ParentSpellVisualKitID", DbcFieldType::UInt32 },
-    { "SpellVisualEffectNameID", DbcFieldType::UInt32 },
-    { "AttachmentID",        DbcFieldType::UInt32 },
+    { "ParentSpellVisualKitID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "parentspellvisualkit" },
+    { "SpellVisualEffectNameID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "spellvisualeffectname" },
+    { "AttachmentID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "attachment" },
     { "OffsetX",             DbcFieldType::Float  },
     { "OffsetY",             DbcFieldType::Float  },
     { "OffsetZ",             DbcFieldType::Float  },

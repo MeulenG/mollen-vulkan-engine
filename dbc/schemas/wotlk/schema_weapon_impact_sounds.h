@@ -5,7 +5,7 @@
 
 static const DbcFieldDef weapon_impact_sounds_fields[] = {
     { "Id",                   DbcFieldType::UInt32 },
-    { "WeaponSubClassID",     DbcFieldType::UInt32 },
+    { "WeaponSubClassID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "weaponsubclass" },
     { "ParrySoundType",       DbcFieldType::UInt32 },
     { "ImpactSoundID1",       DbcFieldType::UInt32 },
     { "ImpactSoundID2",       DbcFieldType::UInt32 },

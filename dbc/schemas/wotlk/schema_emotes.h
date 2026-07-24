@@ -6,11 +6,11 @@
 static const DbcFieldDef emotes_fields[] = {
     { "Id",             DbcFieldType::UInt32 },
     { "EmoteSlashCommand", DbcFieldType::String },
-    { "AnimID",         DbcFieldType::UInt32 },
-    { "EmoteFlags",     DbcFieldType::UInt32 },
+    { "AnimID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "anim" },
+    { "EmoteFlags", DbcFieldType::UInt32, DbcSemantic::Bitmask },
     { "EmoteSpecProc",  DbcFieldType::UInt32 },
     { "EmoteSpecProcParam", DbcFieldType::UInt32 },
-    { "EventSoundID",   DbcFieldType::UInt32 },
+    { "EventSoundID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "eventsound" },
 };
 
 static const DbcSchema schema_emotes = {

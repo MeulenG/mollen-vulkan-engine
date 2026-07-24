@@ -22,7 +22,7 @@ static const DbcFieldDef game_object_display_info_fields[] = {
     { "GeoBoxMaxX",    DbcFieldType::Float  },
     { "GeoBoxMaxY",    DbcFieldType::Float  },
     { "GeoBoxMaxZ",    DbcFieldType::Float  },
-    { "ObjectEffectPackageID", DbcFieldType::UInt32 },
+    { "ObjectEffectPackageID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "objecteffectpackage" },
 };
 
 static const DbcSchema schema_game_object_display_info = {
