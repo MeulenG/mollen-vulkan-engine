@@ -13,6 +13,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
+#include <filesystem>
 #include <cstring>
 #include <filesystem>
 #include <map>
@@ -77,6 +79,33 @@ EditorUISystem::EditorUISystem(Window& window, ImGuiContext& imgui_ctx,
       pm_offscreen{offscreen}, pm_device{device}, pm_assets{assets} {}
 
 void EditorUISystem::Update(Scene& scene, RenderSystem& render_system, float delta_time) {
+    // Two screenshot triggers:
+    //   1. F12 key (interactive user). Requires the editor window to
+    //      have focus.
+    //   2. A flag file at "screenshots/take.flag" (autonomous /
+    //      out-of-process trigger). Polled each frame; if present, we
+    //      take a shot AND delete the flag. This is what enables an
+    //      external script (or me, iterating on visuals) to capture
+    //      without fighting Win32 focus-stealing-prevention.
+    //
+    // Both write to screenshots/latest.png (overwrites) and
+    // screenshots/shot_NNNN.png (history).
+    namespace fs = std::filesystem;
+    bool wants_shot = ImGui::IsKeyPressed(ImGuiKey_F12, false);
+    if (!wants_shot && fs::exists("screenshots/take.flag")) {
+        wants_shot = true;
+        std::error_code ec;
+        fs::remove("screenshots/take.flag", ec);
+    }
+    if (wants_shot) {
+        fs::create_directories("screenshots");
+        pm_offscreen.SaveColorToPng("screenshots/latest.png");
+        char numbered[64];
+        std::snprintf(numbered, sizeof(numbered),
+                      "screenshots/shot_%04d.png", pm_screenshot_counter++);
+        pm_offscreen.SaveColorToPng(numbered);
+    }
+
     // Order matters here. The viewport-side menu bar and status bar
     // claim space from the host viewport's work area; if we drew the
     // dockspace first it would cover them. ImGui handles this

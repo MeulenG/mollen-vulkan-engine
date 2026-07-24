@@ -80,13 +80,15 @@ RenderSystem::RenderSystem(Device& device, OffscreenPass& offscreen)
     pm_scene_data.pm_ambient = 0.35f;
     pm_scene_data.pm_light_color = glm::vec3{1.0f, 0.96f, 0.86f};
     pm_scene_data.pm_light_intensity = 0.75f;
-    // Fog tuned to the 3000-yard far plane. Geometry past 2400 yards
-    // starts to fade; at 3000 it's fully fog-colored. The sky-blue tint
-    // matches the background gradient so the fade looks like atmosphere
-    // rather than a hard cutoff.
-    pm_scene_data.pm_fog_color = glm::vec3{0.55f, 0.62f, 0.72f};
-    pm_scene_data.pm_fog_start = 1200.0f;
-    pm_scene_data.pm_fog_end   = 2800.0f;
+    // Fog tuned to match the 3000-yard far plane. Geometry inside
+    // fog_start is unfogged; the exp^2 ramp covers [start, end] with
+    // ~94% fog at end. fog_start = 1500 keeps the camera's immediate
+    // ~500-yard radius crisp at orbit 1500, then the haze kicks in
+    // for distance cues. A warm pastel tint mixes nicely with the
+    // warm-afternoon sun set below.
+    pm_scene_data.pm_fog_color = glm::vec3{0.70f, 0.75f, 0.78f};
+    pm_scene_data.pm_fog_start = 1500.0f;
+    pm_scene_data.pm_fog_end   = 2900.0f;
     pm_scene_data.pm_camera_pos = glm::vec3{0.0f};
 }
 

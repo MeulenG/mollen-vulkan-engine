@@ -47,14 +47,21 @@ void main() {
     vec3 lighting = scene.ambient + diffuse * scene.light_intensity * scene.light_color;
     vec3 result = tex.rgb * frag_color * lighting;
 
-    // Exponential squared fog (Quake-style):
-    //   fog = 1 - exp(-(d * density)^2)
-    // Tunes density so geometry at fog_end ends up ~95% fog. More
-    // atmospheric than linear: nearby pixels almost untinted, far
-    // pixels heavily haze. fog_end / 1.7 puts ~95% fade at fog_end.
+    // Exponential squared fog, anchored to fog_start. Geometry closer
+    // than fog_start is fully unfogged; the exp^2 ramp begins from
+    // there. Without this anchor a pure 1-exp(-(d*k)^2) formulation
+    // already adds ~15% haze at d=800 even when fog_end=2800, which
+    // visibly bleaches near terrain.
+    //
+    // Math: ramp = max(0, d - fog_start). With density = 1.7 / (end -
+    // start), at ramp=(end-start) we get fog = 1-exp(-1.7^2) ~= 0.94,
+    // so geometry at fog_end is ~94% fog. 0..start is clear; start..
+    // end is the haze gradient.
     float dist = length(frag_world_pos - scene.camera_pos);
-    float density = 1.7 / scene.fog_end;
-    float fog = 1.0 - exp(-(dist * density) * (dist * density));
+    float ramp = max(0.0, dist - scene.fog_start);
+    float span = max(1.0, scene.fog_end - scene.fog_start);
+    float density = 1.7 / span;
+    float fog = 1.0 - exp(-(ramp * density) * (ramp * density));
     fog = clamp(fog, 0.0, 1.0);
     result = mix(result, scene.fog_color, fog);
 

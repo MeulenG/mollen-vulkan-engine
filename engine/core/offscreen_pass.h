@@ -3,6 +3,8 @@
 
 #include "device.h"
 
+#include <string>
+
 namespace mve {
 
 // Renders the 3D scene to an offscreen image instead of the swapchain.
@@ -35,6 +37,20 @@ public:
     void EndRendering(const vk::raii::CommandBuffer& cmd);
 
     void Resize(uint32_t width, uint32_t height);
+
+    // Dump the current contents of the offscreen color image to disk
+    // as an 8-bit PNG. Issues a one-shot vkCmdCopyImageToBuffer to a
+    // host-visible staging buffer, swaps BGRA -> RGBA, and writes via
+    // stb_image_write. Assumes color_image_ is in ShaderReadOnly
+    // layout at call time (the post-EndRendering state).
+    //
+    // Returns true if the file was written successfully.
+    //
+    // Used by the editor's F12 hotkey (and by autonomous render-quality
+    // iteration loops) - this is more reliable than GDI screen capture
+    // for Vulkan content, doesn't require the window be in front, and
+    // captures exactly what the engine renders.
+    bool SaveColorToPng(const std::string& path);
 
 private:
     void createResources();
