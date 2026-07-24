@@ -31,20 +31,24 @@ namespace mve {
 // reclaims everything at shutdown; per-entity raii destruction is
 // unreliable on this driver stack). It's shared across all instances
 // of one M2 path - the AssetManager caches it in pm_shared_m2_material.
+// One entry per M2 batch (= drawcall). Each carries its own descriptor
+// set (bound texture + bone buffer + instance buffer) and an index
+// range into the shared mesh's index buffer.
+struct DoodadSubmesh {
+    vk::DescriptorSet pm_descriptor_set = VK_NULL_HANDLE;
+    uint32_t          pm_index_start = 0;
+    uint32_t          pm_index_count = 0;
+};
+
 struct DoodadInstanceComponent : Component {
-    std::unique_ptr<Buffer> pm_instance_buffer;  // SSBO of mat4 transforms
-    vk::DescriptorSet       pm_descriptor_set = VK_NULL_HANDLE;
-    uint32_t                pm_instance_count = 0;
+    std::unique_ptr<Buffer>    pm_instance_buffer;  // SSBO of mat4 transforms
+    uint32_t                   pm_instance_count = 0;
+    std::vector<DoodadSubmesh> pm_submeshes;
 
     // Coarse bounding sphere covering every instance's world position.
     // Updated when instances are added; used by RenderSystem for a
     // cheap centroid-distance cull (skip the whole group if its nearest
     // possible instance is farther than the doodad draw radius).
-    //
-    // Not a tight bound - groups with placements spread across many
-    // tiles have a huge radius. The benefit is mostly for groups whose
-    // placements cluster (most of them, actually - WoW art reuses
-    // models locally).
     glm::vec3 pm_bbox_center{0.0f};
     float     pm_bbox_radius{0.0f};
 };

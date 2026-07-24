@@ -732,41 +732,69 @@ void AssetManager::FlushDoodadInstances(Scene& scene) {
             pm_mesh_cache[m2_path] = mesh;
         }
 
-        // 3. Texture lookup via the multi-strategy helper. Tries M2's
-        //    declared texture_paths first (resolved through
-        //    MVE_ASSET_DIR), then the M2 stem with .blp, then any .blp
-        //    in the same directory. This is the fix for the
-        //    "checkerboard everywhere" issue - many WoW doodad M2s have
-        //    empty texture_paths[0] (replaceable types), and the old
-        //    code only fell back to "*Skin*.blp" which matches almost
-        //    no prop textures.
-        TextureHandle texture;
-        std::string blp_path = FindM2BlpPath(m2_path, model);
-        if (!blp_path.empty()) {
-            auto tex_it = pm_texture_cache.find(blp_path);
-            if (tex_it != pm_texture_cache.end()) {
-                texture = tex_it->second;
-            } else {
-                try {
-                    auto blp = BlpLoader::LoadFile(blp_path);
-                    texture = std::make_shared<Image>(pm_device, blp);
-                    pm_texture_cache[blp_path] = texture;
-                } catch (...) {
-                    texture = GetDefaultTexture();
+        // 3. Texture per submesh. WoW M2s store one or more textures
+        //    in texture_paths[]; a "texture_lookup" array picks which
+        //    one each batch uses. The old code grabbed [0] for every
+        //    submesh, which is why all batches drew with the trunk
+        //    texture even on the leaf submesh. Now we resolve once
+        //    per submesh.
+        auto load_blp = [&](const std::string& wow_path) -> TextureHandle {
+            if (wow_path.empty()) return nullptr;
+            std::string fs_path = ResolveWowAsset(wow_path);
+            if (!fs::exists(fs_path)) return nullptr;
+            auto cached = pm_texture_cache.find(fs_path);
+            if (cached != pm_texture_cache.end()) return cached->second;
+            try {
+                auto blp = BlpLoader::LoadFile(fs_path);
+                auto tex = std::make_shared<Image>(pm_device, blp);
+                pm_texture_cache[fs_path] = tex;
+                return tex;
+            } catch (...) {
+                return nullptr;
+            }
+        };
+
+        // Helper: resolve the texture for a specific submesh's batch.
+        // Falls back through every layer of the M2 texture indirection
+        // before giving up and using the FindM2BlpPath heuristic.
+        auto submesh_texture = [&](const M2Submesh& sub) -> TextureHandle {
+            // texture_lookup[texture_combo_index] -> texture_paths index
+            if (sub.texture_combo_index < model.texture_lookup.size()) {
+                uint16_t ti = model.texture_lookup[sub.texture_combo_index];
+                if (ti < model.texture_paths.size()) {
+                    auto t = load_blp(model.texture_paths[ti]);
+                    if (t) return t;
                 }
             }
-        }
-        if (!texture) texture = GetDefaultTexture();
+            // Fallback A: any texture_paths entry, in order.
+            for (const auto& p : model.texture_paths) {
+                auto t = load_blp(p);
+                if (t) return t;
+            }
+            // Fallback B: stem-based / dir-scan heuristic.
+            std::string fs_path = FindM2BlpPath(m2_path, model);
+            if (!fs_path.empty()) {
+                auto cached = pm_texture_cache.find(fs_path);
+                if (cached != pm_texture_cache.end()) return cached->second;
+                try {
+                    auto blp = BlpLoader::LoadFile(fs_path);
+                    auto tex = std::make_shared<Image>(pm_device, blp);
+                    pm_texture_cache[fs_path] = tex;
+                    return tex;
+                } catch (...) {}
+            }
+            return GetDefaultTexture();
+        };
 
-        // 4. Per-path shared material (bone buffer + descriptor set).
-        //    Identity bone matrices - doodads are static in v1.
+        // 4. Shared material - per-submesh records cached the first
+        //    time we see this M2 path. Bone buffer is identity, shared
+        //    across all submeshes.
         auto sh_it = pm_shared_m2_material.find(m2_path);
         std::shared_ptr<M2SharedMaterial> shared;
         if (sh_it != pm_shared_m2_material.end()) {
             shared = sh_it->second;
         } else {
             shared = std::make_shared<M2SharedMaterial>();
-            shared->pm_texture = texture;
 
             vk::DeviceSize bone_size =
                 Skeleton::MAX_BONES * sizeof(glm::mat4);
@@ -779,8 +807,32 @@ void AssetManager::FlushDoodadInstances(Scene& scene) {
                 Skeleton::MAX_BONES, glm::mat4{1.0f});
             shared->pm_bone_buffer->Write(bone_ids.data(), bone_size);
 
-            shared->pm_descriptor_set =
-                pm_descriptor_pool->AllocateSetRaw(*pm_descriptor_layout);
+            // Build per-submesh material records. One descriptor set per
+            // submesh, each with its own texture binding.
+            shared->pm_submeshes.reserve(model.submeshes.size());
+            for (const auto& sub : model.submeshes) {
+                M2SharedSubmesh ssm{};
+                ssm.pm_texture     = submesh_texture(sub);
+                ssm.pm_index_start = sub.index_start;
+                ssm.pm_index_count = sub.index_count;
+                if (sub.material_index < model.materials.size()) {
+                    ssm.pm_blend_mode =
+                        model.materials[sub.material_index].blend_mode;
+                }
+                ssm.pm_descriptor_set =
+                    pm_descriptor_pool->AllocateSetRaw(*pm_descriptor_layout);
+                shared->pm_submeshes.push_back(std::move(ssm));
+            }
+
+            // Back-compat slot for legacy LoadM2IntoScene callers.
+            // (DoodadInstanceComponent uses pm_submeshes instead.)
+            shared->pm_texture = !shared->pm_submeshes.empty()
+                ? shared->pm_submeshes[0].pm_texture
+                : GetDefaultTexture();
+            shared->pm_descriptor_set = !shared->pm_submeshes.empty()
+                ? shared->pm_submeshes[0].pm_descriptor_set
+                : VK_NULL_HANDLE;
+
             pm_shared_m2_material[m2_path] = shared;
         }
 
@@ -799,8 +851,7 @@ void AssetManager::FlushDoodadInstances(Scene& scene) {
 
         // 6. (Re-)allocate the instance SSBO. We always rebuild even
         //    if just appending - the buffer's size is fixed at create
-        //    time, so growing requires a new allocation. Memory cost:
-        //    a 5000-instance buffer is 320 KB.
+        //    time, so growing requires a new allocation.
         auto inst_buf = std::make_unique<Buffer>(
             pm_device, total_bytes,
             vk::BufferUsageFlagBits::eStorageBuffer,
@@ -808,26 +859,26 @@ void AssetManager::FlushDoodadInstances(Scene& scene) {
                 vk::MemoryPropertyFlagBits::eHostCoherent);
         inst_buf->Write(all_matrices.data(), total_bytes);
 
-        // 7. (Re-)write descriptor set. Binding 3 must point at the new
-        //    instance buffer; bindings 0-2 stay logically the same but
-        //    we rewrite them too because the previous descriptor write
-        //    referenced the OLD instance buffer at binding 3 and the
-        //    spec wants a complete set. Cheap - 4 writes per unique M2.
+        // 7. Write each submesh's descriptor set. Bindings 0/2/3 are the
+        //    same shared resources (scene UBO, bone buffer, instance SSBO);
+        //    binding 1 is the submesh-specific texture.
         vk::DescriptorBufferInfo ubo_info{
             *pm_scene_ubo->GetBuffer(), 0, sizeof(SceneUBO)};
-        auto tex_info = texture->DescriptorInfo();
         vk::DescriptorBufferInfo bone_info{
             *shared->pm_bone_buffer->GetBuffer(), 0,
             Skeleton::MAX_BONES * sizeof(glm::mat4)};
         vk::DescriptorBufferInfo inst_info{
             *inst_buf->GetBuffer(), 0, total_bytes};
 
-        DescriptorWriter{}
-            .WriteBuffer(0, ubo_info)
-            .WriteImage(1, tex_info)
-            .WriteBuffer(2, bone_info, vk::DescriptorType::eStorageBuffer)
-            .WriteBuffer(3, inst_info, vk::DescriptorType::eStorageBuffer)
-            .Apply(pm_device.GetDevice(), shared->pm_descriptor_set);
+        for (auto& ssm : shared->pm_submeshes) {
+            auto tex_info = ssm.pm_texture->DescriptorInfo();
+            DescriptorWriter{}
+                .WriteBuffer(0, ubo_info)
+                .WriteImage(1, tex_info)
+                .WriteBuffer(2, bone_info, vk::DescriptorType::eStorageBuffer)
+                .WriteBuffer(3, inst_info, vk::DescriptorType::eStorageBuffer)
+                .Apply(pm_device.GetDevice(), ssm.pm_descriptor_set);
+        }
 
         // 8. Materialize the entity. If one already exists for this
         //    M2 path (later streamed-in tile added more placements),
@@ -870,9 +921,17 @@ void AssetManager::FlushDoodadInstances(Scene& scene) {
         }
 
         auto* dic = entity->GetComponent<DoodadInstanceComponent>();
-        dic->pm_instance_buffer  = std::move(inst_buf);
-        dic->pm_descriptor_set   = shared->pm_descriptor_set;
-        dic->pm_instance_count   = static_cast<uint32_t>(total_count);
+        dic->pm_instance_buffer = std::move(inst_buf);
+        dic->pm_instance_count  = static_cast<uint32_t>(total_count);
+        dic->pm_submeshes.clear();
+        dic->pm_submeshes.reserve(shared->pm_submeshes.size());
+        for (const auto& ssm : shared->pm_submeshes) {
+            DoodadSubmesh ds{};
+            ds.pm_descriptor_set = ssm.pm_descriptor_set;
+            ds.pm_index_start    = ssm.pm_index_start;
+            ds.pm_index_count    = ssm.pm_index_count;
+            dic->pm_submeshes.push_back(ds);
+        }
 
         // Coarse bounding sphere for the whole group. Center = average
         // of all instance positions, radius = max distance from center

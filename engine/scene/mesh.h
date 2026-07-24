@@ -59,6 +59,15 @@ public:
     void DrawInstanced(const vk::raii::CommandBuffer& command_buffer,
                        uint32_t instance_count) const;
 
+    // Instanced draw of a sub-range of the index buffer. Used by R4.8
+    // per-submesh M2 rendering: one mesh covers the whole M2, each
+    // submesh is a [index_start, index_count] range. Different submeshes
+    // bind different descriptor sets so each can carry its own texture.
+    void DrawInstancedRange(const vk::raii::CommandBuffer& command_buffer,
+                            uint32_t instance_count,
+                            uint32_t index_start,
+                            uint32_t index_count) const;
+
     uint32_t IndexCount() const { return index_count_; }
 
     static Mesh CreatePyramid(Device& device, glm::vec3 color = {0.8f, 0.8f, 0.8f});

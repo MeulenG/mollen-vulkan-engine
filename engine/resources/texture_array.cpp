@@ -64,14 +64,17 @@ void TextureArray::CreateImageView() {
 }
 
 void TextureArray::CreateSampler() {
+    auto limits = pm_device.GetPhysicalDevice().getProperties().limits;
+    float max_aniso = std::min(16.0f, limits.maxSamplerAnisotropy);
+
     vk::SamplerCreateInfo sampler_info{};
     sampler_info.magFilter        = vk::Filter::eLinear;
     sampler_info.minFilter        = vk::Filter::eLinear;
     sampler_info.addressModeU     = vk::SamplerAddressMode::eRepeat;
     sampler_info.addressModeV     = vk::SamplerAddressMode::eRepeat;
     sampler_info.addressModeW     = vk::SamplerAddressMode::eClampToEdge;
-    sampler_info.anisotropyEnable = vk::False;
-    sampler_info.maxAnisotropy    = 1.0f;
+    sampler_info.anisotropyEnable = vk::True;
+    sampler_info.maxAnisotropy    = max_aniso;
     sampler_info.borderColor      = vk::BorderColor::eIntOpaqueBlack;
     sampler_info.mipmapMode       = vk::SamplerMipmapMode::eLinear;
     sampler_info.maxLod           = static_cast<float>(pm_mip_levels - 1);

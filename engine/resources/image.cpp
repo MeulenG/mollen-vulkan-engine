@@ -60,14 +60,24 @@ void Image::createImageView(vk::Format format, uint32_t mip_levels) {
 }
 
 void Image::createSampler(uint32_t mip_levels) {
+    // Cap anisotropy at the hardware max but limit to 16x. 16x is the
+    // industry-standard "high quality" setting and what WoW uses.
+    // Without anisotropic filtering, textures sampled at oblique angles
+    // (distant terrain, bark on a tree from below) blur into mush
+    // because trilinear picks an aggressive mip level. With it, the
+    // GPU samples along the projected texture footprint for sharp
+    // glancing-angle pixels.
+    auto limits = device_.GetPhysicalDevice().getProperties().limits;
+    float max_aniso = std::min(16.0f, limits.maxSamplerAnisotropy);
+
     vk::SamplerCreateInfo sampler_info{};
     sampler_info.magFilter = vk::Filter::eLinear;
     sampler_info.minFilter = vk::Filter::eLinear;
     sampler_info.addressModeU = vk::SamplerAddressMode::eRepeat;
     sampler_info.addressModeV = vk::SamplerAddressMode::eRepeat;
     sampler_info.addressModeW = vk::SamplerAddressMode::eRepeat;
-    sampler_info.anisotropyEnable = vk::False;
-    sampler_info.maxAnisotropy = 1.0f;
+    sampler_info.anisotropyEnable = vk::True;
+    sampler_info.maxAnisotropy = max_aniso;
     sampler_info.borderColor = vk::BorderColor::eIntOpaqueBlack;
     sampler_info.mipmapMode = vk::SamplerMipmapMode::eLinear;
     sampler_info.maxLod = static_cast<float>(mip_levels - 1);
