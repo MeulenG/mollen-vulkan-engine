@@ -6,15 +6,50 @@
 #include "../scene/components/skeleton_component.h"
 #include "../scene/components/camera_component.h"
 #include "../scene/components/m2_info_component.h"
+#include "../scene/components/terrain_component.h"
+#include "../scene/components/terrain_tile_component.h"
+#include "../scene/terrain_mesh.h"
 #include "../formats/blp_loader.h"
+#include "../formats/adt_types.h"
 #include "../animation/skeleton.h"
 
-#include <filesystem>
 #include <algorithm>
+#include <cstdio>
+#include <filesystem>
+#include <unordered_set>
 
 namespace fs = std::filesystem;
 
 namespace mve {
+
+namespace {
+
+// Resolve a WoW-style asset path ("Tileset\\Elwynn\\..." with backslashes)
+// against MVE_ASSET_DIR (a compile-time absolute path to the repo's
+// assets/ directory). Backslashes become forward slashes; case is
+// preserved (Windows is case-insensitive, so this is fine in practice).
+std::string ResolveWowAsset(const std::string& wow_path) {
+    std::string out = std::string(MVE_ASSET_DIR) + "/" + wow_path;
+    std::replace(out.begin(), out.end(), '\\', '/');
+    return out;
+}
+
+// log2(blp_w / target) - how many mip levels to skip when feeding this
+// BLP into an array with target-width slices. Returns -1 if the BLP is
+// too small or not a power-of-two multiple.
+int BlpMipForTarget(uint32_t blp_w, uint32_t target) {
+    if (blp_w < target) return -1;
+    uint32_t w = blp_w;
+    int skip = 0;
+    while (w > target) {
+        if (w & 1u) return -1;
+        w >>= 1;
+        skip++;
+    }
+    return skip;
+}
+
+} // namespace
 
 AssetManager::AssetManager(Device& device)
     : pm_device{device} {}
@@ -181,6 +216,258 @@ Entity* AssetManager::LoadM2IntoScene(const std::string& m2_path, Scene& scene) 
     info->pm_bbox_min = model.bbox_min;
     info->pm_bbox_max = model.bbox_max;
     info->pm_ground_offset = ground_offset;
+
+    return entity;
+}
+
+AdtTextureSet AssetManager::LoadAdtTextures(const AdtTile& tile,
+                                            uint32_t target_size) {
+    AdtTextureSet result{};
+    result.tile_tex_to_slice.assign(tile.textures.size(), -1);
+    if (tile.textures.empty()) return result;
+
+    // Two-pass approach:
+    //   Pass 1: parse every BLP, decide on a canonical format (the one
+    //           used by the first valid BLP that meets our size and
+    //           power-of-two requirements). Skip the rest.
+    //   Pass 2: allocate an array of N slices and upload the survivors.
+    //
+    // WoW terrain BLPs are almost universally BC1 (DXT1) without alpha;
+    // we accept BC3 as a fallback so a tile that mixes one BC3 BLP
+    // doesn't lose every texture, but only the first-format slices
+    // upload successfully. Mismatched BLPs end up at slice -1 ->
+    // caller substitutes a checkerboard.
+    struct Candidate {
+        size_t tile_index;
+        std::string path;
+        BlpTexture blp;
+        bool ok = false;
+    };
+    std::vector<Candidate> candidates;
+    candidates.reserve(tile.textures.size());
+
+    vk::Format chosen_format = vk::Format::eUndefined;
+
+    for (size_t i = 0; i < tile.textures.size(); i++) {
+        Candidate c;
+        c.tile_index = i;
+        c.path = ResolveWowAsset(tile.textures[i]);
+        if (!fs::exists(c.path)) {
+            std::fprintf(stderr,
+                "ADT texture missing: %s\n", c.path.c_str());
+            candidates.push_back(std::move(c));
+            continue;
+        }
+        try {
+            c.blp = BlpLoader::LoadFile(c.path);
+        } catch (const std::exception& e) {
+            std::fprintf(stderr,
+                "BLP parse failed (%s): %s\n", c.path.c_str(), e.what());
+            candidates.push_back(std::move(c));
+            continue;
+        }
+
+        // We need a BLP whose dimensions are a power-of-two multiple of
+        // target_size and whose format is a supported block format.
+        // Most WoW terrain BLPs are 256x256 BC1, so this check passes
+        // trivially; large 1024x1024 ground BLPs hit the mip-skip path.
+        // Tiny 8x8 placeholder BLPs (used for "no border" markers on
+        // many tiles) fail silently here - the shader's magenta path
+        // covers them and they don't represent a real asset.
+        int skip = BlpMipForTarget(c.blp.width, target_size);
+        if (skip < 0) {
+            candidates.push_back(std::move(c));
+            continue;
+        }
+
+        if (chosen_format == vk::Format::eUndefined) {
+            chosen_format = c.blp.format;
+        }
+        c.ok = (c.blp.format == chosen_format);
+        if (!c.ok) {
+            std::fprintf(stderr,
+                "BLP %s format mismatch (got %u, expected %u)\n",
+                c.path.c_str(),
+                static_cast<unsigned>(c.blp.format),
+                static_cast<unsigned>(chosen_format));
+        }
+        candidates.push_back(std::move(c));
+    }
+
+    if (chosen_format == vk::Format::eUndefined) {
+        // No usable BLPs at all. Leave result.diffuse null - caller
+        // will see the empty array as "all slices missing" and fall
+        // back to the per-fragment "magenta missing" path.
+        return result;
+    }
+
+    // Count successful candidates so we know how many slices to allocate.
+    uint32_t slice_count = 0;
+    for (const auto& c : candidates) if (c.ok) slice_count++;
+    if (slice_count == 0) return result;
+
+    // Mip levels: log2(target_size) - 1 (stop at 4x4 for BC formats).
+    uint32_t mip_levels = 1;
+    {
+        uint32_t s = target_size;
+        while (s > 4 && mip_levels < 12) {
+            s >>= 1;
+            mip_levels++;
+        }
+    }
+
+    result.diffuse = std::make_unique<TextureArray>(
+        pm_device, target_size, target_size,
+        slice_count, chosen_format, mip_levels);
+
+    uint32_t next_slice = 0;
+    for (const auto& c : candidates) {
+        if (!c.ok) continue;
+        if (result.diffuse->UploadSliceFromBlp(next_slice, c.blp)) {
+            result.tile_tex_to_slice[c.tile_index] = static_cast<int>(next_slice);
+            next_slice++;
+        }
+    }
+    result.diffuse->FinalizeForSampling();
+    return result;
+}
+
+Entity* AssetManager::LoadAdtTileIntoScene(
+    int tile_x, int tile_y, Scene& scene,
+    const vk::raii::DescriptorSetLayout& terrain_layout) {
+
+    if (!pm_descriptor_pool || !pm_scene_ubo) return nullptr;
+    if (tile_x < 0 || tile_x > 63 || tile_y < 0 || tile_y > 63) return nullptr;
+
+    // Build the WoW-style path. Backslashes mirror what asset_extract
+    // produces and what ResolveWowAsset normalizes.
+    char rel_path[96];
+    std::snprintf(rel_path, sizeof(rel_path),
+        "World/Maps/Azeroth/Azeroth_%d_%d.adt", tile_x, tile_y);
+    std::string fs_path = ResolveWowAsset(rel_path);
+
+    if (!fs::exists(fs_path)) {
+        std::fprintf(stderr, "ADT missing: %s\n", fs_path.c_str());
+        return nullptr;
+    }
+
+    // AdtTile is ~5 MB (256 chunks * ~19 KB each); must be heap-allocated.
+    auto tile = std::make_unique<AdtTile>();
+    if (!AdtLoader::LoadFile(fs_path, *tile)) {
+        std::fprintf(stderr, "ADT parse failed: %s\n", fs_path.c_str());
+        return nullptr;
+    }
+    tile->tile_x = tile_x;
+    tile->tile_y = tile_y;
+
+    // Build (or look up cached) mesh + alpha + chunk_meta.
+    char mesh_key[32];
+    std::snprintf(mesh_key, sizeof(mesh_key), "adt:%d_%d", tile_x, tile_y);
+
+    // Diffuse atlas isn't cached across tiles for now (each tile gets its
+    // own array). Adjacent tiles often share BLPs - a follow-up
+    // optimization will share the underlying TextureArray slices.
+    auto tex_set = LoadAdtTextures(*tile);
+    auto terrain_build = TerrainMesh::Build(
+        pm_device, *tile, tex_set.tile_tex_to_slice);
+
+    // Per-chunk alpha array: 256 slices of 64x64 RGBA8.
+    auto alpha_array = std::make_shared<TextureArray>(
+        pm_device, 64, 64, kAdtChunksPerTile,
+        vk::Format::eR8G8B8A8Unorm, 1);
+    for (int i = 0; i < kAdtChunksPerTile; i++) {
+        const uint8_t* slice = terrain_build.alpha_pixels.data() + i * 64 * 64 * 4;
+        alpha_array->UploadSlicePixels(static_cast<uint32_t>(i), 0,
+                                        slice, 64 * 64 * 4);
+    }
+    alpha_array->FinalizeForSampling();
+
+    // Chunk-meta SSBO.
+    vk::DeviceSize meta_size =
+        sizeof(TerrainChunkMeta) * terrain_build.chunk_meta.size();
+    auto chunk_meta_buf = std::make_unique<Buffer>(
+        pm_device, meta_size,
+        vk::BufferUsageFlagBits::eStorageBuffer,
+        vk::MemoryPropertyFlagBits::eHostVisible |
+            vk::MemoryPropertyFlagBits::eHostCoherent);
+    chunk_meta_buf->Write(terrain_build.chunk_meta.data(), meta_size);
+
+    // Compute the tile's centroid in engine space + diagonal radius. Used
+    // by the streamer to decide which tile a camera position belongs to
+    // and to prioritize eviction.
+    glm::dvec3 sum_wow{0.0};
+    int counted = 0;
+    glm::vec3 vmin{ std::numeric_limits<float>::max() };
+    glm::vec3 vmax{ -std::numeric_limits<float>::max() };
+    for (const auto& ch : tile->chunks) {
+        if (ch.wow_x != 0.0f || ch.wow_y != 0.0f ||
+            ch.heights.y_outer[0] != 0.0f) {
+            sum_wow.x += ch.wow_x;
+            sum_wow.y += ch.wow_y;
+            sum_wow.z += ch.wow_z_base;
+            counted++;
+            glm::vec3 corner(ch.wow_y, ch.wow_z_base, ch.wow_x);
+            vmin = glm::min(vmin, corner);
+            vmax = glm::max(vmax, corner);
+        }
+    }
+    glm::vec3 centroid{0.0f};
+    if (counted > 0) {
+        glm::dvec3 avg = sum_wow / double(counted);
+        // WowToEngine: (wow_x, wow_y, wow_z) -> (wow_y, wow_z, wow_x)
+        centroid = glm::vec3(avg.y, avg.z, avg.x);
+    }
+    float radius = glm::length(vmax - vmin) * 0.5f;
+
+    // Spawn entity.
+    char entity_name[48];
+    std::snprintf(entity_name, sizeof(entity_name),
+                  "Tile_%d_%d", tile_x, tile_y);
+    Entity* entity = scene.CreateEntity(entity_name);
+    entity->AddComponent<TransformComponent>();
+
+    auto* mesh_comp = entity->AddComponent<MeshComponent>();
+    auto shared_mesh = std::shared_ptr<Mesh>(std::move(terrain_build.mesh));
+    pm_mesh_cache[mesh_key] = shared_mesh;
+    mesh_comp->pm_mesh = shared_mesh;
+
+    auto* terrain_comp = entity->AddComponent<TerrainComponent>();
+    terrain_comp->pm_alpha_array = alpha_array;
+    terrain_comp->pm_chunk_meta_ssbo = std::move(chunk_meta_buf);
+    if (tex_set.diffuse) {
+        terrain_comp->pm_diffuse_array =
+            std::shared_ptr<TextureArray>(tex_set.diffuse.release());
+    }
+
+    terrain_comp->pm_descriptor_set =
+        pm_descriptor_pool->AllocateSet(terrain_layout);
+
+    vk::DescriptorBufferInfo ubo_info{
+        *pm_scene_ubo->GetBuffer(), 0, sizeof(float) * 8};
+    vk::DescriptorBufferInfo meta_info{
+        *terrain_comp->pm_chunk_meta_ssbo->GetBuffer(), 0, meta_size};
+    auto alpha_info = terrain_comp->pm_alpha_array->DescriptorInfo();
+
+    DescriptorWriter writer{};
+    writer.WriteBuffer(0, ubo_info);
+    writer.WriteBuffer(1, meta_info, vk::DescriptorType::eStorageBuffer);
+    if (terrain_comp->pm_diffuse_array) {
+        auto diffuse_info = terrain_comp->pm_diffuse_array->DescriptorInfo();
+        writer.WriteImage(2, diffuse_info);
+    } else {
+        // No diffuse: bind the alpha array to keep the layout happy. The
+        // shader's all-slots-unused branch then paints magenta so the
+        // missing-asset state is obvious.
+        writer.WriteImage(2, alpha_info);
+    }
+    writer.WriteImage(3, alpha_info);
+    writer.Apply(pm_device.GetDevice(), terrain_comp->pm_descriptor_set);
+
+    auto* tile_comp = entity->AddComponent<TerrainTileComponent>();
+    tile_comp->pm_tile_x = tile_x;
+    tile_comp->pm_tile_y = tile_y;
+    tile_comp->pm_centroid_engine = centroid;
+    tile_comp->pm_radius = radius;
 
     return entity;
 }

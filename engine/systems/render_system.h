@@ -40,6 +40,7 @@ public:
 
     SceneUBO& SceneData() { return pm_scene_data; }
     const vk::raii::DescriptorSetLayout& DescriptorLayout() const { return pm_descriptor_layout; }
+    const vk::raii::DescriptorSetLayout& TerrainDescriptorLayout() const { return pm_terrain_descriptor_layout; }
     mve::DescriptorPool& GetDescriptorPool() { return *pm_descriptor_pool; }
     const Buffer& SceneUBOBuffer() const { return *pm_scene_ubo; }
 
@@ -50,12 +51,15 @@ private:
     std::unique_ptr<Pipeline> pm_model_pipeline;
     std::unique_ptr<Pipeline> pm_bg_pipeline;
     std::unique_ptr<Pipeline> pm_ground_pipeline;
+    std::unique_ptr<Pipeline> pm_terrain_pipeline;
 
     vk::raii::PipelineLayout pm_model_pipeline_layout = nullptr;
     vk::raii::PipelineLayout pm_bg_pipeline_layout = nullptr;
     vk::raii::PipelineLayout pm_ground_pipeline_layout = nullptr;
+    vk::raii::PipelineLayout pm_terrain_pipeline_layout = nullptr;
 
     vk::raii::DescriptorSetLayout pm_descriptor_layout = nullptr;
+    vk::raii::DescriptorSetLayout pm_terrain_descriptor_layout = nullptr;
     std::unique_ptr<DescriptorPool> pm_descriptor_pool;
     std::unique_ptr<Buffer> pm_scene_ubo;
 

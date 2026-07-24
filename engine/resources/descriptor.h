@@ -33,7 +33,8 @@ public:
     DescriptorPool(
         Device& device,
         uint32_t max_sets,
-        const std::vector<vk::DescriptorPoolSize>& pool_sizes);
+        const std::vector<vk::DescriptorPoolSize>& pool_sizes,
+        vk::DescriptorPoolCreateFlags flags = {});
 
     DescriptorPool(const DescriptorPool&) = delete;
     DescriptorPool& operator=(const DescriptorPool&) = delete;

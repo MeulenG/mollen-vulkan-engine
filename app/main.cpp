@@ -9,13 +9,14 @@
 #include "scene/components/transform_component.h"
 #include "scene/components/mesh_component.h"
 #include "scene/components/material_component.h"
-#include "scene/terrain_mesh.h"
+#include "scene/components/terrain_component.h"
+#include "scene/components/terrain_tile_component.h"
+#include "scene/terrain_streamer.h"
 #include "resources/asset_manager.h"
 #include "resources/buffer.h"
 #include "resources/descriptor.h"
 #include "resources/image.h"
 #include "animation/skeleton.h"
-#include "formats/wdt_loader.h"
 #include "formats/adt_types.h"
 #include "resources/dbc_registry.h"
 #include "resources/icon_cache.h"
@@ -87,79 +88,42 @@ int main() {
         cam->pm_camera.SetOrbit(8.0f, 0.5f, 0.3f);
         cam->pm_camera.SetTarget({0.0f, 0.5f, 0.0f});
 
-        // Load an Elwynn Forest ADT tile and render it as terrain. The tile
-        // chosen (32_48) covers the Northshire / Stormwind northern area.
-        // This is the R1 milestone deliverable: a single ADT heightmap on
-        // screen with the existing camera + lighting pipeline.
-        {
-            const char* adt_path = "assets/World/Maps/Azeroth/Azeroth_32_48.adt";
-            mve::AdtTile tile{};
-            if (!mve::AdtLoader::LoadFile(adt_path, tile)) {
-                std::cerr << "Failed to load ADT: " << adt_path << "\n";
-            } else {
-                std::cout << "Loaded ADT with " << tile.textures.size()
-                          << " textures and 256 chunks\n";
-
-                auto terrain_mesh = mve::TerrainMesh::Build(device, tile);
-
-                // Wire an entity using the existing Transform + Mesh +
-                // Material component triple so the regular model pipeline
-                // draws it. R1 binds the default checkerboard texture as a
-                // placeholder; height-based vertex color does the heavy
-                // lifting visually.
-                auto* terrain_entity = scene.CreateEntity("Elwynn_32_48");
-                terrain_entity->AddComponent<mve::TransformComponent>();
-                auto* mesh_comp = terrain_entity->AddComponent<mve::MeshComponent>();
-                mesh_comp->pm_mesh = std::move(terrain_mesh);
-
-                auto placeholder_tex = assets.GetDefaultTexture();
-                auto* mat = terrain_entity->AddComponent<mve::MaterialComponent>();
-
-                vk::DeviceSize bone_buffer_size = mve::Skeleton::MAX_BONES * sizeof(glm::mat4);
-                mat->pm_bone_buffer = std::make_unique<mve::Buffer>(
-                    device, bone_buffer_size,
-                    vk::BufferUsageFlagBits::eStorageBuffer,
-                    vk::MemoryPropertyFlagBits::eHostVisible |
-                        vk::MemoryPropertyFlagBits::eHostCoherent);
-                std::vector<glm::mat4> identity(mve::Skeleton::MAX_BONES, glm::mat4{1.0f});
-                mat->pm_bone_buffer->Write(identity.data(), bone_buffer_size);
-
-                // Move the raii descriptor set into the component so its
-                // lifetime is tied to the terrain entity. Same pattern as
-                // AssetManager::LoadM2IntoScene.
-                mat->pm_descriptor_set = render_system.GetDescriptorPool()
-                    .AllocateSet(render_system.DescriptorLayout());
-                vk::DescriptorBufferInfo ubo_info{
-                    *render_system.SceneUBOBuffer().GetBuffer(), 0, sizeof(float) * 8};
-                auto tex_info = placeholder_tex->DescriptorInfo();
-                vk::DescriptorBufferInfo bone_info{
-                    *mat->pm_bone_buffer->GetBuffer(), 0, bone_buffer_size};
-                mve::DescriptorWriter{}
-                    .WriteBuffer(0, ubo_info)
-                    .WriteImage(1, tex_info)
-                    .WriteBuffer(2, bone_info, vk::DescriptorType::eStorageBuffer)
-                    .Apply(device.GetDevice(), mat->pm_descriptor_set);
-
-                mve::SubmeshMaterial sub_mat;
-                sub_mat.pm_texture = placeholder_tex;
-                mat->pm_submesh_materials.push_back(sub_mat);
-
-                // Center the camera roughly on the tile. The tile spans
-                // ~533 yards. The terrain's vertex world-positions come
-                // straight from the ADT (WoW coords), so the tile sits
-                // somewhere in world space dictated by its (x, y) index.
-                // We just orbit around the centroid of the rendered geometry.
-                glm::vec3 c0(tile.chunks[0].wow_y,
-                             tile.chunks[0].wow_z_base,
-                             tile.chunks[0].wow_x);
-                glm::vec3 c1(tile.chunks[255].wow_y,
-                             tile.chunks[255].wow_z_base,
-                             tile.chunks[255].wow_x);
-                glm::vec3 center = 0.5f * (c0 + c1);
-                cam->pm_camera.SetTarget(center);
-                cam->pm_camera.SetOrbit(800.0f, 0.5f, 0.6f);
-            }
+        // R3: stream multiple ADT tiles around a focus point. The
+        // streamer loads tiles in a (2r+1)x(2r+1) ring around the camera,
+        // gated by the WDT MAIN bitmap so we never try to open ocean tiles.
+        //
+        // Initial focus is (32, 48) - Northshire / north Stormwind. We
+        // point the camera at that tile's expected engine centroid, then
+        // ask the streamer which tile the camera actually ended up in
+        // (the orbit position can sit in a neighbor) and preload around
+        // that tile - this prevents the first per-frame Update from
+        // immediately evicting tiles we just loaded.
+        mve::TerrainStreamer streamer{assets, scene};
+        if (!streamer.LoadWdt("World/Maps/Azeroth/Azeroth.wdt")) {
+            std::cerr << "WDT load failed - streamer falls back to "
+                         "try-every-tile mode\n";
         }
+
+        // Hardcoded engine center of tile (32, 48). The per-tile centroid
+        // from the file would be slightly more accurate, but the file
+        // load happens DURING the preload below - so we use the analytic
+        // tile center to bootstrap.
+        glm::vec3 center{-8800.0f, 170.0f, -250.0f};
+        cam->pm_camera.SetTarget(center);
+        // Bigger orbit so the full 3x3 (1600 yards across) fits in view.
+        cam->pm_camera.SetOrbit(1500.0f, 0.5f, 0.5f);
+
+        // Preload around wherever the camera actually sits (which may be
+        // a neighboring tile because of the orbit offset). Radius 2 (5x5)
+        // gives a ~2700-yard view region - enough that the target tile
+        // (32, 48) is always inside the loaded set even when the camera
+        // sits in a neighbor.
+        streamer.SetRadius(2);
+        streamer.SetEvictRadius(3);
+        int cam_tx, cam_ty;
+        streamer.EngineToTile(cam->pm_camera.GetPosition(), cam_tx, cam_ty);
+        streamer.PreloadAround(cam_tx, cam_ty, 2,
+                                render_system.TerrainDescriptorLayout());
 
         auto last_time = std::chrono::high_resolution_clock::now();
 
@@ -180,6 +144,20 @@ int main() {
             spell_editor.Update();
             animation_system.Update(scene, dt);
             render_system.UpdateSceneUBO();
+
+            // Stream-load tiles around the camera. Cheap when the camera
+            // stays in the same tile; loads ~one new tile per boundary
+            // crossing. Runs before FlushDestroyed so evicted tiles
+            // disappear in the same frame.
+            mve::Camera* stream_cam = nullptr;
+            scene.Each<mve::CameraComponent>(
+                [&](mve::Entity&, mve::CameraComponent& cc) {
+                    if (cc.pm_is_active) stream_cam = &cc.pm_camera;
+                });
+            if (stream_cam) {
+                streamer.Update(stream_cam->GetPosition(),
+                                render_system.TerrainDescriptorLayout());
+            }
             scene.FlushDestroyed();
 
             // Render
@@ -203,7 +181,24 @@ int main() {
             renderer.EndFrame(*cmd);
         }
 
+        // Shutdown sequence:
+        //
+        // 1. Wait for any in-flight command buffer that might still be
+        //    referencing entity descriptor sets.
+        // 2. Destroy every entity NOW, while RenderSystem (and its
+        //    DescriptorPool) is still alive. The vk::raii::DescriptorSet
+        //    members of TerrainComponent / MaterialComponent free
+        //    themselves back to the pool here.
+        // 3. The normal stack unwind then tears down render_system
+        //    (DescriptorPool dies with nothing left to free), then the
+        //    now-empty scene.
+        //
+        // Without (2), automatic destruction order has render_system
+        // dying before scene, and the descriptor-set destructors trip
+        // VUID-vkFreeDescriptorSets-descriptorPool-parameter when they
+        // try to free against the dead pool.
         device.GetDevice().waitIdle();
+        scene.Clear();
 
     } catch (const std::exception& e) {
         std::cerr << e.what() << '\n';

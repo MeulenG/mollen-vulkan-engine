@@ -31,7 +31,18 @@ struct Vertex {
 
 class Mesh {
 public:
+    // Construct from a vector of the canonical M2/model Vertex struct.
+    // Most call sites use this.
     Mesh(Device& device, const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices);
+
+    // Construct from a raw byte blob of vertex data. Used by code paths
+    // that produce a custom vertex layout (e.g. terrain has its own
+    // TerrainVertex with a per-vertex chunk_index, separate from the
+    // skinned-model Vertex). The caller is responsible for providing the
+    // matching VertexInput{Binding,Attribute}Description list when the
+    // mesh is bound to a pipeline.
+    Mesh(Device& device, const void* vertex_data, size_t vertex_bytes,
+         const std::vector<uint32_t>& indices);
 
     Mesh(const Mesh&) = delete;
     Mesh& operator=(const Mesh&) = delete;

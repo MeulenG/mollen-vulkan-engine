@@ -7,6 +7,7 @@ add_library(mollen-engine STATIC
     resources/buffer.cpp
     resources/descriptor.cpp
     resources/image.cpp
+    resources/texture_array.cpp
     resources/asset_manager.cpp
     resources/dbc_registry.cpp
     resources/icon_cache.cpp
@@ -31,6 +32,7 @@ add_library(mollen-engine STATIC
     formats/wdt_loader.cpp
     formats/adt_loader.cpp
     scene/terrain_mesh.cpp
+    scene/terrain_streamer.cpp
     db/db_connection.cpp
 )
 
@@ -85,4 +87,11 @@ add_dependencies(mollen-engine compile-shaders)
 # Make shader output directory available to consumers
 target_compile_definitions(mollen-engine PUBLIC
     MVE_SHADER_DIR="${SHADER_OUTPUT_DIR}"
+)
+
+# Absolute path to the assets/ directory at the repo root. Consumers
+# concatenate WoW-style relative paths (e.g. "World/Maps/Azeroth/...")
+# onto this so the executable can find its assets regardless of CWD.
+target_compile_definitions(mollen-engine PUBLIC
+    MVE_ASSET_DIR="${CMAKE_SOURCE_DIR}/assets"
 )

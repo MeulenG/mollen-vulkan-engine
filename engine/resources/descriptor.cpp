@@ -30,16 +30,14 @@ vk::raii::DescriptorSetLayout DescriptorSetLayoutBuilder::Build() {
 DescriptorPool::DescriptorPool(
     Device& device,
     uint32_t max_sets,
-    const std::vector<vk::DescriptorPoolSize>& pool_sizes)
+    const std::vector<vk::DescriptorPoolSize>& pool_sizes,
+    vk::DescriptorPoolCreateFlags flags)
     : device_{device} {
 
     vk::DescriptorPoolCreateInfo pool_info{};
     pool_info.setPoolSizes(pool_sizes);
     pool_info.maxSets = max_sets;
-    // Required because we hand out vk::raii::DescriptorSet, whose destructor
-    // calls vkFreeDescriptorSets. Without this flag that call is a spec
-    // violation even when the pool is still alive.
-    pool_info.flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet;
+    pool_info.flags = flags;
 
     pool_ = device_.GetDevice().createDescriptorPool(pool_info);
 }

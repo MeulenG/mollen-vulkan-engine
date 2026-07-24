@@ -31,7 +31,33 @@ struct AdtChunkHeights {
     float y_inner[64];   // 8x8
 };
 
-// One MCNK chunk's parsed data we care about for R1 (terrain only).
+// Per-vertex unit normals in engine space (already WowToEngine-remapped).
+// 145 entries packed as 9x9 outer (81) followed by 8x8 inner (64). The
+// shape mirrors AdtChunkHeights so vertex emission can index in lockstep.
+//
+// `parsed` is false when MCNR was absent or malformed; the mesh builder
+// then falls back to cross-product-summed normals as in R1.
+struct AdtChunkNormals {
+    float n_outer[81 * 3];
+    float n_inner[64 * 3];
+    bool  parsed = false;
+};
+
+// One ADT texture layer inside a chunk. The MCLY sub-chunk gives 16 bytes
+// per layer: { texture_index, flags, ofs_mcal, effect_id }. We capture the
+// first three; effect_id is unused for now.
+//
+// alpha[] is the layer's 64x64 alpha map decoded out of MCAL. Per WoW's
+// blending convention, layer 0 has no alpha map (it's the base, full
+// coverage), and layers 1..n-1 cover 0..1. The mesh builder packs the
+// three "upper" layers into the R/G/B channels of a 64x64 RGBA slice.
+struct AdtLayer {
+    int      texture_index = -1;   // -1 = no layer
+    uint32_t flags = 0;
+    uint8_t  alpha[64 * 64] = {};
+};
+
+// One MCNK chunk's parsed data.
 struct AdtChunk {
     // World-space position of the chunk's NW corner. We store this as the
     // raw WoW coords (X south, Y east, Z up). Conversion to engine-space
@@ -41,11 +67,18 @@ struct AdtChunk {
     float wow_z_base = 0.0f;
 
     AdtChunkHeights heights{};
+    AdtChunkNormals normals{};
 
-    // Per-chunk texture layer indices into the parent ADT's texture list.
-    // Up to 4 layers. -1 = no layer. R1 keeps these for later texturing.
-    int layer_texture[4] = { -1, -1, -1, -1 };
+    // Up to 4 layers per chunk. Layers beyond layer_count have default
+    // (-1) texture_index and zero-filled alpha.
+    AdtLayer layers[4]{};
     int layer_count = 0;
+
+    // 16-bit mask describing which of the 4x4 sub-cells are "holes" (no
+    // terrain - typically caves or cliff overhangs). Captured here for
+    // completeness; the R2 mesh builder ignores it. R3 honors holes by
+    // skipping the affected triangles.
+    uint16_t holes_low_res = 0;
 };
 
 // Parsed ADT terrain content.
