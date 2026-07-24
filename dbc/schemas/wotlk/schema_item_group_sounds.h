@@ -4,11 +4,11 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef item_group_sounds_fields[] = {
-    { "Id",       DbcFieldType::UInt32 },
-    { "Sound1",   DbcFieldType::UInt32 },
-    { "Sound2",   DbcFieldType::UInt32 },
-    { "Sound3",   DbcFieldType::UInt32 },
-    { "Sound4",   DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "Sound1", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Visuals" },
+    { "Sound2", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Visuals" },
+    { "Sound3", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Visuals" },
+    { "Sound4", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Visuals" },
 };
 
 static const DbcSchema schema_item_group_sounds = {

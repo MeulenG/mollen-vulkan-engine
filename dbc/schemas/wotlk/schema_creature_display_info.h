@@ -4,22 +4,22 @@
 #include "dbc_schema.h"
 
 static const DbcFieldDef creature_display_info_fields[] = {
-    { "Id",                   DbcFieldType::UInt32 },
-    { "ModelID",              DbcFieldType::UInt32 },
-    { "SoundID",              DbcFieldType::UInt32 },
-    { "ExtendedDisplayInfoID", DbcFieldType::UInt32 },
-    { "CreatureModelScale",   DbcFieldType::Float  },
-    { "CreatureModelAlpha",   DbcFieldType::UInt32 },
-    { "TextureVariation1",    DbcFieldType::String },
-    { "TextureVariation2",    DbcFieldType::String },
-    { "TextureVariation3",    DbcFieldType::String },
-    { "PortraitTextureName",  DbcFieldType::String },
-    { "BloodLevelID",         DbcFieldType::UInt32 },
-    { "BloodID",              DbcFieldType::UInt32 },
-    { "NPCSoundID",           DbcFieldType::UInt32 },
-    { "ParticleColorID",      DbcFieldType::UInt32 },
-    { "CreatureGeosetData",   DbcFieldType::UInt32 },
-    { "ObjectEffectPackageID", DbcFieldType::UInt32 },
+    { "Id", DbcFieldType::UInt32, DbcSemantic::Default, nullptr, "Identity" },
+    { "ModelID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "creaturemodeldata" },
+    { "SoundID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "soundentries", "Visuals" },
+    { "ExtendedDisplayInfoID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "extendeddisplayinfo", "Visuals" },
+    { "CreatureModelScale", DbcFieldType::Float },
+    { "CreatureModelAlpha", DbcFieldType::UInt32 },
+    { "TextureVariation1", DbcFieldType::String, DbcSemantic::Default, nullptr, "Visuals" },
+    { "TextureVariation2", DbcFieldType::String, DbcSemantic::Default, nullptr, "Visuals" },
+    { "TextureVariation3", DbcFieldType::String, DbcSemantic::Default, nullptr, "Visuals" },
+    { "PortraitTextureName", DbcFieldType::String, DbcSemantic::Default, nullptr, "Visuals" },
+    { "BloodLevelID", DbcFieldType::UInt32, DbcSemantic::Enum, "BloodLevel" },
+    { "BloodID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "blood" },
+    { "NPCSoundID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "npcsounds", "Visuals" },
+    { "ParticleColorID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "particlecolor", "Visuals" },
+    { "CreatureGeosetData", DbcFieldType::UInt32 },
+    { "ObjectEffectPackageID", DbcFieldType::UInt32, DbcSemantic::ForeignKey, "objecteffectpackage" },
 };
 
 static const DbcSchema schema_creature_display_info = {
