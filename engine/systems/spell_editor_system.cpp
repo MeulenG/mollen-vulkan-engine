@@ -70,6 +70,8 @@ void SpellEditorSystem::EnsureLoaded() {
         return;
     }
     CacheColumnIndices();
+    BuildSpellCrossRefs();
+    BuildTalentAndGlyphRefs();
 
     // Pre-compute lowercase names for filter matching.
     pm_lowercase_names.clear();
@@ -189,6 +191,29 @@ void SpellEditorSystem::CacheColumnIndices() {
 
     c.category = col("Category");
 
+    // Cross-reference fields (Branch Z).
+    c.caster_aura_spell         = col("CasterAuraSpell");
+    c.target_aura_spell         = col("TargetAuraSpell");
+    c.exclude_caster_aura_spell = col("ExcludeCasterAuraSpell");
+    c.exclude_target_aura_spell = col("ExcludeTargetAuraSpell");
+    c.effect_trigger_spell[0]   = col("EffectTriggerSpell1");
+    c.effect_trigger_spell[1]   = col("EffectTriggerSpell2");
+    c.effect_trigger_spell[2]   = col("EffectTriggerSpell3");
+
+    c.spell_family_name           = col("SpellFamilyName");
+    c.spell_family_flags[0]       = col("SpellFamilyFlags1");
+    c.spell_family_flags[1]       = col("SpellFamilyFlags2");
+    c.spell_family_flags[2]       = col("SpellFamilyFlags3");
+    c.effect_spell_class_mask_a[0] = col("EffectSpellClassMaskA1");
+    c.effect_spell_class_mask_a[1] = col("EffectSpellClassMaskA2");
+    c.effect_spell_class_mask_a[2] = col("EffectSpellClassMaskA3");
+    c.effect_spell_class_mask_b[0] = col("EffectSpellClassMaskB1");
+    c.effect_spell_class_mask_b[1] = col("EffectSpellClassMaskB2");
+    c.effect_spell_class_mask_b[2] = col("EffectSpellClassMaskB3");
+    c.effect_spell_class_mask_c[0] = col("EffectSpellClassMaskC1");
+    c.effect_spell_class_mask_c[1] = col("EffectSpellClassMaskC2");
+    c.effect_spell_class_mask_c[2] = col("EffectSpellClassMaskC3");
+
     // Build category -> rows reverse-index now that column indices are known.
     pm_category_to_rows.clear();
     if (c.category >= 0) {
@@ -199,6 +224,176 @@ void SpellEditorSystem::CacheColumnIndices() {
             }
         }
     }
+}
+
+// ---- Cross-reference indices (Branch Z) -----------------------------------
+//
+// Builds three indices at load time:
+//   pm_id_to_row    spell id -> row idx (for JumpToSpell + lookups)
+//   pm_reverse_refs target spell id -> [(source row, ref kind)]
+//
+// One O(N) pass over the spell table after columns are cached. Family
+// modifiers are computed lazily on demand instead.
+void SpellEditorSystem::BuildSpellCrossRefs() {
+    pm_id_to_row.clear();
+    pm_reverse_refs.clear();
+
+    // First pass: id -> row.
+    if (pm_cols.id < 0) return;
+    pm_id_to_row.reserve(pm_spells.rows.size());
+    for (size_t i = 0; i < pm_spells.rows.size(); i++) {
+        int64_t id = GetCellInt(i, pm_cols.id);
+        if (id > 0) pm_id_to_row[id] = static_cast<int>(i);
+    }
+
+    // Second pass: walk every row, record each non-zero cross-ref as a
+    // reverse entry on the target id.
+    auto record = [&](size_t src_row, int col, RevRefKind kind) {
+        if (col < 0) return;
+        int64_t tgt = GetCellInt(src_row, col);
+        if (tgt <= 0) return;
+        pm_reverse_refs[tgt].push_back({ static_cast<int>(src_row), kind });
+    };
+    for (size_t i = 0; i < pm_spells.rows.size(); i++) {
+        record(i, pm_cols.caster_aura_spell,         RevRefKind::CasterAura);
+        record(i, pm_cols.target_aura_spell,         RevRefKind::TargetAura);
+        record(i, pm_cols.exclude_caster_aura_spell, RevRefKind::ExcludeCasterAura);
+        record(i, pm_cols.exclude_target_aura_spell, RevRefKind::ExcludeTargetAura);
+        record(i, pm_cols.effect_trigger_spell[0],   RevRefKind::TriggerSpell1);
+        record(i, pm_cols.effect_trigger_spell[1],   RevRefKind::TriggerSpell2);
+        record(i, pm_cols.effect_trigger_spell[2],   RevRefKind::TriggerSpell3);
+    }
+}
+
+void SpellEditorSystem::BuildTalentAndGlyphRefs() {
+    pm_talent_refs.clear();
+    pm_glyph_refs.clear();
+    pm_talent_tab_names.clear();
+
+    // ---- Talent ----------------------------------------------------------
+    if (pm_db.FetchTable("talent", pm_talents)) {
+        int id_col  = FindCol(pm_talents.columns, DbcColumnName("Id").c_str());
+        int tab_col = FindCol(pm_talents.columns, DbcColumnName("TabID").c_str());
+        int rank_cols[9];
+        for (int r = 0; r < 9; r++) {
+            char fname[16];
+            std::snprintf(fname, sizeof(fname), "SpellRank%d", r + 1);
+            rank_cols[r] = FindCol(pm_talents.columns, DbcColumnName(fname).c_str());
+        }
+        (void)id_col; (void)tab_col;  // referenced via row access pattern
+
+        for (size_t i = 0; i < pm_talents.rows.size(); i++) {
+            for (int r = 0; r < 9; r++) {
+                if (rank_cols[r] < 0) continue;
+                const auto& v = pm_talents.rows[i].values;
+                if (rank_cols[r] >= static_cast<int>(v.size())) continue;
+                int64_t spell_id = std::strtoll(v[rank_cols[r]].c_str(), nullptr, 10);
+                if (spell_id > 0) {
+                    pm_talent_refs[spell_id].push_back({ static_cast<int>(i), r });
+                }
+            }
+        }
+    }
+
+    // ---- TalentTab (for friendly tab names) ------------------------------
+    if (pm_db.FetchTable("talenttab", pm_talent_tabs)) {
+        int id_col   = FindCol(pm_talent_tabs.columns, DbcColumnName("Id").c_str());
+        int name_col = FindCol(pm_talent_tabs.columns,
+                               DbcColumnName("Name_enUS").c_str());
+        for (const auto& r : pm_talent_tabs.rows) {
+            if (id_col < 0 || name_col < 0) break;
+            if (id_col >= static_cast<int>(r.values.size()) ||
+                name_col >= static_cast<int>(r.values.size())) continue;
+            int64_t tab_id = std::strtoll(r.values[id_col].c_str(), nullptr, 10);
+            pm_talent_tab_names[tab_id] = r.values[name_col];
+        }
+    }
+
+    // ---- GlyphProperties --------------------------------------------------
+    if (pm_db.FetchTable("glyphproperties", pm_glyphs)) {
+        int id_col    = FindCol(pm_glyphs.columns, DbcColumnName("Id").c_str());
+        int spell_col = FindCol(pm_glyphs.columns, DbcColumnName("SpellID").c_str());
+        for (const auto& r : pm_glyphs.rows) {
+            if (id_col < 0 || spell_col < 0) break;
+            if (id_col >= static_cast<int>(r.values.size()) ||
+                spell_col >= static_cast<int>(r.values.size())) continue;
+            int64_t glyph_id = std::strtoll(r.values[id_col].c_str(), nullptr, 10);
+            int64_t spell_id = std::strtoll(r.values[spell_col].c_str(), nullptr, 10);
+            if (spell_id > 0) {
+                pm_glyph_refs[spell_id].push_back(glyph_id);
+            }
+        }
+    }
+}
+
+const std::vector<std::pair<int, int>>&
+SpellEditorSystem::GetFamilyModifiersFor(int64_t spell_id, size_t row_idx) {
+    auto cached = pm_family_modifier_cache.find(spell_id);
+    if (cached != pm_family_modifier_cache.end()) return cached->second;
+
+    auto& out = pm_family_modifier_cache[spell_id];
+
+    int64_t my_family = GetCellInt(row_idx, pm_cols.spell_family_name);
+    if (my_family == 0) return out;
+
+    uint32_t my_flags[3] = {
+        static_cast<uint32_t>(GetCellInt(row_idx, pm_cols.spell_family_flags[0])),
+        static_cast<uint32_t>(GetCellInt(row_idx, pm_cols.spell_family_flags[1])),
+        static_cast<uint32_t>(GetCellInt(row_idx, pm_cols.spell_family_flags[2])),
+    };
+    if ((my_flags[0] | my_flags[1] | my_flags[2]) == 0) return out;
+
+    // Scan all spells. Filter by family first, then check mask overlap per effect.
+    // 49k iterations + 9 quick checks each is ~500us. Cached after first call.
+    for (size_t i = 0; i < pm_spells.rows.size(); i++) {
+        if (static_cast<int>(i) == static_cast<int>(row_idx)) continue;
+        int64_t fam = GetCellInt(i, pm_cols.spell_family_name);
+        if (fam != my_family) continue;
+
+        for (int slot = 0; slot < 3; slot++) {
+            uint32_t a = static_cast<uint32_t>(
+                GetCellInt(i, pm_cols.effect_spell_class_mask_a[slot]));
+            uint32_t b = static_cast<uint32_t>(
+                GetCellInt(i, pm_cols.effect_spell_class_mask_b[slot]));
+            uint32_t cmask = static_cast<uint32_t>(
+                GetCellInt(i, pm_cols.effect_spell_class_mask_c[slot]));
+            if ((a & my_flags[0]) | (b & my_flags[1]) | (cmask & my_flags[2])) {
+                out.push_back({ static_cast<int>(i), slot });
+                break;  // one match per source spell is enough for display
+            }
+        }
+        if (out.size() >= 200) break;  // cap to keep UI usable
+    }
+    return out;
+}
+
+// ---- Navigation helpers ---------------------------------------------------
+
+void SpellEditorSystem::JumpToSpell(int64_t spell_id) {
+    auto it = pm_id_to_row.find(spell_id);
+    if (it == pm_id_to_row.end()) return;
+    pm_selected_row = it->second;
+    pm_edit_buffers.clear();
+    pm_last_error.clear();
+}
+
+bool SpellEditorSystem::SpellLink(int64_t spell_id) {
+    auto it = pm_id_to_row.find(spell_id);
+    char label[160];
+    if (it != pm_id_to_row.end()) {
+        std::string name = GetCell(static_cast<size_t>(it->second), pm_cols.name);
+        std::snprintf(label, sizeof(label), "%s  (#%lld)",
+                      name.empty() ? "(unnamed)" : name.c_str(),
+                      static_cast<long long>(spell_id));
+    } else {
+        std::snprintf(label, sizeof(label), "#%lld  (unknown)",
+                      static_cast<long long>(spell_id));
+    }
+    ImGui::PushID(static_cast<int>(spell_id));
+    bool clicked = ImGui::Selectable(label, false, ImGuiSelectableFlags_None);
+    ImGui::PopID();
+    if (clicked) JumpToSpell(spell_id);
+    return clicked;
 }
 
 // ---- FK lookup tables ------------------------------------------------------
@@ -616,12 +811,17 @@ void SpellEditorSystem::DrawDetail() {
     DrawIdentitySection(spell_id, row_idx);
     DrawDescriptionSection(spell_id, row_idx);
     DrawCostCastSection(spell_id, row_idx);
+    DrawConditionsLinksSection(spell_id, row_idx);
     DrawEffectSection(0, spell_id, row_idx);
     DrawEffectSection(1, spell_id, row_idx);
     DrawEffectSection(2, spell_id, row_idx);
     DrawAttributesSection(spell_id, row_idx);
     DrawReagentsSection(row_idx);
     DrawCooldownDetailsSection(row_idx);
+    DrawReferencedBySection(spell_id);
+    DrawTalentsSection(spell_id);
+    DrawGlyphsSection(spell_id);
+    DrawFamilyModifiersSection(spell_id, row_idx);
 }
 
 // ---- Per-section drawing ----------------------------------------------------
@@ -978,6 +1178,18 @@ void SpellEditorSystem::DrawEffectSection(int slot, int64_t spell_id, size_t row
         DrawResolvedField("Radius", ResolveRadius(radius_idx));
     }
 
+    // Triggered spell (Branch Z) - if this effect triggers another spell,
+    // render a clickable link so the user can navigate the chain.
+    int64_t trig_id = GetCellInt(row_idx, pm_cols.effect_trigger_spell[slot]);
+    if (trig_id > 0) {
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextDisabled("Triggers spell");
+        ImGui::TableSetColumnIndex(1);
+        SpellLink(trig_id);
+    }
+
     ImGui::EndTable();
     ImGui::PopID();
 }
@@ -1222,6 +1434,199 @@ void SpellEditorSystem::DrawCooldownDetailsSection(size_t row_idx) {
     }
 
     ImGui::EndTable();
+}
+
+// ---- Modifier graph sections (Branch Z) -----------------------------------
+
+void SpellEditorSystem::DrawConditionsLinksSection(int64_t /*spell_id*/,
+                                                   size_t row_idx) {
+    int64_t caster_aura      = GetCellInt(row_idx, pm_cols.caster_aura_spell);
+    int64_t target_aura      = GetCellInt(row_idx, pm_cols.target_aura_spell);
+    int64_t excl_caster_aura = GetCellInt(row_idx, pm_cols.exclude_caster_aura_spell);
+    int64_t excl_target_aura = GetCellInt(row_idx, pm_cols.exclude_target_aura_spell);
+
+    if (caster_aura == 0 && target_aura == 0 &&
+        excl_caster_aura == 0 && excl_target_aura == 0) return;
+
+    if (!ImGui::CollapsingHeader("Required / excluded auras")) return;
+    if (!ImGui::BeginTable("##cond_links", 2,
+                           ImGuiTableFlags_SizingFixedFit |
+                           ImGuiTableFlags_BordersInnerH)) return;
+    ImGui::TableSetupColumn("##l", ImGuiTableColumnFlags_WidthFixed, 200);
+    ImGui::TableSetupColumn("##v", ImGuiTableColumnFlags_WidthStretch);
+
+    auto link_row = [&](const char* label, int64_t id) {
+        if (id == 0) return;
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextDisabled("%s", label);
+        ImGui::TableSetColumnIndex(1);
+        SpellLink(id);
+    };
+    link_row("Requires caster aura",  caster_aura);
+    link_row("Requires target aura",  target_aura);
+    link_row("Excludes caster aura",  excl_caster_aura);
+    link_row("Excludes target aura",  excl_target_aura);
+
+    ImGui::EndTable();
+}
+
+void SpellEditorSystem::DrawReferencedBySection(int64_t spell_id) {
+    auto it = pm_reverse_refs.find(spell_id);
+    if (it == pm_reverse_refs.end() || it->second.empty()) return;
+
+    if (!ImGui::CollapsingHeader("Referenced by")) return;
+
+    // Group by kind so the user can see the relationship types at a glance.
+    const char* kind_labels[] = {
+        "Required caster aura for",   // CasterAura
+        "Required target aura for",   // TargetAura
+        "Excludes caster from",       // ExcludeCasterAura
+        "Excludes target from",       // ExcludeTargetAura
+        "Triggered (effect 1) by",    // TriggerSpell1
+        "Triggered (effect 2) by",    // TriggerSpell2
+        "Triggered (effect 3) by",    // TriggerSpell3
+    };
+
+    std::vector<std::vector<int>> by_kind(7);
+    for (const auto& r : it->second) {
+        int k = static_cast<int>(r.kind);
+        if (k >= 0 && k < 7) by_kind[k].push_back(r.source_row);
+    }
+
+    constexpr int kCapPerGroup = 50;
+    for (int k = 0; k < 7; k++) {
+        if (by_kind[k].empty()) continue;
+        ImGui::TextDisabled("%s  (%zu):", kind_labels[k], by_kind[k].size());
+        ImGui::Indent();
+        int shown = 0;
+        for (int src_row : by_kind[k]) {
+            if (shown >= kCapPerGroup) {
+                ImGui::TextDisabled("...+%d more",
+                                    static_cast<int>(by_kind[k].size()) - shown);
+                break;
+            }
+            int64_t sid = GetCellInt(static_cast<size_t>(src_row), pm_cols.id);
+            SpellLink(sid);
+            shown++;
+        }
+        ImGui::Unindent();
+    }
+}
+
+void SpellEditorSystem::DrawTalentsSection(int64_t spell_id) {
+    auto it = pm_talent_refs.find(spell_id);
+    if (it == pm_talent_refs.end() || it->second.empty()) return;
+
+    if (!ImGui::CollapsingHeader("Talents")) return;
+
+    int tab_col  = FindCol(pm_talents.columns, DbcColumnName("TabID").c_str());
+    int id_col   = FindCol(pm_talents.columns, DbcColumnName("Id").c_str());
+    int tier_col = FindCol(pm_talents.columns, DbcColumnName("TierID").c_str());
+
+    constexpr int kCap = 50;
+    int shown = 0;
+    for (const auto& ref : it->second) {
+        if (shown >= kCap) {
+            ImGui::TextDisabled("...+%d more talents",
+                                static_cast<int>(it->second.size()) - shown);
+            break;
+        }
+        if (ref.talent_row < 0 ||
+            ref.talent_row >= static_cast<int>(pm_talents.rows.size())) continue;
+        const auto& tr = pm_talents.rows[ref.talent_row].values;
+
+        int64_t talent_id = 0, tab_id = 0, tier = 0;
+        if (id_col   >= 0 && id_col   < static_cast<int>(tr.size())) talent_id = std::strtoll(tr[id_col].c_str(),   nullptr, 10);
+        if (tab_col  >= 0 && tab_col  < static_cast<int>(tr.size())) tab_id    = std::strtoll(tr[tab_col].c_str(),  nullptr, 10);
+        if (tier_col >= 0 && tier_col < static_cast<int>(tr.size())) tier      = std::strtoll(tr[tier_col].c_str(), nullptr, 10);
+
+        auto tn = pm_talent_tab_names.find(tab_id);
+        const char* tab_name = (tn != pm_talent_tab_names.end()) ? tn->second.c_str() : "?";
+
+        ImGui::BulletText("%s  -  Rank %d / tier %d  (talent #%lld)",
+                          tab_name, ref.rank_index + 1,
+                          static_cast<int>(tier),
+                          static_cast<long long>(talent_id));
+        shown++;
+    }
+}
+
+void SpellEditorSystem::DrawGlyphsSection(int64_t spell_id) {
+    auto it = pm_glyph_refs.find(spell_id);
+    if (it == pm_glyph_refs.end() || it->second.empty()) return;
+
+    if (!ImGui::CollapsingHeader("Glyphs")) return;
+
+    for (int64_t glyph_id : it->second) {
+        ImGui::BulletText("Glyph #%lld", static_cast<long long>(glyph_id));
+    }
+    ImGui::TextDisabled("Glyph items live in Item.dbc with GlyphPropertiesID;"
+                        " cross-DBC navigation will come in a follow-up.");
+}
+
+void SpellEditorSystem::DrawFamilyModifiersSection(int64_t spell_id, size_t row_idx) {
+    int64_t family = GetCellInt(row_idx, pm_cols.spell_family_name);
+    if (family == 0) return;
+    uint32_t flags = 0;
+    for (int i = 0; i < 3; i++)
+        flags |= static_cast<uint32_t>(GetCellInt(row_idx, pm_cols.spell_family_flags[i]));
+    if (flags == 0) return;
+
+    const auto& mods = GetFamilyModifiersFor(spell_id, row_idx);
+    if (mods.empty()) return;
+
+    char header[64];
+    std::snprintf(header, sizeof(header), "Modified by  (%zu)", mods.size());
+    if (!ImGui::CollapsingHeader(header)) return;
+
+    ImGui::TextDisabled("Spells in family %lld whose effect class-mask "
+                        "overlaps this spell's family flags.",
+                        static_cast<long long>(family));
+    ImGui::Separator();
+
+    const DbcEnum* eff_enum = GetDbcEnum("SpellEffects");
+    constexpr int kCap = 50;
+    int shown = 0;
+    for (const auto& m : mods) {
+        if (shown >= kCap) {
+            ImGui::TextDisabled("...+%d more modifiers",
+                                static_cast<int>(mods.size()) - shown);
+            break;
+        }
+        int src_row = m.first;
+        int slot    = m.second;
+        if (src_row < 0 ||
+            src_row >= static_cast<int>(pm_spells.rows.size())) continue;
+        int64_t sid = GetCellInt(static_cast<size_t>(src_row), pm_cols.id);
+
+        int64_t eff_type = GetCellInt(static_cast<size_t>(src_row),
+                                      slot == 0 ? pm_cols.effect_1 :
+                                      slot == 1 ? pm_cols.effect_2 :
+                                                  pm_cols.effect_3);
+        std::string eff_name;
+        if (eff_enum) {
+            for (uint32_t i = 0; i < eff_enum->count; i++) {
+                if (eff_enum->values[i].value == static_cast<int32_t>(eff_type)) {
+                    eff_name = eff_enum->values[i].label;
+                    break;
+                }
+            }
+        }
+
+        ImGui::PushID(src_row * 10 + slot);
+        SpellLink(sid);
+        ImGui::SameLine();
+        if (!eff_name.empty()) {
+            ImGui::TextDisabled("(effect %d - %s)", slot + 1, eff_name.c_str());
+        } else {
+            ImGui::TextDisabled("(effect %d - type %lld)",
+                                slot + 1, static_cast<long long>(eff_type));
+        }
+        ImGui::PopID();
+        shown++;
+    }
 }
 
 void SpellEditorSystem::Commit(int64_t spell_id, size_t row_index,

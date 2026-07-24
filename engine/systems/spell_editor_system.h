@@ -113,6 +113,20 @@ private:
 
         // Cooldown / category
         int category = -1;
+
+        // Cross-reference fields (FK to other spell IDs).
+        int caster_aura_spell         = -1;
+        int target_aura_spell         = -1;
+        int exclude_caster_aura_spell = -1;
+        int exclude_target_aura_spell = -1;
+        int effect_trigger_spell[3]   = { -1, -1, -1 };
+
+        // SpellFamily fields for the modifier graph.
+        int spell_family_name           = -1;
+        int spell_family_flags[3]       = { -1, -1, -1 };
+        int effect_spell_class_mask_a[3] = { -1, -1, -1 };
+        int effect_spell_class_mask_b[3] = { -1, -1, -1 };
+        int effect_spell_class_mask_c[3] = { -1, -1, -1 };
     };
     Cols pm_cols;
 
@@ -120,6 +134,56 @@ private:
     // category_id -> list of row indices in pm_spells that share it. Built
     // once at load time so the "shares cooldown with" lookup is O(1).
     std::unordered_map<int64_t, std::vector<int>> pm_category_to_rows;
+
+    // ---- Cross-reference indices (Branch Z) ----
+    // Spell id -> row index in pm_spells. Used by JumpToSpell + reverse
+    // lookups. Built at load time during CacheColumnIndices().
+    std::unordered_map<int64_t, int> pm_id_to_row;
+
+    // Reverse-reference kind: which field on a source spell points at our
+    // target spell. We store enough kinds to render meaningful "Referenced
+    // by" sub-headers.
+    enum class RevRefKind {
+        CasterAura,
+        TargetAura,
+        ExcludeCasterAura,
+        ExcludeTargetAura,
+        TriggerSpell1,
+        TriggerSpell2,
+        TriggerSpell3,
+    };
+    struct RevRef { int source_row; RevRefKind kind; };
+
+    // Target spell id -> list of (source row, kind) entries.
+    std::unordered_map<int64_t, std::vector<RevRef>> pm_reverse_refs;
+
+    // Talent + GlyphProperties tables and the spell-id -> entry indices.
+    DbConnection::Table pm_talents;
+    DbConnection::Table pm_talent_tabs;
+    DbConnection::Table pm_glyphs;
+    struct TalentRef { int talent_row; int rank_index; };  // rank 0..8
+    std::unordered_map<int64_t, std::vector<TalentRef>> pm_talent_refs;
+    std::unordered_map<int64_t, std::vector<int64_t>> pm_glyph_refs;
+    // tab id -> name_enus
+    std::unordered_map<int64_t, std::string> pm_talent_tab_names;
+
+    // Per-spell-open cache of "modifier spells that target me via family
+    // class mask." Keyed by the spell id we currently have selected.
+    std::unordered_map<int64_t, std::vector<std::pair<int, int>>>
+        pm_family_modifier_cache;  // value = list of (source_row, effect_slot)
+
+    // Builders called from EnsureLoaded() after CacheColumnIndices().
+    void BuildSpellCrossRefs();
+    void BuildTalentAndGlyphRefs();
+    const std::vector<std::pair<int, int>>&
+        GetFamilyModifiersFor(int64_t spell_id, size_t row_idx);
+
+    // Navigation helpers.
+    void JumpToSpell(int64_t spell_id);
+    // Renders "<Name>  (#id)" as a clickable Selectable. On click, jumps to
+    // that spell. Returns true if clicked. Unknown id renders just "#id" but
+    // is still clickable as a no-op so the layout stays stable.
+    bool SpellLink(int64_t spell_id);
 
     // ---- FK lookup caches ----
     // Each maps the row's id to a small struct of resolved values. Loaded
@@ -158,6 +222,11 @@ private:
     void DrawAttributesSection(int64_t spell_id, size_t row_idx);
     void DrawReagentsSection(size_t row_idx);
     void DrawCooldownDetailsSection(size_t row_idx);
+    void DrawConditionsLinksSection(int64_t spell_id, size_t row_idx);
+    void DrawReferencedBySection(int64_t spell_id);
+    void DrawTalentsSection(int64_t spell_id);
+    void DrawGlyphsSection(int64_t spell_id);
+    void DrawFamilyModifiersSection(int64_t spell_id, size_t row_idx);
 
     // Helper used by DrawDetail's per-row label/InputText editor pattern.
     // Returns true if a commit happened.
