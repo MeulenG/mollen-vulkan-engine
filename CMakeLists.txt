@@ -8,14 +8,13 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Options
 option(MVE_BUILD_DBC_TOOLS "Build dbc-extract CLI tool (requires mollen-storm + pqxx)" OFF)
 option(MVE_BUILD_TESTS "Build unit tests" ON)
-option(MVE_ENABLE_PSQL "Enable PostgreSQL support (requires libpq + libpqxx)" ON)
+option(MVE_BUILD_INSPECTOR "Build mollen-inspector format viewer" ON)
+option(MVE_ENABLE_PSQL "Enable PostgreSQL support (requires libpq)" OFF)
 
-# =============================================================================
 # Dependencies
-# =============================================================================
 include(FetchContent)
 
-# Vulkan (must be installed via Vulkan SDK)
+# Vulkan
 find_package(Vulkan REQUIRED)
 
 # GLFW
@@ -93,6 +92,25 @@ target_include_directories(imgui_lib PUBLIC
 )
 target_link_libraries(imgui_lib PUBLIC Vulkan::Vulkan glfw)
 
+# Separate ImGui target for the inspector (OpenGL3 backend, no Vulkan needed)
+if(MVE_BUILD_INSPECTOR)
+    find_package(OpenGL REQUIRED)
+    add_library(imgui_lib_opengl3 STATIC
+        ${imgui_SOURCE_DIR}/imgui.cpp
+        ${imgui_SOURCE_DIR}/imgui_demo.cpp
+        ${imgui_SOURCE_DIR}/imgui_draw.cpp
+        ${imgui_SOURCE_DIR}/imgui_tables.cpp
+        ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
+    )
+    target_include_directories(imgui_lib_opengl3 PUBLIC
+        ${imgui_SOURCE_DIR}
+        ${imgui_SOURCE_DIR}/backends
+    )
+    target_link_libraries(imgui_lib_opengl3 PUBLIC glfw OpenGL::GL)
+endif()
+
 # PostgreSQL (optional)
 if(MVE_ENABLE_PSQL)
     find_package(PkgConfig)
@@ -101,12 +119,13 @@ if(MVE_ENABLE_PSQL)
     endif()
 endif()
 
-# =============================================================================
-# Subdirectories
-# =============================================================================
 add_subdirectory(dbc)
 add_subdirectory(engine)
 add_subdirectory(app)
+
+if(MVE_BUILD_INSPECTOR)
+    add_subdirectory(inspector)
+endif()
 
 if(MVE_BUILD_TESTS AND MVE_ENABLE_PSQL)
     add_subdirectory(tests)
