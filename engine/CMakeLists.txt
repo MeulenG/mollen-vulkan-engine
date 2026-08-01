@@ -68,7 +68,11 @@ target_link_libraries(mollen-engine PRIVATE
 # engine-only rebuild is what makes the reload loop work. (Generator
 # expression for the app dir is resolved after all targets are defined, even
 # though the engine subdirectory is processed before the app's.)
+# make_directory first: on a clean build the engine finishes before the app
+# dir exists, and copy_if_different into a missing dir writes the DLL as a
+# FILE named after the dir (build/app/Debug), bricking the app build.
 add_custom_command(TARGET mollen-engine POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:mollen-wow-tools>
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         $<TARGET_FILE:mollen-engine> $<TARGET_FILE_DIR:mollen-wow-tools>
 )
