@@ -48,7 +48,7 @@ FetchContent_Declare(
     GIT_TAG        v3.4.0
 )
 
-# mollen-storm (MPQ archive reading for dbc-extract)
+# mollen-storm (MPQ archive reading for asset-extract)
 if(MVE_BUILD_DBC_TOOLS)
     FetchContent_Declare(
         mollen_storm
@@ -56,6 +56,16 @@ if(MVE_BUILD_DBC_TOOLS)
         GIT_TAG        master
     )
 endif()
+
+# mollen-wow-dbc (DBC parsing, schemas, writer, psql import). The engine
+# consumes the library only - the repo's own CLI and tests stay off in
+# embedded builds. Its psql support tracks MVE_ENABLE_PSQL.
+set(MOLLEN_DBC_ENABLE_PSQL ${MVE_ENABLE_PSQL} CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    mollen_wow_dbc
+    GIT_REPOSITORY https://github.com/MeulenG/mollen-wow-dbc.git
+    GIT_TAG        master
+)
 
 # Catch2 (testing)
 if(MVE_BUILD_TESTS)
@@ -67,7 +77,7 @@ if(MVE_BUILD_TESTS)
 endif()
 
 # Make all declared dependencies available
-set(FETCH_TARGETS glfw glm imgui tomlplusplus)
+set(FETCH_TARGETS glfw glm imgui tomlplusplus mollen_wow_dbc)
 if(MVE_BUILD_DBC_TOOLS)
     list(APPEND FETCH_TARGETS mollen_storm)
 endif()
@@ -119,7 +129,17 @@ if(MVE_ENABLE_PSQL)
     endif()
 endif()
 
-add_subdirectory(dbc)
+# Engine targets link the historical `mollen-dbc` name; the actual library
+# now comes from the mollen-wow-dbc repo via FetchContent.
+add_library(mollen-dbc ALIAS mollen-dbc-schemas)
+
+if(MVE_BUILD_DBC_TOOLS)
+    # Asset extraction tool (M2, skin, BLP files from MPQ). The dbc-extract
+    # CLI lives in mollen-wow-dbc now - build that repo standalone for it.
+    add_executable(asset-extract tools/asset_extract.cpp)
+    target_link_libraries(asset-extract PRIVATE mollen-storm-mpq)
+endif()
+
 add_subdirectory(engine)
 add_subdirectory(app)
 
