@@ -77,12 +77,51 @@ static bool LoadModule(Module& m, const fs::path& src, const fs::path& live) {
            m.destroy && m.on_unload && m.on_reload;
 }
 
+// Last-resort crash reporter: prints the faulting module + offset so a
+// reload crash is diagnosable from stderr alone (WER stays silent for us).
+static LONG WINAPI CrashFilter(EXCEPTION_POINTERS* ep) {
+    void* addr = ep->ExceptionRecord->ExceptionAddress;
+    HMODULE m = nullptr;
+    char name[MAX_PATH] = "<unknown>";
+    if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                           GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           static_cast<LPCWSTR>(addr), &m) && m) {
+        GetModuleFileNameA(m, name, MAX_PATH);
+    }
+    std::fprintf(stderr, "[crash] code=0x%08lX addr=%p module=%s rva=0x%llX\n",
+                 ep->ExceptionRecord->ExceptionCode, addr, name,
+                 static_cast<unsigned long long>(
+                     reinterpret_cast<uintptr_t>(addr) -
+                     reinterpret_cast<uintptr_t>(m)));
+    std::fflush(stderr);
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
 int main() {
-    const fs::path src  = ExeDir() / "mollen-engine.dll";
-    const fs::path live = ExeDir() / "mollen-engine_live.dll";
+    SetUnhandledExceptionFilter(CrashFilter);
+
+    const fs::path src = ExeDir() / "mollen-engine.dll";
+    // Two alternating shadow-copy names: the active module keeps its copy
+    // locked, so the incoming one loads from the other slot. Overlapping
+    // old + new loads is what keeps shared dependencies (vulkan-1.dll,
+    // glfw3.dll, pqxx.dll) referenced at all times - if the old module
+    // were freed first, Windows would unload them mid-swap and tear down
+    // live driver state under us.
+    const fs::path live_slot[2] = {
+        ExeDir() / "mollen-engine_live0.dll",
+        ExeDir() / "mollen-engine_live1.dll",
+    };
+    int slot = 0;
+
+    // Pin glfw3.dll for the whole process anyway: its window state and
+    // WndProc must survive even a pathological swap sequence.
+    if (!LoadLibraryW((ExeDir() / L"glfw3.dll").wstring().c_str())) {
+        std::fprintf(stderr, "failed to pin glfw3.dll (%lu)\n", GetLastError());
+        return EXIT_FAILURE;
+    }
 
     Module mod;
-    if (!LoadModule(mod, src, live)) {
+    if (!LoadModule(mod, src, live_slot[slot])) {
         std::fprintf(stderr, "Failed to load engine module from %s\n",
                      src.string().c_str());
         return EXIT_FAILURE;
@@ -100,23 +139,35 @@ int main() {
         // Watch the on-disk DLL; reload when a rebuild changes its timestamp.
         auto w = fs::last_write_time(src, ec);
         if (!ec && w != last_write) {
-            // Let the linker finish writing before we copy + load.
-            std::this_thread::sleep_for(std::chrono::milliseconds(200));
-
-            mod.on_unload(state);
-            FreeLibrary(mod.handle);
-
-            Module next;
-            if (LoadModule(next, src, live)) {
-                mod = next;
-                mod.on_reload(state);
-                last_write = fs::last_write_time(src, ec);
-                std::fprintf(stderr, "[reload] engine module reloaded\n");
-            } else {
-                std::fprintf(stderr, "[reload] FAILED; aborting to avoid a "
-                                     "half-loaded state\n");
-                return EXIT_FAILURE;
+            // Debounce: wait until the timestamp stops moving so we don't
+            // copy a half-written DLL or double-reload one rebuild.
+            for (;;) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(250));
+                auto now_w = fs::last_write_time(src, ec);
+                if (ec || now_w == w) break;
+                w = now_w;
             }
+            last_write = w;
+
+            // Load the new module FIRST (from the other slot), then detach
+            // the old one. Load failure = keep running the old module.
+            std::fprintf(stderr, "[reload] loading new module\n"); std::fflush(stderr);
+            Module next;
+            if (!LoadModule(next, src, live_slot[1 - slot])) {
+                std::fprintf(stderr, "[reload] new module failed to load; "
+                                     "keeping the old one\n");
+                continue;
+            }
+            slot = 1 - slot;
+
+            std::fprintf(stderr, "[reload] on_unload\n"); std::fflush(stderr);
+            mod.on_unload(state);
+            std::fprintf(stderr, "[reload] freeing old module\n"); std::fflush(stderr);
+            FreeLibrary(mod.handle);
+            mod = next;
+            std::fprintf(stderr, "[reload] on_reload\n"); std::fflush(stderr);
+            mod.on_reload(state);
+            std::fprintf(stderr, "[reload] engine module reloaded\n"); std::fflush(stderr);
         }
     }
 
