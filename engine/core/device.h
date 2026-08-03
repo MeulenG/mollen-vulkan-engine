@@ -33,6 +33,11 @@ public:
     Device(const Device&) = delete;
     Device& operator=(const Device&) = delete;
 
+    // Hot-reload support: the validation messenger's callback points into
+    // this module's code, so a reloaded module must re-create it. No-op
+    // when validation is disabled.
+    void RecreateDebugMessenger();
+
     const vk::raii::Device& GetDevice() const { return device_; }
     const vk::raii::PhysicalDevice& GetPhysicalDevice() const { return physical_device_; }
     const vk::raii::Instance& GetInstance() const { return instance_; }
