@@ -26,6 +26,7 @@
 #include <chrono>
 #include <filesystem>
 #include <memory>
+#include <string>
 
 namespace mve {
 
@@ -71,10 +72,15 @@ struct EngineState {
     // Stable across frames (only one camera entity exists).
     CameraComponent* cam = nullptr;
 
-    // Saved ImGui context pointer (::ImGuiContext*) so it survives a module
-    // reload, which resets the new module's ImGui global. Stored as void* to
-    // keep imgui.h out of this header.
-    void* imgui_context = nullptr;
+    // ImGui settings (ini text) captured at on_unload and replayed at
+    // on_reload. The ImGui context is deliberately NOT shared across the
+    // swap: it carries function pointers into the module that created it
+    // (settings handlers, backend data), so each module builds its own
+    // context and inherits layout/docking state through this string.
+    //
+    // NOTE: changing EngineState's layout requires an app restart - the
+    // old module wrote this blob with the old layout.
+    std::string imgui_ini;
 
     // Newest mtime across all .spv files in MVE_SHADER_DIR at the last check.
     // EngineFrame rescans each frame; if any .spv timestamp moves past this

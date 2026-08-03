@@ -2,6 +2,7 @@
 #include "engine_state.h"
 
 #include <imgui.h>
+#include <cstdio>
 
 // Thin C wrappers over the C++ EngineState lifecycle. These are the only
 // symbols the engine DLL exports; everything else stays internal to the
@@ -32,14 +33,24 @@ MVE_API void engine_destroy(mve::EngineState* s) {
 }
 
 MVE_API void engine_on_unload(mve::EngineState* s) {
-    // Stash the ImGui context (a module-global pointer) so the reloaded
-    // module can restore it. Do NOT touch GPU state - the blob persists.
-    s->imgui_context = ImGui::GetCurrentContext();
+    // Everything ImGui-side dies with this module (the context carries
+    // module function pointers); layout survives as ini text in the blob.
+    // Wait for the GPU first - the vulkan backend destroys its font
+    // texture and pipeline, which in-flight frames may still reference.
+    s->imgui_ini = s->imgui_ctx->SaveSettings();
+    s->device->GetDevice().waitIdle();
+    s->imgui_ctx->ShutdownForReload();
+    s->window->UninstallCallbacks();
 }
 
 MVE_API void engine_on_reload(mve::EngineState* s) {
-    // The freshly loaded module has a null ImGui global; point it back at the
-    // context that persisted in the state blob. The default allocator is left
-    // alone so it resolves to the NEW module's code, not the freed old one.
-    ImGui::SetCurrentContext(static_cast<::ImGuiContext*>(s->imgui_context));
+    // Re-point everything at this module: engine window callbacks, then a
+    // fresh ImGui context + backend pair with the saved layout replayed.
+    s->window->InstallCallbacks();
+    s->imgui_ctx->ReinitForReload(*s->window, *s->device,
+                                  s->renderer->GetSwapchainImageFormat(),
+                                  s->imgui_ini);
+
+    // The validation messenger callback also lives in module code.
+    s->device->RecreateDebugMessenger();
 }

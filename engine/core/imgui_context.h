@@ -8,6 +8,8 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>
 
+#include <string>
+
 namespace mve {
 
 // Manages ImGui lifecycle: init, new frame, render, shutdown.
@@ -35,6 +37,19 @@ public:
     // the pool caps at 100, so a few minutes of dragging a window can
     // exhaust it and produce uninitialized handles.
     void UnregisterTexture(ImTextureID tex);
+
+    // Hot-reload support. The ImGui context and both backends are OWNED BY
+    // THE MODULE: the context carries function pointers into the module
+    // that created it (settings handlers registered at CreateContext, the
+    // glfw backend's per-module window->context map, backend vtables), so
+    // nothing ImGui-side may outlive a module swap. Layout/docking state
+    // crosses the swap as an ini string instead.
+    std::string SaveSettings() const;
+    void ShutdownForReload();
+    void ReinitForReload(Window& window, Device& device,
+                         vk::Format swapchain_format, const std::string& ini);
+
+    void InitBackends(Window& window, Device& device, vk::Format swapchain_format);
 
 private:
     void initImGui(Window& window, Device& device, vk::Format swapchain_format);
