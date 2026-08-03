@@ -1,5 +1,12 @@
 add_executable(mollen-wow-tools main.cpp)
 
+# glfw is a shared DLL (see root CMakeLists - hot-reload requirement);
+# deploy it next to the host exe.
+add_custom_command(TARGET mollen-wow-tools POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:glfw> $<TARGET_FILE_DIR:mollen-wow-tools>
+)
+
 # Hot-reload host: it loads the engine DLL at RUNTIME via LoadLibrary, so it
 # deliberately does NOT link the engine import lib - implicit linking would
 # make the OS lock the DLL at startup and prevent reloads. It only needs the

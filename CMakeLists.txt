@@ -30,6 +30,11 @@ find_package(Vulkan REQUIRED)
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+# Shared, not static: hot-reload swaps the engine DLL, and a static glfw
+# would die with it - taking the window's WndProc and all window state
+# along ("Not Responding" after the first reload). As glfw3.dll it is
+# loaded once per process and survives every module swap.
+set(GLFW_LIBRARY_TYPE "SHARED" CACHE STRING "" FORCE)
 FetchContent_Declare(
     glfw
     GIT_REPOSITORY https://github.com/glfw/glfw.git
