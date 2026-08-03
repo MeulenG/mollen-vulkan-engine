@@ -5,6 +5,15 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Hot-reload (HOTRELOAD_PLAN.md) requires the host exe and the future engine
+# module DLL to share ONE C runtime, so heap allocations made by module code
+# survive a FreeLibrary/LoadLibrary cycle. Lock every target to the dynamic
+# (DLL) CRT explicitly rather than relying on the CMake default, so the host
+# and module can never drift onto different runtimes. Set before any target
+# (including FetchContent deps) is created so they all inherit it.
+cmake_policy(SET CMP0091 NEW)
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+
 # Options
 option(MVE_BUILD_DBC_TOOLS "Build dbc-extract CLI tool (requires mollen-storm + pqxx)" OFF)
 option(MVE_BUILD_TESTS "Build unit tests" ON)
@@ -21,6 +30,11 @@ find_package(Vulkan REQUIRED)
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+# Shared, not static: hot-reload swaps the engine DLL, and a static glfw
+# would die with it - taking the window's WndProc and all window state
+# along ("Not Responding" after the first reload). As glfw3.dll it is
+# loaded once per process and survives every module swap.
+set(GLFW_LIBRARY_TYPE "SHARED" CACHE STRING "" FORCE)
 FetchContent_Declare(
     glfw
     GIT_REPOSITORY https://github.com/glfw/glfw.git

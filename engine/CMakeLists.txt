@@ -1,8 +1,10 @@
-add_library(mollen-engine STATIC
+add_library(mollen-engine SHARED
     core/window.cpp
     core/device.cpp
     core/swapchain.cpp
     core/renderer.cpp
+    core/engine_state.cpp
+    core/engine_api.cpp
     resources/pipeline.cpp
     resources/buffer.cpp
     resources/descriptor.cpp
@@ -47,12 +49,38 @@ target_include_directories(mollen-engine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-target_link_libraries(mollen-engine PUBLIC
+# Exported as a module DLL. Only the engine_* C entry points (marked with
+# MVE_API / dllexport via MVE_ENGINE_BUILD) cross the boundary; everything
+# below is baked into the DLL and kept PRIVATE so it does not propagate into
+# the host exe (which would duplicate ImGui/GLFW global state).
+target_compile_definitions(mollen-engine PRIVATE MVE_ENGINE_BUILD)
+
+# Linker map so a crash RVA (printed by the host's CrashFilter) resolves
+# to a function name without a debugger.
+if(MSVC)
+    target_link_options(mollen-engine PRIVATE "/MAP")
+endif()
+
+target_link_libraries(mollen-engine PRIVATE
     Vulkan::Vulkan
     glfw
     glm::glm
     imgui_lib
     mollen-dbc
+)
+
+# Deploy the engine DLL next to the host exe on every engine build. The host
+# watches this file and hot-reloads when it changes, so deploying on an
+# engine-only rebuild is what makes the reload loop work. (Generator
+# expression for the app dir is resolved after all targets are defined, even
+# though the engine subdirectory is processed before the app's.)
+# make_directory first: on a clean build the engine finishes before the app
+# dir exists, and copy_if_different into a missing dir writes the DLL as a
+# FILE named after the dir (build/app/Debug), bricking the app build.
+add_custom_command(TARGET mollen-engine POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:mollen-wow-tools>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:mollen-engine> $<TARGET_FILE_DIR:mollen-wow-tools>
 )
 
 # Compile GLSL shaders to SPIR-V

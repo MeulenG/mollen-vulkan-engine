@@ -1,7 +1,6 @@
 #ifndef MVE_M2_INFO_COMPONENT_H
 #define MVE_M2_INFO_COMPONENT_H
 
-#include "../entity.h"
 #include "../../formats/m2_loader.h"
 
 #include <glm/glm.hpp>
@@ -10,7 +9,7 @@
 
 namespace mve {
 
-struct M2InfoComponent : Component {
+struct M2InfoComponent {
     std::string pm_model_name;
     uint32_t pm_vertex_count = 0;
     uint32_t pm_index_count = 0;

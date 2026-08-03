@@ -1,7 +1,6 @@
 #ifndef MVE_WATER_COMPONENT_H
 #define MVE_WATER_COMPONENT_H
 
-#include "../entity.h"
 #include "../mesh.h"
 
 #include <memory>
@@ -22,7 +21,7 @@ struct WaterInstanceMesh {
     uint16_t liquid_type = 0;   // FK -> LiquidType.dbc
 };
 
-struct WaterComponent : Component {
+struct WaterComponent {
     std::vector<WaterInstanceMesh> instances;
 };
 

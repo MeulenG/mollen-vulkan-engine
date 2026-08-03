@@ -1,7 +1,6 @@
 #ifndef MVE_WMO_INSTANCE_COMPONENT_H
 #define MVE_WMO_INSTANCE_COMPONENT_H
 
-#include "../entity.h"
 #include "../mesh.h"
 #include "../wmo_mesh.h"
 #include "../../formats/wmo_types.h"
@@ -22,7 +21,7 @@ namespace mve {
 //
 // Holds N group GPU meshes + a shared pointer to the WmoRoot for
 // material/texture lookup at draw time.
-struct WmoInstanceComponent : Component {
+struct WmoInstanceComponent {
     std::shared_ptr<WmoRoot>      root;
     std::vector<WmoGroupGpu>      groups;       // one per group_file
     std::vector<glm::vec4>        group_bbox_min; // WMO-local, .w = unused

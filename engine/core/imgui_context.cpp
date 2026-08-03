@@ -61,6 +61,43 @@ void ImGuiContext::initImGui(Window& window, Device& device, vk::Format swapchai
     editor_style::Apply(*ImGui::GetCurrentContext());
     editor_style::LoadFonts(*io.Fonts);
 
+    InitBackends(window, device, swapchain_format);
+}
+
+std::string ImGuiContext::SaveSettings() const {
+    size_t len = 0;
+    const char* data = ImGui::SaveIniSettingsToMemory(&len);
+    return std::string(data, len);
+}
+
+void ImGuiContext::ShutdownForReload() {
+    ImGui_ImplVulkan_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+}
+
+void ImGuiContext::ReinitForReload(Window& window, Device& device,
+                                   vk::Format swapchain_format,
+                                   const std::string& ini) {
+    // Fresh context in THIS module: settings handlers, allocator and
+    // backend data all resolve to live code. Layout state comes back in
+    // via the ini text (must load after CreateContext, before NewFrame -
+    // it also marks settings as loaded so the disk ini isn't re-read).
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
+    editor_style::Apply(*ImGui::GetCurrentContext());
+    editor_style::LoadFonts(*io.Fonts);
+
+    ImGui::LoadIniSettingsFromMemory(ini.c_str(), ini.size());
+
+    InitBackends(window, device, swapchain_format);
+}
+
+void ImGuiContext::InitBackends(Window& window, Device& device, vk::Format swapchain_format) {
     ImGui_ImplGlfw_InitForVulkan(window.GetGLFWWindow(), true);
 
     // No Render Pass

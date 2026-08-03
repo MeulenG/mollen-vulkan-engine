@@ -1,7 +1,6 @@
 #ifndef MVE_TRANSFORM_COMPONENT_H
 #define MVE_TRANSFORM_COMPONENT_H
 
-#include "../entity.h"
 
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
@@ -11,7 +10,7 @@
 
 namespace mve {
 
-struct TransformComponent : Component {
+struct TransformComponent {
     glm::vec3 pm_position{0.0f};
     glm::quat pm_rotation{1.0f, 0.0f, 0.0f, 0.0f};
     glm::vec3 pm_scale{1.0f};

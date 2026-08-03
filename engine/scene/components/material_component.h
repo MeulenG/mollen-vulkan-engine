@@ -1,7 +1,6 @@
 #ifndef MVE_MATERIAL_COMPONENT_H
 #define MVE_MATERIAL_COMPONENT_H
 
-#include "../entity.h"
 #include "../../resources/buffer.h"
 #include "../../resources/image.h"
 #include "../../formats/m2_types.h"
@@ -17,7 +16,7 @@ struct SubmeshMaterial {
     uint16_t pm_render_flags = 0;
 };
 
-struct MaterialComponent : Component {
+struct MaterialComponent {
     std::vector<SubmeshMaterial> pm_submesh_materials;
 
     // Raw handle. See the long comment on TerrainComponent for why we

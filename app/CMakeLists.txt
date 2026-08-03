@@ -1,15 +1,21 @@
 add_executable(mollen-wow-tools main.cpp)
 
-target_link_libraries(mollen-wow-tools PRIVATE
-    mollen-engine
-    mollen-dbc
-    imgui_lib
+# glfw is a shared DLL (see root CMakeLists - hot-reload requirement);
+# deploy it next to the host exe.
+add_custom_command(TARGET mollen-wow-tools POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:glfw> $<TARGET_FILE_DIR:mollen-wow-tools>
 )
 
-# Launch the executable with the repo root as the working directory when
-# started through Visual Studio's debugger. Asset paths are relative to the
-# repo root (e.g. "assets/World/Maps/Azeroth/..."), so without this the
-# debugger leaves CWD at $(OutDir) and every asset load silently fails.
+# Hot-reload host: it loads the engine DLL at RUNTIME via LoadLibrary, so it
+# deliberately does NOT link the engine import lib - implicit linking would
+# make the OS lock the DLL at startup and prevent reloads. It only needs the
+# engine DLL to have been built (and deployed next to the exe by the engine
+# target's post-build copy).
+add_dependencies(mollen-wow-tools mollen-engine)
+
+# Launch with the repo root as the working directory under the VS debugger so
+# the engine's relative asset paths (assets/World/...) resolve.
 set_target_properties(mollen-wow-tools PROPERTIES
     VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )

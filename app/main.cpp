@@ -1,361 +1,178 @@
-#include "core/window.h"
-#include "core/device.h"
-#include "core/renderer.h"
-#include "core/offscreen_pass.h"
-#include "core/imgui_context.h"
-#include "scene/scene.h"
-#include "scene/components/camera_component.h"
-#include "scene/components/m2_info_component.h"
-#include "scene/components/transform_component.h"
-#include "scene/components/mesh_component.h"
-#include "scene/components/material_component.h"
-#include "scene/components/terrain_component.h"
-#include "scene/components/terrain_tile_component.h"
-#include "scene/terrain_streamer.h"
-#include "scene/player_controller.h"
-#include "resources/asset_manager.h"
-#include "resources/buffer.h"
-#include "resources/descriptor.h"
-#include "resources/image.h"
-#include "animation/skeleton.h"
-#include "formats/adt_types.h"
-#include "resources/dbc_registry.h"
-#include "resources/icon_cache.h"
-#include "db/db_connection.h"
-#include "systems/render_system.h"
-#include "systems/animation_system.h"
-#include "systems/editor_ui_system.h"
-#include "systems/dbc_browser_system.h"
-#include "systems/dbc_form_system.h"
-#include "systems/spell_editor_system.h"
+// Thin host with C++ hot-reload (HOTRELOAD_PLAN.md phase 5).
+//
+// The host owns nothing but the opaque EngineState pointer and the loaded
+// module. It loads the engine DLL explicitly (so it is NOT locked by the
+// loader), watches the on-disk DLL for changes, and on a rebuild swaps in the
+// new code while keeping the same EngineState. Because the state blob lives on
+// the shared heap and holds no module-bound pointers (no vtables/typeid - see
+// the ECS rework), the new code picks up exactly where the old left off.
 
-#include <imgui.h>
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
 
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
-#include <iostream>
-#include <memory>
+#include <filesystem>
+#include <thread>
+
+namespace mve { struct EngineState; }
+namespace fs = std::filesystem;
+
+// Function-pointer types matching engine_api.h's C entry points.
+using FnCreate      = mve::EngineState* (*)();
+using FnInit        = void (*)(mve::EngineState*);
+using FnFrame       = void (*)(mve::EngineState*);
+using FnShouldClose = bool (*)(mve::EngineState*);
+using FnShutdown    = void (*)(mve::EngineState*);
+using FnDestroy     = void (*)(mve::EngineState*);
+using FnOnUnload    = void (*)(mve::EngineState*);
+using FnOnReload    = void (*)(mve::EngineState*);
+
+struct Module {
+    HMODULE       handle       = nullptr;
+    FnCreate      create       = nullptr;
+    FnInit        init         = nullptr;
+    FnFrame       frame        = nullptr;
+    FnShouldClose should_close = nullptr;
+    FnShutdown    shutdown     = nullptr;
+    FnDestroy     destroy      = nullptr;
+    FnOnUnload    on_unload    = nullptr;
+    FnOnReload    on_reload    = nullptr;
+};
+
+// Directory containing this exe. The engine DLL is deployed next to it by the
+// engine target's post-build copy.
+static fs::path ExeDir() {
+    char buf[MAX_PATH];
+    DWORD n = GetModuleFileNameA(nullptr, buf, MAX_PATH);
+    return fs::path(std::string(buf, n)).parent_path();
+}
+
+static bool LoadModule(Module& m, const fs::path& src, const fs::path& live) {
+    // Load a COPY so the watched DLL on disk stays unlocked and a rebuild can
+    // overwrite it freely.
+    std::error_code ec;
+    fs::copy_file(src, live, fs::copy_options::overwrite_existing, ec);
+    if (ec) {
+        std::fprintf(stderr, "[reload] copy failed: %s\n", ec.message().c_str());
+        return false;
+    }
+    m.handle = LoadLibraryW(live.wstring().c_str());
+    if (!m.handle) {
+        std::fprintf(stderr, "[reload] LoadLibrary failed (%lu)\n", GetLastError());
+        return false;
+    }
+    auto get = [&](const char* name) { return GetProcAddress(m.handle, name); };
+    m.create       = reinterpret_cast<FnCreate>(get("engine_create"));
+    m.init         = reinterpret_cast<FnInit>(get("engine_init"));
+    m.frame        = reinterpret_cast<FnFrame>(get("engine_frame"));
+    m.should_close = reinterpret_cast<FnShouldClose>(get("engine_should_close"));
+    m.shutdown     = reinterpret_cast<FnShutdown>(get("engine_shutdown"));
+    m.destroy      = reinterpret_cast<FnDestroy>(get("engine_destroy"));
+    m.on_unload    = reinterpret_cast<FnOnUnload>(get("engine_on_unload"));
+    m.on_reload    = reinterpret_cast<FnOnReload>(get("engine_on_reload"));
+    return m.create && m.init && m.frame && m.should_close && m.shutdown &&
+           m.destroy && m.on_unload && m.on_reload;
+}
+
+// Last-resort crash reporter: prints the faulting module + offset so a
+// reload crash is diagnosable from stderr alone (WER stays silent for us).
+static LONG WINAPI CrashFilter(EXCEPTION_POINTERS* ep) {
+    void* addr = ep->ExceptionRecord->ExceptionAddress;
+    HMODULE m = nullptr;
+    char name[MAX_PATH] = "<unknown>";
+    if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                           GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           static_cast<LPCWSTR>(addr), &m) && m) {
+        GetModuleFileNameA(m, name, MAX_PATH);
+    }
+    std::fprintf(stderr, "[crash] code=0x%08lX addr=%p module=%s rva=0x%llX\n",
+                 ep->ExceptionRecord->ExceptionCode, addr, name,
+                 static_cast<unsigned long long>(
+                     reinterpret_cast<uintptr_t>(addr) -
+                     reinterpret_cast<uintptr_t>(m)));
+    std::fflush(stderr);
+    return EXCEPTION_CONTINUE_SEARCH;
+}
 
 int main() {
-    try {
-        mve::Window window{1280, 720, "Mollen Wow Tools"};
-        mve::Device device{window};
-        mve::Renderer renderer{window, device};
-        mve::ImGuiContext imgui_ctx{window, device, renderer.GetSwapchainImageFormat()};
+    SetUnhandledExceptionFilter(CrashFilter);
 
-        auto offscreen = std::make_unique<mve::OffscreenPass>(
-            device, 800, 600,
-            renderer.GetSwapchainImageFormat(),
-            renderer.GetDepthFormat());
+    const fs::path src = ExeDir() / "mollen-engine.dll";
+    // Two alternating shadow-copy names: the active module keeps its copy
+    // locked, so the incoming one loads from the other slot. Overlapping
+    // old + new loads is what keeps shared dependencies (vulkan-1.dll,
+    // glfw3.dll, pqxx.dll) referenced at all times - if the old module
+    // were freed first, Windows would unload them mid-swap and tear down
+    // live driver state under us.
+    const fs::path live_slot[2] = {
+        ExeDir() / "mollen-engine_live0.dll",
+        ExeDir() / "mollen-engine_live1.dll",
+    };
+    int slot = 0;
 
-        // Systems
-        // Declaration order matters: render_system owns the descriptor pool,
-        // scene owns entities whose MaterialComponents allocate descriptor
-        // sets from that pool. C++ destroys in reverse, so scene must be
-        // declared *after* render_system to die first.
-        mve::RenderSystem render_system{device, *offscreen};
-        render_system.Init();
-
-        mve::Scene scene;
-
-        mve::AssetManager assets{device};
-        assets.SetDescriptorResources(
-            render_system.DescriptorLayout(),
-            render_system.GetDescriptorPool(),
-            render_system.SceneUBOBuffer());
-
-        // Load the GroundEffect DBC tables (texture + doodad) once,
-        // before any tiles stream in. ADT tile loading calls
-        // ScatterGrassForTile() which silently does nothing if the
-        // tables didn't load. A missing or unparseable DBC is logged
-        // by LoadGroundEffectTables but isn't fatal - the engine just
-        // renders without detail grass.
-        assets.LoadGroundEffectTables();
-
-        // Load the Light DBC tables (Light + LightParams + LightIntBand
-        // + LightFloatBand) and attach a LightCycle to the render
-        // system. The cycle interpolates the 18 LightIntBand colors +
-        // 6 LightFloatBand floats across a 16-keyframe per-day curve
-        // and drives the scene UBO + sky cone push constants every
-        // frame. Without it the renderer uses the hardcoded canonical
-        // Elwynn noon values seeded by the RenderSystem constructor.
-        assets.LoadLightTables();
-        mve::LightCycle light_cycle;
-        light_cycle.SetTables(&assets.Lights());
-        render_system.SetLightCycle(&light_cycle);
-
-        mve::AnimationSystem animation_system;
-        mve::EditorUISystem editor_ui{window, imgui_ctx, *offscreen,
-                                       device, assets};
-
-        mve::DbcRegistry dbc_registry{"assets/dbc"};
-
-        // Best-effort connect - failure leaves the browser in file-only mode.
-        mve::DbConnection db;
-        if (!db.Connect("db_config.toml")) {
-            std::cerr << "DB connect: " << db.LastError() << "\n";
-        }
-
-        mve::DbcBrowserSystem dbc_browser{dbc_registry, db};
-        mve::DbcFormSystem dbc_form{dbc_registry, db};
-        dbc_browser.SetFormSystem(&dbc_form);
-
-        mve::IconCache icon_cache{device, imgui_ctx};
-        mve::SpellEditorSystem spell_editor{db, icon_cache};
-
-        // Editor camera
-        auto* cam_entity = scene.CreateEntity("EditorCamera");
-        auto* cam = cam_entity->AddComponent<mve::CameraComponent>();
-        cam->pm_is_active = true;
-        cam->pm_camera.SetOrbit(8.0f, 0.5f, 0.3f);
-        cam->pm_camera.SetTarget({0.0f, 0.5f, 0.0f});
-
-        // R3: stream multiple ADT tiles around a focus point. The
-        // streamer loads tiles in a (2r+1)x(2r+1) ring around the camera,
-        // gated by the WDT MAIN bitmap so we never try to open ocean tiles.
-        //
-        // Initial focus is (32, 48) - Northshire / north Stormwind. We
-        // point the camera at that tile's expected engine centroid, then
-        // ask the streamer which tile the camera actually ended up in
-        // (the orbit position can sit in a neighbor) and preload around
-        // that tile - this prevents the first per-frame Update from
-        // immediately evicting tiles we just loaded.
-        mve::TerrainStreamer streamer{assets, scene};
-        if (!streamer.LoadWdt("World/Maps/Azeroth/Azeroth.wdt")) {
-            std::cerr << "WDT load failed - streamer falls back to "
-                         "try-every-tile mode\n";
-        }
-
-        // Hardcoded engine center of tile (32, 48). The per-tile centroid
-        // from the file would be slightly more accurate, but the file
-        // load happens DURING the preload below - so we use the analytic
-        // tile center to bootstrap.
-        //
-        // Default camera is ground-level FPS now - the orbit-1500
-        // bird's-eye made the editor read as a diorama. Ground level
-        // (matches the target reference) shows trees + terrain at
-        // proper density. User can switch via Tools menu.
-        // Ground-eye close shot at the Northshire road, designed to
-        // catch detail-grass blades scattered around the camera and
-        // the cobblestone path in the same frame. orbit 8y radius +
-        // pitch +0.15 (~9deg downward look) puts the camera at
-        // ~91 yards Y (just above the ground at Y=89) so we're
-        // standing on the road looking slightly down at our feet.
-        // Grass cull radius is 60 yards so foreground blades render.
-        // Phase 2B: third-person mode with a player controller.
-        // Player spawns on the road in tile (32, 48) at Northshire Valley.
-        // Engine is Z-up: renderX = canonical.Y (west), renderY =
-        // canonical.X (north), renderZ = height. Spawn coords below
-        // place the player in tile (32, 48) at canonical X ~ -30 and
-        // canonical Y ~ -9000, eye height 89.
-        //
-        // Orbit yaw convention (Camera::updatePosition in Z-up):
-        //   position = target + R * (ch*sin(yaw), ch*cos(yaw), sin(pitch))
-        // So:
-        //   yaw=0    -> camera at target + (0, R, 0) = +Y side of target
-        //   yaw=pi/2 -> camera at target + (R, 0, 0) = +X side of target
-        //   yaw=pi   -> camera at target + (0,-R, 0) = -Y side of target
-        glm::vec3 player_spawn{-9000.0f, -30.0f, 89.0f};
-        glm::vec3 eye_target = player_spawn + glm::vec3{0, 0, 1.7f};
-        cam->pm_camera.SetTarget(eye_target);
-        cam->pm_camera.SetOrbit(15.0f, 0.0f, 0.35f);
-        cam->pm_camera.SetMode(mve::CameraMode::ThirdPerson);
-
-        mve::PlayerController player;
-        player.SetPosition(player_spawn);
-
-        // Preload around wherever the camera actually sits (which may be
-        // a neighboring tile because of the orbit offset). Radius 2 (5x5)
-        // gives a ~2700-yard view region - enough that the target tile
-        // (32, 48) is always inside the loaded set even when the camera
-        // sits in a neighbor.
-        streamer.SetRadius(2);
-        streamer.SetEvictRadius(3);
-        int cam_tx, cam_ty;
-        streamer.EngineToTile(cam->pm_camera.GetPosition(), cam_tx, cam_ty);
-        streamer.PreloadAround(cam_tx, cam_ty, 2,
-                                render_system.TerrainDescriptorLayout());
-
-        // R4.5: tile loading parks MDDF doodad placements into a
-        // per-M2-path pending list rather than spawning one entity per
-        // placement. Flush them now that the full 5x5 preload is done
-        // so each unique M2 becomes one instanced entity carrying all
-        // its placements across every tile that referenced it.
-        // Without this call the doodads never enter the scene.
-        assets.FlushDoodadInstances(scene);
-
-        // Phase 2E: load each MODF WMO placement as a real meshed
-        // entity. On parse failure (missing asset, malformed group
-        // file) we fall back to the colored bbox marker debug overlay
-        // so the building's position is still visible on screen.
-        size_t wmo_ok = 0, wmo_fail = 0;
-        for (const auto& w : assets.PendingWmoPlacements()) {
-            if (assets.LoadWmoPlacement(w, scene,
-                                         render_system.WmoDescriptorLayout())) {
-                ++wmo_ok;
-                continue;
-            }
-            ++wmo_fail;
-            mve::RenderSystem::WmoBboxMarker m{};
-            m.pos     = w.engine_pos;
-            m.extents = w.bbox_extents;
-            uint32_t h = w.unique_id * 2654435761u;
-            m.color = glm::vec3{
-                ((h >>  0) & 0xff) / 255.0f * 0.7f + 0.3f,
-                ((h >>  8) & 0xff) / 255.0f * 0.7f + 0.3f,
-                ((h >> 16) & 0xff) / 255.0f * 0.7f + 0.3f,
-            };
-            render_system.AddWmoBbox(m);
-            std::fprintf(stderr,
-                "  WMO (bbox fallback): %s at engine=(%.0f, %.0f, %.0f)\n",
-                w.wow_path.c_str(),
-                w.engine_pos.x, w.engine_pos.y, w.engine_pos.z);
-        }
-        std::fprintf(stderr,
-            "WMO placements: %zu loaded, %zu fell back to bbox\n",
-            wmo_ok, wmo_fail);
-        assets.ClearPendingWmoPlacements();
-
-        auto last_time = std::chrono::high_resolution_clock::now();
-
-        while (!window.ShouldClose()) {
-            glfwPollEvents();
-            auto now = std::chrono::high_resolution_clock::now();
-            float dt = std::chrono::duration<float>(now - last_time).count();
-            last_time = now;
-
-            // ImGui frame
-            imgui_ctx.NewFrame();
-
-            // Advance the day/night cycle clock. light_cycle.Tick
-            // wraps to a no-op when paused, which is the editor's
-            // default state - the user pins a specific time-of-day
-            // for stable comparisons and clicks "Real-time" to let
-            // it advance.
-            light_cycle.Tick(dt);
-
-            // Noclip toggle (N): swap between ThirdPerson (player-
-            // following) and FlyFirstPerson (free camera). When
-            // re-entering ThirdPerson, re-anchor the camera to the
-            // player so the view snaps back to where the player is
-            // standing (otherwise the orbit target would still point
-            // wherever the free camera was last looking).
-            if (ImGui::IsKeyPressed(ImGuiKey_N, false)) {
-                if (cam->pm_camera.Mode() == mve::CameraMode::ThirdPerson) {
-                    cam->pm_camera.SetMode(mve::CameraMode::FlyFirstPerson);
-                } else if (cam->pm_camera.Mode() ==
-                           mve::CameraMode::FlyFirstPerson) {
-                    cam->pm_camera.SetMode(mve::CameraMode::ThirdPerson);
-                    cam->pm_camera.SetTarget(player.GetEyePos());
-                }
-            }
-
-            // Phase 2B player update. Runs ONLY when the active camera
-            // is in ThirdPerson mode - in Orbit / FlyFirstPerson the
-            // WASD keys drive the camera via EditorUISystem instead.
-            //
-            // The player marker stays VISIBLE in every mode (rendered
-            // at player.GetPosition()) so noclip users have a "you-
-            // were-here" reference to fly back to.
-            render_system.SetPlayerPos(player.GetPosition());
-
-            if (cam->pm_camera.Mode() == mve::CameraMode::ThirdPerson) {
-                bool w = ImGui::IsKeyDown(ImGuiKey_W);
-                bool a = ImGui::IsKeyDown(ImGuiKey_A);
-                bool s = ImGui::IsKeyDown(ImGuiKey_S);
-                bool d = ImGui::IsKeyDown(ImGuiKey_D);
-                bool sprint = ImGui::GetIO().KeyShift;
-                player.Update(dt, cam->pm_camera, w, a, s, d, sprint);
-
-                // Snap the player's height to the terrain. Engine is
-                // Z-up so height is the Z component. Without this the
-                // player floats at fixed height while the ground slopes
-                // underneath. GetGroundY returns false off-tile, in
-                // which case we leave the previous height alone (player
-                // glides off the loaded region instead of falling).
-                glm::vec3 pos = player.GetPosition();
-                float ground_z;
-                if (assets.GetGroundY(pos, &ground_z)) {
-                    pos.z = ground_z;
-                    player.SetPosition(pos);
-                }
-
-                cam->pm_camera.SetTarget(player.GetEyePos());
-                render_system.SetPlayerPos(player.GetPosition());
-            }
-
-            // Systems. EditorUISystem owns the dockspace + menu/status
-            // bars, so the host viewport gets its layout from there.
-            editor_ui.Update(scene, render_system, dt);
-            dbc_browser.Update();
-            dbc_form.Update();
-            spell_editor.Update();
-            animation_system.Update(scene, dt);
-            render_system.UpdateSceneUBO();
-
-            // Stream-load tiles around the camera. Cheap when the camera
-            // stays in the same tile; loads ~one new tile per boundary
-            // crossing. Runs before FlushDestroyed so evicted tiles
-            // disappear in the same frame.
-            mve::Camera* stream_cam = nullptr;
-            scene.Each<mve::CameraComponent>(
-                [&](mve::Entity&, mve::CameraComponent& cc) {
-                    if (cc.pm_is_active) stream_cam = &cc.pm_camera;
-                });
-            if (stream_cam) {
-                streamer.Update(stream_cam->GetPosition(),
-                                render_system.TerrainDescriptorLayout());
-                // New tiles parked doodad placements; materialize them
-                // into instanced entities. No-op when no new tiles
-                // loaded this frame.
-                assets.FlushDoodadInstances(scene);
-            }
-            scene.FlushDestroyed();
-
-            // Render
-            vk::raii::CommandBuffer* cmd;
-            if (!renderer.BeginFrame(&cmd)) continue;
-
-            // Find active camera
-            mve::Camera* active_cam = nullptr;
-            scene.Each<mve::CameraComponent>([&](mve::Entity&, mve::CameraComponent& cc) {
-                if (cc.pm_is_active) active_cam = &cc.pm_camera;
-            });
-
-            if (active_cam) {
-                render_system.Render(scene, *active_cam, *cmd);
-            }
-
-            // ImGui to swapchain
-            renderer.BeginRendering(*cmd, false);
-            imgui_ctx.Render(*cmd);
-            renderer.EndRendering(*cmd);
-            renderer.EndFrame(*cmd);
-        }
-
-        // Shutdown sequence:
-        //
-        // 1. Wait for any in-flight command buffer that might still be
-        //    referencing entity descriptor sets.
-        // 2. Destroy every entity NOW, while RenderSystem (and its
-        //    DescriptorPool) is still alive. The vk::raii::DescriptorSet
-        //    members of TerrainComponent / MaterialComponent free
-        //    themselves back to the pool here.
-        // 3. The normal stack unwind then tears down render_system
-        //    (DescriptorPool dies with nothing left to free), then the
-        //    now-empty scene.
-        //
-        // Without (2), automatic destruction order has render_system
-        // dying before scene, and the descriptor-set destructors trip
-        // VUID-vkFreeDescriptorSets-descriptorPool-parameter when they
-        // try to free against the dead pool.
-        device.GetDevice().waitIdle();
-        scene.Clear();
-
-    } catch (const std::exception& e) {
-        std::cerr << e.what() << '\n';
+    // Pin glfw3.dll for the whole process anyway: its window state and
+    // WndProc must survive even a pathological swap sequence.
+    if (!LoadLibraryW((ExeDir() / L"glfw3.dll").wstring().c_str())) {
+        std::fprintf(stderr, "failed to pin glfw3.dll (%lu)\n", GetLastError());
         return EXIT_FAILURE;
     }
 
+    Module mod;
+    if (!LoadModule(mod, src, live_slot[slot])) {
+        std::fprintf(stderr, "Failed to load engine module from %s\n",
+                     src.string().c_str());
+        return EXIT_FAILURE;
+    }
+
+    mve::EngineState* state = mod.create();
+    mod.init(state);
+
+    std::error_code ec;
+    auto last_write = fs::last_write_time(src, ec);
+
+    while (!mod.should_close(state)) {
+        mod.frame(state);
+
+        // Watch the on-disk DLL; reload when a rebuild changes its timestamp.
+        auto w = fs::last_write_time(src, ec);
+        if (!ec && w != last_write) {
+            // Debounce: wait until the timestamp stops moving so we don't
+            // copy a half-written DLL or double-reload one rebuild.
+            for (;;) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(250));
+                auto now_w = fs::last_write_time(src, ec);
+                if (ec || now_w == w) break;
+                w = now_w;
+            }
+            last_write = w;
+
+            // Load the new module FIRST (from the other slot), then detach
+            // the old one. Load failure = keep running the old module.
+            std::fprintf(stderr, "[reload] loading new module\n"); std::fflush(stderr);
+            Module next;
+            if (!LoadModule(next, src, live_slot[1 - slot])) {
+                std::fprintf(stderr, "[reload] new module failed to load; "
+                                     "keeping the old one\n");
+                continue;
+            }
+            slot = 1 - slot;
+
+            std::fprintf(stderr, "[reload] on_unload\n"); std::fflush(stderr);
+            mod.on_unload(state);
+            std::fprintf(stderr, "[reload] freeing old module\n"); std::fflush(stderr);
+            FreeLibrary(mod.handle);
+            mod = next;
+            std::fprintf(stderr, "[reload] on_reload\n"); std::fflush(stderr);
+            mod.on_reload(state);
+            std::fprintf(stderr, "[reload] engine module reloaded\n"); std::fflush(stderr);
+        }
+    }
+
+    mod.shutdown(state);
+    mod.destroy(state);
+    FreeLibrary(mod.handle);
     return EXIT_SUCCESS;
 }

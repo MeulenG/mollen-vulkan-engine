@@ -1,14 +1,13 @@
 #ifndef MVE_MESH_COMPONENT_H
 #define MVE_MESH_COMPONENT_H
 
-#include "../entity.h"
 #include "../mesh.h"
 
 #include <memory>
 
 namespace mve {
 
-struct MeshComponent : Component {
+struct MeshComponent {
     std::shared_ptr<Mesh> pm_mesh;
     bool pm_visible = true;
 };

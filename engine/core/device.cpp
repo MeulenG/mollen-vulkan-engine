@@ -88,6 +88,12 @@ void Device::setupDebugMessenger() {
     debug_messenger_ = instance_.createDebugUtilsMessengerEXT(create_info);
 }
 
+void Device::RecreateDebugMessenger() {
+    if (!enable_validation_) return;
+    debug_messenger_ = nullptr;
+    setupDebugMessenger();
+}
+
 void Device::createSurface() {
     auto raw_surface = window_.createSurface(*instance_);
     surface_ = vk::raii::SurfaceKHR{instance_, raw_surface};
