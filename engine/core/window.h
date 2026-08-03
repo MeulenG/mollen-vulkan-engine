@@ -25,6 +25,11 @@ public:
     vk::Extent2D GetExtent() const { return {width_, height_}; }
     GLFWwindow* GetGLFWWindow() const { return window_; }
 
+    // Hot-reload support: point GLFW's stored callbacks at this module's
+    // functions (or away from them before the module unloads).
+    void InstallCallbacks();
+    void UninstallCallbacks();
+
     vk::SurfaceKHR createSurface(vk::Instance instance);
 
     static std::vector<const char*> GetRequiredInstanceExtensions();

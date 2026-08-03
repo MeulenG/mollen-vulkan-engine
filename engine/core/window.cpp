@@ -30,9 +30,27 @@ void Window::initWindow() {
         throw std::runtime_error("Failed to create GLFW window");
     }
 
-    glfwSetWindowUserPointer(window_, this);
+    InstallCallbacks();
+}
+
+// The engine's Window for callback dispatch. Deliberately NOT the GLFW
+// user pointer: ImGui's docking backend stores its ImGuiContext* there and
+// dereferences it, so sharing that slot corrupts whichever side reads last.
+// A module-local static also self-heals on hot-reload - the new module's
+// InstallCallbacks repopulates it.
+static Window* s_active_window = nullptr;
+
+void Window::InstallCallbacks() {
+    s_active_window = this;
     glfwSetFramebufferSizeCallback(window_, framebufferResizeCallback);
     glfwSetScrollCallback(window_, scrollCallback);
+}
+
+void Window::UninstallCallbacks() {
+    // Callbacks point into this module's code; they must be cleared before a
+    // hot-reload unloads it, or glfw3.dll dispatches events into freed code.
+    glfwSetFramebufferSizeCallback(window_, nullptr);
+    glfwSetScrollCallback(window_, nullptr);
 }
 
 vk::SurfaceKHR Window::createSurface(vk::Instance instance) {
@@ -50,7 +68,8 @@ std::vector<const char*> Window::GetRequiredInstanceExtensions() {
 }
 
 void Window::framebufferResizeCallback(GLFWwindow* window, int width, int height) {
-    auto* app_window = reinterpret_cast<Window*>(glfwGetWindowUserPointer(window));
+    Window* app_window = s_active_window;
+    if (!app_window || app_window->window_ != window) return;
     app_window->framebuffer_resized_ = true;
     app_window->width_ = static_cast<uint32_t>(width);
     app_window->height_ = static_cast<uint32_t>(height);
@@ -71,7 +90,8 @@ float Window::GetScrollDelta() {
 }
 
 void Window::scrollCallback(GLFWwindow* window, double /*x_offset*/, double y_offset) {
-    auto* app_window = reinterpret_cast<Window*>(glfwGetWindowUserPointer(window));
+    Window* app_window = s_active_window;
+    if (!app_window || app_window->window_ != window) return;
     app_window->scroll_delta_ += static_cast<float>(y_offset);
 }
 
