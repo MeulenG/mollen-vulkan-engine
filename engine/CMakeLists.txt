@@ -55,6 +55,12 @@ target_include_directories(mollen-engine PUBLIC
 # the host exe (which would duplicate ImGui/GLFW global state).
 target_compile_definitions(mollen-engine PRIVATE MVE_ENGINE_BUILD)
 
+# Linker map so a crash RVA (printed by the host's CrashFilter) resolves
+# to a function name without a debugger.
+if(MSVC)
+    target_link_options(mollen-engine PRIVATE "/MAP")
+endif()
+
 target_link_libraries(mollen-engine PRIVATE
     Vulkan::Vulkan
     glfw
